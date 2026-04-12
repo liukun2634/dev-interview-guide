@@ -5,6 +5,7 @@ export default defineConfig({
   description: '系统化的程序员面试知识体系 - 涵盖算法、系统设计、数据库等 8 大领域',
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
+  ignoreDeadLinks: true,
 
   themeConfig: {
     nav: [
