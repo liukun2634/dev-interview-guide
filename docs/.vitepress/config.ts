@@ -13,73 +13,65 @@ export default defineConfig({
       { text: 'GitHub', link: 'https://github.com/liuku/dev-interview-guide' },
     ],
 
-    sidebar: {
-      '/data-structures-and-algorithms/': [
-        {
-          text: '数据结构与算法',
-          items: [
-            { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
-            { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
-          ],
-        },
-      ],
-      '/operating-systems/': [
-        {
-          text: '操作系统',
-          items: [
-            { text: '进程与线程', link: '/operating-systems/process-and-thread' },
-          ],
-        },
-      ],
-      '/computer-networks/': [
-        {
-          text: '计算机网络',
-          items: [
-            { text: 'TCP 与 UDP', link: '/computer-networks/tcp-and-udp' },
-          ],
-        },
-      ],
-      '/databases/': [
-        {
-          text: '数据库',
-          items: [
-            { text: '索引原理', link: '/databases/index-principles' },
-          ],
-        },
-      ],
-      '/system-design/': [
-        {
-          text: '系统设计',
-          items: [
-            { text: '缓存策略', link: '/system-design/caching-strategies' },
-          ],
-        },
-      ],
-      '/programming-languages/': [
-        {
-          text: '编程语言',
-          items: [
-            { text: 'Java 基础', link: '/programming-languages/java-basics' },
-          ],
-        },
-      ],
-      '/web-and-frameworks/': [
-        {
-          text: 'Web 与框架',
-          items: [
-            { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
-          ],
-        },
-      ],
-      '/devops/': [
-        {
-          text: 'DevOps',
-          items: [
-            { text: 'Docker 容器化', link: '/devops/docker-containerization' },
-          ],
-        },
-      ],
-    },
+    sidebar: [
+      {
+        text: '数据结构与算法',
+        collapsed: true,
+        items: [
+          { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
+          { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
+        ],
+      },
+      {
+        text: '操作系统',
+        collapsed: true,
+        items: [
+          { text: '进程与线程', link: '/operating-systems/process-and-thread' },
+        ],
+      },
+      {
+        text: '计算机网络',
+        collapsed: true,
+        items: [
+          { text: 'TCP 与 UDP', link: '/computer-networks/tcp-udp' },
+        ],
+      },
+      {
+        text: '数据库',
+        collapsed: true,
+        items: [
+          { text: '索引原理', link: '/databases/indexing' },
+        ],
+      },
+      {
+        text: '系统设计',
+        collapsed: true,
+        items: [
+          { text: '缓存策略', link: '/system-design/caching-strategies' },
+        ],
+      },
+      {
+        text: '编程语言',
+        collapsed: true,
+        items: [
+          { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
+        ],
+      },
+      {
+        text: 'Web 与框架',
+        collapsed: true,
+        items: [
+          { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
+        ],
+      },
+      {
+        text: 'DevOps',
+        collapsed: true,
+        items: [
+          { text: 'Docker 容器化', link: '/devops/docker' },
+        ],
+      },
+    ],
 
     outline: {
       level: [2, 3],
