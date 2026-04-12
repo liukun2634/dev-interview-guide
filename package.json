@@ -2,6 +2,7 @@
   "name": "dev-interview-guide",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

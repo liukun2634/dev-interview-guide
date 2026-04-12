@@ -1,0 +1,254 @@
+/* ============================================================
+   Dev Interview Guide — Green Theme
+   ============================================================ */
+
+/* ---------- CSS Custom Properties ---------- */
+:root {
+  --dig-green-primary: #2d8659;
+  --dig-green-secondary: #45b97c;
+  --dig-green-light: #e8f5e9;
+  --dig-green-bg: #f6f8f4;
+
+  --vp-c-brand-1: #2d8659;
+  --vp-c-brand-2: #35995f;
+  --vp-c-brand-3: #45b97c;
+  --vp-c-brand-soft: rgba(45, 134, 89, 0.14);
+
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #f6f8f4;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f0f5ed;
+
+  --vp-sidebar-bg-color: #ffffff;
+
+  --vp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+  --vp-font-family-mono: 'Fira Code', 'JetBrains Mono', monospace;
+}
+
+/* ---------- Navigation ---------- */
+.VPNav {
+  border-bottom: 1px solid var(--dig-green-secondary) !important;
+}
+
+/* ---------- Sidebar Active Item ---------- */
+.VPSidebarItem.is-active > .item .link {
+  border-left: 3px solid var(--dig-green-primary);
+  padding-left: 12px;
+  background: linear-gradient(90deg, var(--dig-green-light) 0%, transparent 100%);
+  border-radius: 0 4px 4px 0;
+}
+
+/* ---------- Code Blocks ---------- */
+.vp-doc div[class*='language-'] {
+  background-color: #1b2b1b !important;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.vp-doc div[class*='language-']::before {
+  content: '';
+  display: block;
+  height: 28px;
+  background: #142414;
+  border-bottom: 1px solid #2a3e2a;
+  background-image: radial-gradient(circle, #ff5f57 6px, transparent 6px),
+    radial-gradient(circle, #ffbd2e 6px, transparent 6px),
+    radial-gradient(circle, #28c841 6px, transparent 6px);
+  background-size: 14px 14px, 14px 14px, 14px 14px;
+  background-position: 12px 50%, 30px 50%, 48px 50%;
+  background-repeat: no-repeat;
+}
+
+/* ---------- Tip Custom Block ---------- */
+.vp-doc .custom-block.tip {
+  background: linear-gradient(135deg, #e8f5e9 0%, #f0faf0 100%);
+  border-left: 4px solid var(--dig-green-primary);
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Tag System
+   ============================================================ */
+.dig-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  margin: 2px 3px 2px 0;
+}
+
+.dig-tag--category {
+  background-color: var(--dig-green-light);
+  color: var(--dig-green-primary);
+  border: 1px solid var(--dig-green-secondary);
+}
+
+.dig-tag--easy {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #81c784;
+}
+
+.dig-tag--medium {
+  background-color: #fff8e1;
+  color: #f57f17;
+  border: 1px solid #ffca28;
+}
+
+.dig-tag--hard {
+  background-color: #fce4ec;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.dig-tag--hot {
+  background-color: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffb74d;
+}
+
+/* ============================================================
+   Interview Questions Block
+   ============================================================ */
+.dig-questions {
+  border: 1px solid var(--dig-green-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 24px 0;
+}
+
+.dig-questions__header {
+  background: linear-gradient(90deg, var(--dig-green-primary) 0%, var(--dig-green-secondary) 100%);
+  color: #ffffff;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.dig-questions__item {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dig-green-light);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--vp-c-text-1);
+  position: relative;
+  padding-left: 28px;
+}
+
+.dig-questions__item::before {
+  content: 'Q';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dig-green-primary);
+}
+
+.dig-questions__item:last-child {
+  border-bottom: none;
+}
+
+/* ============================================================
+   Key Points Callout
+   ============================================================ */
+.dig-keypoints {
+  background: var(--dig-green-light);
+  border: 1px solid var(--dig-green-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 24px 0;
+}
+
+.dig-keypoints__title {
+  background: var(--dig-green-primary);
+  color: #ffffff;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.dig-keypoints__body {
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.dig-keypoints__body ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.dig-keypoints__body li {
+  margin-bottom: 6px;
+}
+
+/* ============================================================
+   Homepage Domain Cards
+   ============================================================ */
+.dig-domains {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+  margin: 32px 0;
+}
+
+.dig-domain-card {
+  background: #ffffff;
+  border: 1px solid #d4e8d4;
+  border-radius: 10px;
+  padding: 20px;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+  color: inherit;
+}
+
+.dig-domain-card:hover {
+  box-shadow: 0 6px 20px rgba(45, 134, 89, 0.15);
+  transform: translateY(-2px);
+  border-color: var(--dig-green-secondary);
+  text-decoration: none;
+  color: inherit;
+}
+
+.dig-domain-card__icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.dig-domain-card__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dig-green-primary);
+  margin-bottom: 6px;
+}
+
+.dig-domain-card__desc {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.dig-domain-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dig-domain-card__tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--dig-green-light);
+  color: var(--dig-green-primary);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
