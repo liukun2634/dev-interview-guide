@@ -1,318 +1,755 @@
 /* ============================================================
-   Dev Interview Guide — Editorial Technical Journal Theme
+   Dev Interview Guide — Clarity Theme
+   A clean, modern developer reference experience
    ============================================================ */
 
-/* ---------- Google Fonts ---------- */
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Source+Code+Pro:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+/* ---------- Web Fonts ---------- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
 
-/* ---------- CSS Custom Properties ---------- */
+/* ============================================================
+   Design Tokens
+   ============================================================ */
 :root {
-  /* Warm ink palette */
-  --dig-ink: #1d1d1f;
-  --dig-ink-secondary: #48484a;
-  --dig-ink-muted: #8e8e93;
-  --dig-paper: #faf9f7;
-  --dig-paper-warm: #f5f3ef;
-  --dig-rule: #d6d3cd;
+  /* Brand — Teal */
+  --c-teal-50:  #f0fdfa;
+  --c-teal-100: #ccfbf1;
+  --c-teal-200: #99f6e4;
+  --c-teal-500: #14b8a6;
+  --c-teal-600: #0d9488;
+  --c-teal-700: #0f766e;
+  --c-teal-900: #134e4a;
 
-  /* Refined teal accent */
-  --dig-accent: #1a6b5a;
-  --dig-accent-light: #e6f2ef;
-  --dig-accent-medium: #2d9b7e;
-  --dig-accent-soft: rgba(26, 107, 90, 0.08);
-  --dig-accent-glow: rgba(26, 107, 90, 0.15);
+  /* Neutral — Slate */
+  --c-slate-50:  #f8fafc;
+  --c-slate-100: #f1f5f9;
+  --c-slate-200: #e2e8f0;
+  --c-slate-300: #cbd5e1;
+  --c-slate-400: #94a3b8;
+  --c-slate-500: #64748b;
+  --c-slate-600: #475569;
+  --c-slate-700: #334155;
+  --c-slate-800: #1e293b;
+  --c-slate-900: #0f172a;
+  --c-slate-950: #020617;
 
-  /* Warm secondary accents */
-  --dig-amber: #b8860b;
-  --dig-amber-light: #fdf6e3;
-  --dig-coral: #c0392b;
-  --dig-coral-light: #fdf0ed;
+  /* Semantic */
+  --dig-bg:            #ffffff;
+  --dig-bg-soft:       var(--c-slate-50);
+  --dig-bg-elevated:   #ffffff;
+  --dig-border:        var(--c-slate-200);
+  --dig-border-strong: var(--c-slate-300);
 
-  /* VitePress overrides */
-  --vp-c-brand-1: var(--dig-accent);
-  --vp-c-brand-2: var(--dig-accent-medium);
-  --vp-c-brand-3: #3ab795;
-  --vp-c-brand-soft: var(--dig-accent-soft);
+  --dig-text:          var(--c-slate-900);
+  --dig-text-2:        var(--c-slate-600);
+  --dig-text-3:        var(--c-slate-400);
 
-  --vp-c-bg: var(--dig-paper);
-  --vp-c-bg-alt: var(--dig-paper-warm);
-  --vp-c-bg-elv: #ffffff;
-  --vp-c-bg-soft: var(--dig-paper-warm);
+  --dig-accent:        var(--c-teal-600);
+  --dig-accent-hover:  var(--c-teal-700);
+  --dig-accent-light:  var(--c-teal-100);
+  --dig-accent-soft:   rgba(13, 148, 136, 0.08);
+  --dig-accent-glow:   rgba(13, 148, 136, 0.2);
 
-  --vp-c-text-1: var(--dig-ink);
-  --vp-c-text-2: var(--dig-ink-secondary);
-  --vp-c-text-3: var(--dig-ink-muted);
+  /* Code blocks */
+  --dig-code-bg:       var(--c-slate-50);
+  --dig-code-bar:      var(--c-slate-100);
+  --dig-code-copy-bg:  var(--c-slate-200);
 
-  --vp-c-divider: var(--dig-rule);
+  /* Radius */
+  --dig-radius-sm:     4px;
+  --dig-radius-md:     8px;
 
-  --vp-sidebar-bg-color: var(--dig-paper);
+  /* Status colors */
+  --dig-green:    #16a34a;
+  --dig-green-bg: #f0fdf4;
+  --dig-amber:    #d97706;
+  --dig-amber-bg: #fffbeb;
+  --dig-red:      #dc2626;
+  --dig-red-bg:   #fef2f2;
+  --dig-blue:     #2563eb;
+  --dig-blue-bg:  #eff6ff;
+  --dig-orange:   #ea580c;
+  --dig-orange-bg: #fff7ed;
 
   /* Typography */
-  --vp-font-family-base: 'Noto Sans SC', 'Source Serif 4', Georgia, 'Times New Roman', serif;
-  --vp-font-family-mono: 'Source Code Pro', 'Fira Code', 'JetBrains Mono', monospace;
+  --vp-font-family-base: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', ui-monospace, monospace;
 
-  /* Layout */
+  /* VitePress brand overrides */
+  --vp-c-brand-1:    var(--dig-accent);
+  --vp-c-brand-2:    var(--dig-accent-hover);
+  --vp-c-brand-3:    var(--c-teal-500);
+  --vp-c-brand-soft: var(--dig-accent-soft);
+
+  --vp-c-bg:         var(--dig-bg);
+  --vp-c-bg-alt:     var(--dig-bg-soft);
+  --vp-c-bg-elv:     var(--dig-bg-elevated);
+  --vp-c-bg-soft:    var(--dig-bg-soft);
+
+  --vp-c-text-1:     var(--dig-text);
+  --vp-c-text-2:     var(--dig-text-2);
+  --vp-c-text-3:     var(--dig-text-3);
+
+  --vp-c-divider:    var(--dig-border);
+  --vp-sidebar-bg-color: var(--dig-bg);
+
   --vp-layout-max-width: 1440px;
 }
 
-/* ---------- Base Typography ---------- */
-.vp-doc {
-  font-size: 16px;
-  line-height: 1.85;
-  color: var(--dig-ink);
-  letter-spacing: 0.01em;
+/* ---------- Dark Mode ---------- */
+.dark {
+  --dig-bg:            #0b0f1a;
+  --dig-bg-soft:       #111827;
+  --dig-bg-elevated:   #162030;
+  --dig-border:        #1e293b;
+  --dig-border-strong: #334155;
+
+  --dig-text:          #f1f5f9;
+  --dig-text-2:        #94a3b8;
+  --dig-text-3:        #64748b;
+
+  --dig-accent-light:  #134e4a;
+  --dig-accent-soft:   rgba(13, 148, 136, 0.12);
+
+  --dig-code-bg:       var(--c-slate-800);
+  --dig-code-bar:      var(--c-slate-900);
+  --dig-code-copy-bg:  var(--c-slate-800);
+
+  --dig-green-bg:   #052e16;
+  --dig-amber-bg:   #1c1400;
+  --dig-red-bg:     #1a0505;
+  --dig-blue-bg:    #0d1b3e;
+  --dig-orange-bg:  #1a0c00;
+
+  --vp-c-bg:      var(--dig-bg);
+  --vp-c-bg-alt:  var(--dig-bg-soft);
+  --vp-c-bg-elv:  var(--dig-bg-elevated);
+  --vp-c-bg-soft: var(--dig-bg-soft);
+  --vp-c-text-1:  var(--dig-text);
+  --vp-c-text-2:  var(--dig-text-2);
+  --vp-c-text-3:  var(--dig-text-3);
+  --vp-c-divider: var(--dig-border);
+  --vp-sidebar-bg-color: var(--dig-bg);
 }
 
-.vp-doc h1 {
-  font-family: 'Source Serif 4', 'Noto Sans SC', Georgia, serif;
+/* ============================================================
+   Global Base
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: var(--dig-accent-light);
+  color: var(--c-teal-900);
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+.VPNav {
+  border-bottom: 1px solid var(--dig-border) !important;
+  background: var(--dig-bg) !important;
+  backdrop-filter: blur(12px);
+}
+
+.VPNavBar {
+  background: var(--dig-bg) !important;
+}
+
+.VPNavBar .title {
+  font-size: 15px !important;
   font-weight: 700;
-  font-size: 2.2rem;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  color: var(--dig-text) !important;
+}
+
+.VPNavBar .VPNavBarTitle .logo {
+  margin-right: 8px;
+}
+
+/* Nav links */
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dig-text-2);
+  transition: color 0.15s;
+  padding: 0 10px;
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover,
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--dig-accent);
+}
+
+/* Search */
+.VPNavBarSearch .DocSearch-Button {
+  border-radius: var(--dig-radius-sm);
+  border: 1px solid var(--dig-border) !important;
+  background: var(--dig-bg-soft) !important;
+}
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.VPSidebar {
+  border-right: 1px solid var(--dig-border) !important;
+  background: var(--dig-bg) !important;
+  padding-top: 68px !important;
+}
+
+/* Section header */
+.VPSidebarItem.level-0 > .item > .text {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--dig-text);
+  padding: 16px 0 6px;
+}
+
+/* Leaf items */
+.VPSidebarItem .text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--dig-text-2);
+}
+
+.VPSidebarItem .VPSidebarItem .item {
+  padding: 3px 0;
+}
+
+/* Active state */
+.VPSidebarItem.is-active > .item .link {
+  color: var(--dig-accent) !important;
+  font-weight: 600;
+  position: relative;
+}
+
+.VPSidebarItem.is-active > .item .link::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  background: var(--dig-accent);
+  border-radius: 0 2px 2px 0;
+}
+
+/* Section collapse toggle */
+.VPSidebarItem.level-0 > .item .caret {
+  color: var(--dig-text-3);
+}
+
+/* ============================================================
+   Content Area — Reading Optimization
+   ============================================================ */
+.VPContent .vp-doc {
+  max-width: 860px;
+}
+
+.vp-doc {
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--dig-text);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   Headings
+   ============================================================ */
+.vp-doc h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   line-height: 1.25;
   margin-top: 2rem;
-  margin-bottom: 1rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 2px solid var(--dig-ink);
+  margin-bottom: 0.75rem;
+  color: var(--dig-text);
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--dig-border);
 }
 
 .vp-doc h2 {
-  font-family: 'Source Serif 4', 'Noto Sans SC', Georgia, serif;
+  font-size: 1.4rem;
   font-weight: 600;
-  font-size: 1.55rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   line-height: 1.35;
   margin-top: 2.5rem;
-  margin-bottom: 0.8rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--dig-rule);
+  margin-bottom: 0.75rem;
+  color: var(--dig-text);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--dig-border);
 }
 
 .vp-doc h3 {
-  font-family: 'Source Serif 4', 'Noto Sans SC', Georgia, serif;
+  font-size: 1.1rem;
   font-weight: 600;
-  font-size: 1.2rem;
+  letter-spacing: -0.01em;
   line-height: 1.4;
-  margin-top: 1.8rem;
-  margin-bottom: 0.6rem;
-  color: var(--dig-ink);
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--dig-text);
 }
 
+.vp-doc h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--dig-text-2);
+}
+
+/* Heading anchor links */
+.vp-doc h1 .header-anchor,
+.vp-doc h2 .header-anchor,
+.vp-doc h3 .header-anchor {
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--dig-text-3);
+  text-decoration: none !important;
+}
+
+.vp-doc h1:hover .header-anchor,
+.vp-doc h2:hover .header-anchor,
+.vp-doc h3:hover .header-anchor {
+  opacity: 1;
+}
+
+/* ============================================================
+   Paragraph & Inline Text
+   ============================================================ */
 .vp-doc p {
-  margin-bottom: 1.2em;
+  margin-bottom: 1.25em;
 }
 
 .vp-doc strong {
   font-weight: 600;
-  color: var(--dig-ink);
+  color: var(--dig-text);
 }
 
-/* ---------- Links ---------- */
+.vp-doc em {
+  color: var(--dig-text-2);
+}
+
+/* ============================================================
+   Links
+   ============================================================ */
 .vp-doc a {
   color: var(--dig-accent);
   text-decoration: underline;
   text-decoration-color: var(--dig-accent-glow);
   text-underline-offset: 3px;
-  transition: text-decoration-color 0.2s;
+  font-weight: 500;
+  transition: color 0.15s, text-decoration-color 0.15s;
 }
 
 .vp-doc a:hover {
-  text-decoration-color: var(--dig-accent);
+  color: var(--dig-accent-hover);
+  text-decoration-color: var(--dig-accent-hover);
 }
 
-/* ---------- Navigation ---------- */
-.VPNav {
-  border-bottom: 1px solid var(--dig-rule) !important;
-  background: var(--dig-paper) !important;
-}
-
-.VPNavBar .title {
-  font-family: 'Source Serif 4', Georgia, serif;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-/* ---------- Sidebar ---------- */
-.VPSidebar {
-  border-right: 1px solid var(--dig-rule) !important;
-  background: var(--dig-paper) !important;
-}
-
-.VPSidebarItem .text {
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-.VPSidebarItem.is-active > .item .link {
-  border-left: 2px solid var(--dig-accent);
-  padding-left: 12px;
-  background: var(--dig-accent-soft);
-  border-radius: 0 4px 4px 0;
-  font-weight: 500;
-}
-
-.VPSidebarItem.level-0 > .item > .text {
-  font-family: 'Source Serif 4', 'Noto Sans SC', Georgia, serif;
-  font-weight: 600;
-  font-size: 13.5px;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--dig-ink);
-}
-
-/* ---------- Code Blocks (Dark elegant) ---------- */
+/* ============================================================
+   Code Blocks
+   ============================================================ */
 .vp-doc div[class*='language-'] {
-  background-color: #1e2028 !important;
-  border: 1px solid #2e3040;
-  border-radius: 8px;
+  background-color: var(--dig-code-bg) !important;
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
   overflow: hidden;
   position: relative;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  margin: 1.5rem 0;
 }
 
 .vp-doc div[class*='language-'] > pre {
   background: transparent !important;
+  padding-top: 8px !important;
 }
 
 .vp-doc div[class*='language-'] code {
-  color: #c9d1d9;
-  font-family: 'Source Code Pro', 'Fira Code', monospace;
+  font-family: var(--vp-font-family-mono);
   font-size: 13.5px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
-/* Code block top bar */
+/* Top bar */
 .vp-doc div[class*='language-']::before {
   content: '';
   display: block;
-  height: 32px;
-  background: #16171e;
-  border-bottom: 1px solid #2e3040;
+  height: 36px;
+  background: var(--dig-code-bar);
+  border-bottom: 1px solid var(--dig-border);
   background-image:
-    radial-gradient(circle, #ff5f57 5px, transparent 5px),
-    radial-gradient(circle, #ffbd2e 5px, transparent 5px),
-    radial-gradient(circle, #28c841 5px, transparent 5px);
-  background-size: 12px 12px, 12px 12px, 12px 12px;
-  background-position: 14px 50%, 32px 50%, 50px 50%;
+    radial-gradient(circle, #ff5f57 5.5px, transparent 5.5px),
+    radial-gradient(circle, #ffbd2e 5.5px, transparent 5.5px),
+    radial-gradient(circle, #28c841 5.5px, transparent 5.5px);
+  background-size: 13px 13px, 13px 13px, 13px 13px;
+  background-position: 14px 50%, 34px 50%, 54px 50%;
   background-repeat: no-repeat;
+  flex-shrink: 0;
 }
 
 /* Language label */
 .vp-doc div[class*='language-'] > span.lang {
-  color: #636e7b;
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  color: var(--dig-text-3);
   font-size: 11px;
-  font-family: 'Source Code Pro', monospace;
+  font-family: var(--vp-font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  z-index: 2;
+}
+
+/* Copy button */
+.vp-doc div[class*='language-'] .copy {
+  top: 4px !important;
+  right: 52px !important;
+  background: var(--dig-code-copy-bg) !important;
+  border: 1px solid var(--dig-border) !important;
+  border-radius: var(--dig-radius-sm) !important;
+  opacity: 0 !important;
+  transition: opacity 0.2s !important;
+}
+
+.vp-doc div[class*='language-']:hover .copy {
+  opacity: 1 !important;
+}
+
+/* Dark mode code blocks */
+.dark .vp-doc div[class*='language-'] {
+  background-color: var(--dig-code-bg) !important;
+  border-color: var(--dig-border);
+}
+
+.dark .vp-doc div[class*='language-']::before {
+  background: var(--dig-code-bar);
+  border-bottom-color: var(--dig-border);
+}
+
+.dark .vp-doc div[class*='language-'] > span.lang {
+  color: var(--dig-text-3);
+}
+
+.dark .vp-doc div[class*='language-'] .copy {
+  background: var(--dig-code-copy-bg) !important;
+  border-color: var(--dig-border-strong) !important;
 }
 
 /* Inline code */
 .vp-doc :not(pre) > code {
-  background: var(--dig-paper-warm);
-  border: 1px solid var(--dig-rule);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 0.88em;
-  font-family: 'Source Code Pro', monospace;
+  background: var(--dig-bg-soft);
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-sm);
+  padding: 1px 7px;
+  font-size: 0.875em;
+  font-family: var(--vp-font-family-mono);
   color: var(--dig-accent);
   font-weight: 500;
+  white-space: nowrap;
 }
 
-/* ---------- Tables ---------- */
+.dark .vp-doc :not(pre) > code {
+  background: var(--dig-bg-elevated);
+  border-color: var(--dig-border-strong);
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
 .vp-doc table {
   border-collapse: collapse;
   width: 100%;
   margin: 1.5rem 0;
-  font-size: 14.5px;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
+  overflow: hidden;
 }
 
 .vp-doc table th {
-  background: var(--dig-paper-warm);
+  background: var(--dig-bg-soft);
   font-weight: 600;
   text-align: left;
-  padding: 10px 14px;
-  border-bottom: 2px solid var(--dig-ink);
-  font-size: 13px;
+  padding: 10px 16px;
+  border-bottom: 1.5px solid var(--dig-border);
+  font-size: 12.5px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dig-ink-secondary);
+  letter-spacing: 0.05em;
+  color: var(--dig-text-2);
+  white-space: nowrap;
 }
 
 .vp-doc table td {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--dig-rule);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dig-border);
+  vertical-align: top;
+  line-height: 1.6;
 }
 
 .vp-doc table tr:last-child td {
-  border-bottom: 1px solid var(--dig-ink);
+  border-bottom: none;
 }
 
-/* ---------- Blockquotes ---------- */
+.vp-doc table tr:hover td {
+  background: var(--dig-accent-soft);
+}
+
+/* ============================================================
+   Blockquotes
+   ============================================================ */
 .vp-doc blockquote {
   border-left: 3px solid var(--dig-accent);
-  padding: 0.5em 1.2em;
+  padding: 0.6em 1.2em;
   margin: 1.5em 0;
-  color: var(--dig-ink-secondary);
-  font-style: italic;
+  color: var(--dig-text-2);
   background: var(--dig-accent-soft);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--dig-radius-md) var(--dig-radius-md) 0;
 }
 
-/* ---------- Custom Blocks (Tip / Info / Warning) ---------- */
-.vp-doc .custom-block.tip {
-  background: var(--dig-accent-light);
-  border-left: 3px solid var(--dig-accent);
-  border-radius: 0 6px 6px 0;
+.vp-doc blockquote p {
+  margin: 0;
+  font-style: italic;
+}
+
+/* ============================================================
+   Custom Blocks (Tip / Info / Warning / Danger)
+   ============================================================ */
+.vp-doc .custom-block {
+  border-radius: var(--dig-radius-md);
   padding: 14px 18px;
+  margin: 1.5rem 0;
   font-size: 14.5px;
+  line-height: 1.7;
+  border: 1px solid transparent;
+}
+
+.vp-doc .custom-block .custom-block-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.vp-doc .custom-block.tip {
+  background: var(--dig-green-bg);
+  border-color: rgba(22, 163, 74, 0.2);
 }
 
 .vp-doc .custom-block.tip .custom-block-title {
-  font-family: 'Source Serif 4', 'Noto Sans SC', serif;
-  font-weight: 600;
-  color: var(--dig-accent);
+  color: var(--dig-green);
 }
 
 .vp-doc .custom-block.info {
-  background: #f0f4f8;
-  border-left: 3px solid #5a7ea6;
-  border-radius: 0 6px 6px 0;
-  padding: 14px 18px;
-  font-size: 14.5px;
+  background: var(--dig-blue-bg);
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.vp-doc .custom-block.info .custom-block-title {
+  color: var(--dig-blue);
 }
 
 .vp-doc .custom-block.warning {
-  background: var(--dig-amber-light);
-  border-left: 3px solid var(--dig-amber);
-  border-radius: 0 6px 6px 0;
+  background: var(--dig-amber-bg);
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+.vp-doc .custom-block.warning .custom-block-title {
+  color: var(--dig-amber);
 }
 
 .vp-doc .custom-block.danger {
-  background: var(--dig-coral-light);
-  border-left: 3px solid var(--dig-coral);
-  border-radius: 0 6px 6px 0;
+  background: var(--dig-red-bg);
+  border-color: rgba(220, 38, 38, 0.2);
 }
 
-/* ---------- Horizontal Rules ---------- */
+.vp-doc .custom-block.danger .custom-block-title {
+  color: var(--dig-red);
+}
+
+/* ============================================================
+   Horizontal Rules
+   ============================================================ */
 .vp-doc hr {
   border: none;
   height: 1px;
-  background: var(--dig-rule);
+  background: var(--dig-border);
   margin: 2.5rem 0;
 }
 
-/* ---------- Lists ---------- */
+/* ============================================================
+   Lists
+   ============================================================ */
 .vp-doc ul,
 .vp-doc ol {
-  padding-left: 1.5em;
-  margin-bottom: 1.2em;
+  padding-left: 1.6em;
+  margin-bottom: 1.25em;
 }
 
 .vp-doc li {
-  margin-bottom: 0.4em;
+  margin-bottom: 0.45em;
+  line-height: 1.75;
 }
 
 .vp-doc li::marker {
   color: var(--dig-accent);
+}
+
+.vp-doc ul li::marker {
+  font-size: 0.85em;
+}
+
+/* ============================================================
+   Outline / Table of Contents
+   ============================================================ */
+.VPDocAside .outline-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dig-text-3);
+  margin-bottom: 8px;
+}
+
+.VPDocOutlineItem .outline-link {
+  font-size: 13px;
+  color: var(--dig-text-3);
+  line-height: 1.5;
+  padding: 3px 0 3px 12px;
+  border-left: 1px solid var(--dig-border);
+  transition: color 0.15s, border-color 0.15s;
+  text-decoration: none;
+  display: block;
+}
+
+.VPDocOutlineItem .outline-link:hover,
+.VPDocOutlineItem .outline-link.active {
+  color: var(--dig-accent);
+  border-left-color: var(--dig-accent);
+}
+
+/* ============================================================
+   Doc Footer
+   ============================================================ */
+.VPDocFooter {
+  border-top: 1px solid var(--dig-border);
+  padding-top: 24px;
+  margin-top: 48px;
+}
+
+.VPDocFooter .pager-link {
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
+  padding: 16px 20px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+}
+
+.VPDocFooter .pager-link:hover {
+  border-color: var(--dig-accent);
+  box-shadow: 0 0 0 3px var(--dig-accent-soft);
+}
+
+.VPDocFooter .pager-label {
+  font-size: 12px;
+  color: var(--dig-text-3);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.VPDocFooter .pager-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--dig-text);
+}
+
+/* Last updated */
+.VPLastUpdated {
+  font-size: 13px;
+  color: var(--dig-text-3);
+}
+
+/* ============================================================
+   Hero (Home page)
+   ============================================================ */
+.VPHero {
+  padding-top: 64px !important;
+  padding-bottom: 48px !important;
+}
+
+.VPHero .name {
+  font-size: 3.25rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.15 !important;
+  background: linear-gradient(135deg, var(--dig-text) 0%, var(--dig-accent) 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+.VPHero .text {
+  font-size: 1.6rem !important;
+  font-weight: 500 !important;
+  color: var(--dig-text-2) !important;
+  margin-top: 8px !important;
+}
+
+.VPHero .tagline {
+  font-size: 15.5px !important;
+  line-height: 1.75 !important;
+  color: var(--dig-text-3) !important;
+  max-width: 480px;
+  margin-top: 12px !important;
+}
+
+.VPHero .VPButton.brand {
+  background: var(--dig-accent) !important;
+  border-color: var(--dig-accent) !important;
+  border-radius: var(--dig-radius-md) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 9px 22px !important;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s !important;
+  box-shadow: 0 2px 8px var(--dig-accent-glow) !important;
+}
+
+.VPHero .VPButton.brand:hover {
+  background: var(--dig-accent-hover) !important;
+  border-color: var(--dig-accent-hover) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 16px var(--dig-accent-glow) !important;
+}
+
+.VPHero .VPButton.alt {
+  background: transparent !important;
+  border: 1.5px solid var(--dig-border-strong) !important;
+  color: var(--dig-text-2) !important;
+  border-radius: var(--dig-radius-md) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  transition: border-color 0.2s, color 0.2s !important;
+}
+
+.VPHero .VPButton.alt:hover {
+  border-color: var(--dig-accent) !important;
+  color: var(--dig-accent) !important;
 }
 
 /* ============================================================
@@ -320,135 +757,143 @@
    ============================================================ */
 .dig-tag {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 3px;
+  padding: 2px 9px;
+  border-radius: var(--dig-radius-sm);
   font-size: 11.5px;
   font-weight: 500;
-  font-family: 'Source Code Pro', monospace;
+  font-family: var(--vp-font-family-mono);
   line-height: 1.7;
   margin: 2px 4px 2px 0;
   letter-spacing: 0.02em;
+  vertical-align: middle;
 }
 
 .dig-tag--category {
-  background-color: var(--dig-accent-light);
-  color: var(--dig-accent);
-  border: 1px solid rgba(26, 107, 90, 0.25);
+  background: var(--dig-accent-light);
+  color: var(--c-teal-700);
+  border: 1px solid rgba(13, 148, 136, 0.25);
 }
 
 .dig-tag--easy {
-  background-color: #e6f4ea;
-  color: #1e7e34;
-  border: 1px solid rgba(30, 126, 52, 0.25);
+  background: var(--dig-green-bg);
+  color: var(--dig-green);
+  border: 1px solid rgba(22, 163, 74, 0.25);
 }
 
 .dig-tag--medium {
-  background-color: var(--dig-amber-light);
-  color: #946206;
-  border: 1px solid rgba(184, 134, 11, 0.25);
+  background: var(--dig-amber-bg);
+  color: var(--dig-amber);
+  border: 1px solid rgba(217, 119, 6, 0.25);
 }
 
 .dig-tag--hard {
-  background-color: var(--dig-coral-light);
-  color: #a33025;
-  border: 1px solid rgba(192, 57, 43, 0.25);
+  background: var(--dig-red-bg);
+  color: var(--dig-red);
+  border: 1px solid rgba(220, 38, 38, 0.25);
 }
 
 .dig-tag--hot {
-  background-color: #fff0e6;
-  color: #c44a1a;
-  border: 1px solid rgba(196, 74, 26, 0.25);
+  background: var(--dig-orange-bg);
+  color: var(--dig-orange);
+  border: 1px solid rgba(234, 88, 12, 0.25);
 }
 
 /* ============================================================
    Interview Questions Block
    ============================================================ */
 .dig-questions {
-  border: 1px solid var(--dig-rule);
-  border-radius: 6px;
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
   overflow: hidden;
   margin: 2rem 0;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .dig-questions__header {
-  background: var(--dig-ink);
-  color: var(--dig-paper);
+  background: var(--dig-text);
+  color: var(--dig-bg-soft);
   padding: 10px 18px;
   font-weight: 600;
-  font-size: 13.5px;
-  font-family: 'Source Serif 4', 'Noto Sans SC', serif;
-  letter-spacing: 0.02em;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.dark .dig-questions__header {
+  background: var(--dig-bg-elevated);
+  border-bottom: 1px solid var(--dig-border);
 }
 
 .dig-questions__item {
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--dig-rule);
+  padding: 12px 18px 12px 42px;
+  border-bottom: 1px solid var(--dig-border);
   font-size: 14px;
-  line-height: 1.6;
-  color: var(--dig-ink);
+  line-height: 1.65;
+  color: var(--dig-text);
   position: relative;
-  padding-left: 36px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  transition: background 0.15s;
-}
-
-.dig-questions__item:hover {
-  background: var(--dig-paper-warm);
-}
-
-.dig-questions__item::before {
-  content: 'Q';
-  position: absolute;
-  left: 14px;
-  top: 12px;
-  font-size: 10px;
-  font-weight: 700;
-  font-family: 'Source Code Pro', monospace;
-  color: var(--dig-paper);
-  background: var(--dig-accent);
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
+  align-items: flex-start;
+  transition: background 0.12s;
 }
 
 .dig-questions__item:last-child {
   border-bottom: none;
 }
 
+.dig-questions__item:hover {
+  background: var(--dig-bg-soft);
+}
+
+.dig-questions__item::before {
+  content: 'Q';
+  position: absolute;
+  left: 14px;
+  top: 13px;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-family: var(--vp-font-family-mono);
+  color: #ffffff;
+  background: var(--dig-accent);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dig-radius-sm);
+  flex-shrink: 0;
+}
+
 /* ============================================================
    Key Points Callout
    ============================================================ */
 .dig-keypoints {
-  background: var(--dig-paper);
-  border: 1px solid var(--dig-rule);
-  border-radius: 6px;
+  background: var(--dig-bg);
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
   overflow: hidden;
   margin: 2rem 0;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .dig-keypoints__title {
   background: var(--dig-accent);
-  color: var(--dig-paper);
+  color: #ffffff;
   padding: 10px 18px;
-  font-weight: 600;
-  font-size: 13.5px;
-  font-family: 'Source Serif 4', 'Noto Sans SC', serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .dig-keypoints__body {
   padding: 16px 18px;
   font-size: 14.5px;
   line-height: 1.85;
+  background: var(--dig-accent-soft);
 }
 
 .dig-keypoints__body ul {
@@ -461,94 +906,181 @@
 }
 
 /* ============================================================
-   Homepage Domain Cards
+   Homepage — Root Wrapper
    ============================================================ */
+.dig-home {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 8px 24px 64px;
+}
+
+/* ============================================================
+   Homepage — Stats Row
+   ============================================================ */
+.dig-stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--dig-bg-soft);
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
+  overflow: hidden;
+  margin-bottom: 48px;
+}
+
+.dig-stat {
+  flex: 1;
+  text-align: center;
+  padding: 20px 16px;
+  position: relative;
+}
+
+.dig-stat + .dig-stat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: var(--dig-border);
+}
+
+.dig-stat__value {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--dig-text);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dig-stat__value span {
+  color: var(--dig-accent);
+}
+
+.dig-stat__label {
+  font-size: 12px;
+  color: var(--dig-text-3);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   Homepage — Domain Grid
+   ============================================================ */
+.dig-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dig-text-3);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dig-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--dig-border);
+}
+
 .dig-domains {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 18px;
-  margin: 40px 0;
+  gap: 14px;
+  margin-bottom: 48px;
 }
 
-@media (max-width: 768px) {
+@media (min-width: 768px) {
   .dig-domains {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 1100px) {
   .dig-domains {
     grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
   }
 }
 
 .dig-domain-card {
-  background: #ffffff;
-  border: 1px solid var(--dig-rule);
-  border-radius: 6px;
-  padding: 22px 20px 18px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
+  background: var(--dig-bg);
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
+  padding: 20px 18px 16px;
   text-decoration: none !important;
   display: flex;
   flex-direction: column;
+  gap: 10px;
   color: inherit !important;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   position: relative;
   overflow: hidden;
 }
 
-.dig-domain-card::after {
+.dig-domain-card::before {
   content: '';
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 3px;
   background: var(--dig-accent);
   transform: scaleX(0);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   transform-origin: left;
+  transition: transform 0.25s ease;
 }
 
 .dig-domain-card:hover {
-  border-color: var(--dig-accent);
-  box-shadow: 0 4px 16px rgba(26, 107, 90, 0.1);
+  border-color: var(--dig-border-strong);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.07);
   transform: translateY(-2px);
   text-decoration: none !important;
-  color: inherit !important;
 }
 
-.dig-domain-card:hover::after {
+.dig-domain-card:hover::before {
   transform: scaleX(1);
 }
 
-.dig-domain-card__icon {
-  font-size: 28px;
-  margin-bottom: 12px;
-  line-height: 1;
-  width: 44px;
-  height: 44px;
+/* Card header row */
+.dig-domain-card__head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 8px;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dig-domain-card__badge {
+  font-size: 10px;
+  font-family: var(--vp-font-family-mono);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: var(--dig-radius-sm);
+  background: var(--dig-bg-soft);
+  border: 1px solid var(--dig-border);
+  color: var(--dig-text-3);
+  white-space: nowrap;
 }
 
 .dig-domain-card__title {
-  font-family: 'Source Serif 4', 'Noto Sans SC', Georgia, serif;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--dig-ink);
-  margin-bottom: 6px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--dig-text);
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .dig-domain-card__desc {
   font-size: 12.5px;
-  color: var(--dig-ink-muted);
+  color: var(--dig-text-3);
   line-height: 1.6;
-  margin-bottom: 14px;
   flex-grow: 1;
 }
 
@@ -560,106 +1092,109 @@
 
 .dig-domain-card__tag {
   display: inline-block;
-  padding: 2px 8px;
-  background: var(--dig-paper-warm);
-  color: var(--dig-ink-secondary);
-  border: 1px solid var(--dig-rule);
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: var(--dig-radius-sm);
   font-size: 10.5px;
-  font-family: 'Source Code Pro', monospace;
+  font-family: var(--vp-font-family-mono);
   font-weight: 500;
+  background: var(--dig-bg-soft);
+  border: 1px solid var(--dig-border);
+  color: var(--dig-text-3);
   letter-spacing: 0.02em;
 }
 
-/* ============================================================
-   Hero Section Overrides
-   ============================================================ */
-.VPHero .name {
-  font-family: 'Source Serif 4', Georgia, serif !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.03em;
+.dig-domain-card__arrow {
+  font-size: 16px;
+  color: var(--dig-text-3);
+  transition: transform 0.2s, color 0.2s;
+  line-height: 1;
+  align-self: flex-end;
 }
 
-.VPHero .text {
-  font-family: 'Noto Sans SC', sans-serif !important;
-  font-weight: 300 !important;
-  color: var(--dig-ink-secondary) !important;
+.dig-domain-card:hover .dig-domain-card__arrow {
+  transform: translate(3px, -2px);
+  color: var(--dig-accent);
 }
 
-.VPHero .tagline {
-  font-size: 16px !important;
-  line-height: 1.7 !important;
-  color: var(--dig-ink-muted) !important;
-  max-width: 520px;
+/* Card entrance animation */
+@keyframes cardFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.VPHero .VPButton.brand {
-  background-color: var(--dig-ink) !important;
-  border-color: var(--dig-ink) !important;
-  color: var(--dig-paper) !important;
-  border-radius: 4px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  transition: all 0.2s;
-}
-
-.VPHero .VPButton.brand:hover {
-  background-color: var(--dig-accent) !important;
-  border-color: var(--dig-accent) !important;
-}
-
-.VPHero .VPButton.alt {
-  border: 1px solid var(--dig-rule) !important;
-  color: var(--dig-ink-secondary) !important;
-  border-radius: 4px;
-  font-weight: 500;
-  background: transparent !important;
-  transition: all 0.2s;
-}
-
-.VPHero .VPButton.alt:hover {
-  border-color: var(--dig-ink) !important;
-  color: var(--dig-ink) !important;
-}
-
-/* Remove hero gradient background */
-.VPHero .VPImage {
-  display: none;
+.dig-domain-card {
+  animation: cardFadeIn 0.4s ease-out both;
 }
 
 /* ============================================================
-   Content area refinements
+   Homepage — Feature Strip
    ============================================================ */
-.VPDoc .content-container {
-  max-width: 780px;
+.dig-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
 }
 
-/* Outline (right TOC) */
-.VPDocAsideOutline {
-  font-size: 12.5px;
+@media (max-width: 680px) {
+  .dig-features {
+    grid-template-columns: 1fr;
+  }
 }
 
-.VPDocAsideOutline .outline-link {
-  transition: color 0.15s;
+.dig-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--dig-border);
+  border-radius: var(--dig-radius-md);
+  background: var(--dig-bg-soft);
 }
 
-/* Footer nav */
-.VPDocFooter .prev-next .pager-link .title {
-  font-family: 'Source Serif 4', 'Noto Sans SC', serif;
+.dig-feature__icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.dig-feature__title {
+  font-size: 14px;
   font-weight: 600;
+  color: var(--dig-text);
+  letter-spacing: -0.01em;
 }
 
-/* Search */
-.VPNavBarSearch .DocSearch-Button {
-  border-radius: 4px;
-  border: 1px solid var(--dig-rule);
+.dig-feature__desc {
+  font-size: 13px;
+  color: var(--dig-text-3);
+  line-height: 1.6;
+}
+
+/* =============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 640px) {
+  .vp-doc h1 { font-size: 1.6rem; }
+  .vp-doc h2 { font-size: 1.2rem; }
+  
+  .dig-stats {
+    flex-wrap: wrap;
+  }
+  
+  .dig-stat {
+    flex: 0 0 50%;
+  }
+  
+  .dig-stat:nth-child(2)::before { display: none; }
+  .dig-stat:nth-child(4)::before { display: none; }
 }
 
 /* ============================================================
-   Scrollbar (WebKit)
+   Scrollbar (Webkit)
    ============================================================ */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -667,49 +1202,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--dig-rule);
+  background: var(--dig-border-strong);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--dig-ink-muted);
-}
-
-/* ============================================================
-   Page load animation
-   ============================================================ */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.vp-doc > * {
-  animation: fadeInUp 0.4s ease-out both;
-}
-
-.vp-doc > *:nth-child(1) { animation-delay: 0.05s; }
-.vp-doc > *:nth-child(2) { animation-delay: 0.1s; }
-.vp-doc > *:nth-child(3) { animation-delay: 0.15s; }
-.vp-doc > *:nth-child(4) { animation-delay: 0.2s; }
-.vp-doc > *:nth-child(5) { animation-delay: 0.25s; }
-
-/* ============================================================
-   Selection highlight
-   ============================================================ */
-::selection {
-  background: var(--dig-accent-glow);
-  color: var(--dig-ink);
-}
-
-/* ============================================================
-   KaTeX / Math
-   ============================================================ */
-.vp-doc .katex {
-  font-size: 1em;
+  background: var(--dig-text-3);
 }

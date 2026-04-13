@@ -1,22 +1,44 @@
 import { defineConfig } from 'vitepress'
+import mathjax3 from 'markdown-it-mathjax3'
 
 export default defineConfig({
   title: 'Dev Interview Guide',
-  description: '系统化的程序员面试知识体系 - 涵盖算法、系统设计、数据库等 8 大领域',
+  description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
   ignoreDeadLinks: true,
 
+  head: [
+    ['meta', { name: 'keywords', content: '程序员面试,算法,数据结构,系统设计,数据库,操作系统,计算机网络,Java,Docker,AI,LLM,面试题' }],
+    ['meta', { name: 'author', content: 'Dev Interview Guide' }],
+    ['meta', { name: 'theme-color', content: '#0d9488' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'Dev Interview Guide' }],
+    ['meta', { property: 'og:title', content: 'Dev Interview Guide — 程序员面试知识体系' }],
+    ['meta', { property: 'og:description', content: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域，含代码示例与高频真题' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'Dev Interview Guide — 程序员面试知识体系' }],
+    ['meta', { name: 'twitter:description', content: '系统化的程序员面试知识体系，涵盖 8 大领域' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/dev-interview-guide/favicon.svg' }],
+  ],
+
+  markdown: {
+    config: (md) => {
+      md.use(mathjax3)
+    },
+  },
+
   themeConfig: {
     nav: [
       { text: '知识库', link: '/data-structures-and-algorithms/' },
-      { text: 'GitHub', link: 'https://github.com/liuku/dev-interview-guide' },
+      { text: 'GitHub', link: 'https://github.com/liukun2634/dev-interview-guide' },
     ],
 
     sidebar: [
       {
         text: '数据结构与算法',
-        collapsed: true,
+        link: '/data-structures-and-algorithms/',
+        collapsed: false,
         items: [
           { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
           { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
@@ -24,6 +46,7 @@ export default defineConfig({
       },
       {
         text: '操作系统',
+        link: '/operating-systems/',
         collapsed: true,
         items: [
           { text: '进程与线程', link: '/operating-systems/process-and-thread' },
@@ -31,6 +54,7 @@ export default defineConfig({
       },
       {
         text: '计算机网络',
+        link: '/computer-networks/',
         collapsed: true,
         items: [
           { text: 'TCP 与 UDP', link: '/computer-networks/tcp-udp' },
@@ -38,20 +62,28 @@ export default defineConfig({
       },
       {
         text: '数据库',
+        link: '/databases/',
         collapsed: true,
         items: [
           { text: '索引原理', link: '/databases/indexing' },
         ],
       },
       {
-        text: '系统设计',
+        text: '系统设计与工程实践',
+        link: '/system-design/',
         collapsed: true,
         items: [
           { text: '缓存策略', link: '/system-design/caching-strategies' },
+          { text: '限流与熔断', link: '/system-design/rate-limiting' },
+          { text: '分布式 ID 生成', link: '/system-design/distributed-id' },
+          { text: '消息队列', link: '/system-design/message-queue' },
+          { text: '微服务架构', link: '/system-design/microservices' },
+          { text: 'Docker 容器化', link: '/system-design/docker' },
         ],
       },
       {
         text: '编程语言',
+        link: '/programming-languages/',
         collapsed: true,
         items: [
           { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
@@ -59,16 +91,21 @@ export default defineConfig({
       },
       {
         text: 'Web 与框架',
+        link: '/web-and-frameworks/',
         collapsed: true,
         items: [
           { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
         ],
       },
       {
-        text: 'DevOps',
+        text: 'AI 技术',
+        link: '/ai-technology/',
         collapsed: true,
         items: [
-          { text: 'Docker 容器化', link: '/devops/docker' },
+          { text: 'LLM 大语言模型基础', link: '/ai-technology/llm-fundamentals' },
+          { text: 'RAG 检索增强生成', link: '/ai-technology/rag' },
+          { text: 'Prompt Engineering', link: '/ai-technology/prompt-engineering' },
+          { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
         ],
       },
     ],
@@ -99,6 +136,10 @@ export default defineConfig({
       },
     },
 
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/liukun2634/dev-interview-guide' },
+    ],
+
     lastUpdated: {
       text: '最后更新',
     },
@@ -106,6 +147,11 @@ export default defineConfig({
     docFooter: {
       prev: '上一篇',
       next: '下一篇',
+    },
+
+    editLink: {
+      pattern: 'https://github.com/liukun2634/dev-interview-guide/edit/main/docs/:path',
+      text: '在 GitHub 上编辑此页',
     },
   },
 })
