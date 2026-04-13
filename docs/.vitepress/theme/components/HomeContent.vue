@@ -25,7 +25,7 @@
       </div>
 
       <!-- Topic list -->
-      <h2 class="ghd-section-title">全部文档</h2>
+      <h2 class="ghd-section-title">全部分类</h2>
       <div class="ghd-topics">
         <a
           v-for="topic in topics"
@@ -114,10 +114,9 @@ const topics = [
 }
 
 .ghd-hero {
-  background: linear-gradient(135deg, #ddf4ff 0%, #e8f0fe 50%, #f0eef8 100%);
+  background: var(--vp-c-bg);
   padding: 56px 24px 48px;
   text-align: center;
-  border-bottom: 1px solid var(--gh-border, #d1d9e0);
 }
 
 .ghd-hero__inner {
@@ -157,16 +156,16 @@ const topics = [
 .ghd-featured__card {
   display: block;
   background: var(--gh-bg-card, #fff);
-  border: 1px solid var(--gh-accent, #0969da);
+  border: 1px solid var(--gh-border, #d8d8d4);
   border-radius: var(--gh-radius, 6px);
   padding: 24px;
   text-decoration: none !important;
   color: inherit !important;
-  transition: box-shadow 0.15s;
+  transition: background 0.15s;
 }
 
 .ghd-featured__card:hover {
-  box-shadow: var(--gh-shadow-md, 0 3px 6px rgba(140, 149, 159, 0.15));
+  background: var(--gh-bg-subtle, #f4f2ef);
 }
 
 .ghd-featured__head {
@@ -212,7 +211,6 @@ const topics = [
   color: var(--gh-fg-default, #1f2328);
   margin: 0 0 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--gh-border, #d8d8d4);
 }
 
 /* ---- Topics ---- */
@@ -222,6 +220,7 @@ const topics = [
   border: 1px solid var(--gh-border, #d8d8d4);
   border-radius: var(--gh-radius, 6px);
   overflow: hidden;
+  background: var(--gh-bg-card, #fff);
 }
 
 .ghd-topic {
@@ -241,6 +240,15 @@ const topics = [
 
 .ghd-topic:hover {
   background: var(--gh-bg-subtle, #f4f2ef);
+  border-bottom-color: transparent;
+}
+
+.ghd-topic:hover + .ghd-topic {
+  border-top-color: transparent;
+}
+
+.ghd-topic:hover .ghd-topic__title {
+  color: var(--gh-accent-hover, #0550ae);
 }
 
 .ghd-topic__icon-wrap {
@@ -298,8 +306,7 @@ const topics = [
 
 /* ---- Dark mode ---- */
 :global(.dark) .ghd-hero {
-  background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #1a1533 100%);
-  border-bottom-color: var(--gh-border, #3d444d);
+  background: var(--vp-c-bg);
 }
 
 :global(.dark) .ghd-hero__title {

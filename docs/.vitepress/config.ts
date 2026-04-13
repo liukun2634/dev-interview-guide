@@ -7,6 +7,7 @@ export default defineConfig({
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
   ignoreDeadLinks: true,
+  srcExclude: ['**/superpowers/**', '**/devops/**'],
 
   head: [
     ['meta', { name: 'keywords', content: '程序员面试,算法,数据结构,系统设计,数据库,操作系统,计算机网络,Java,Docker,AI,LLM,面试题' }],
@@ -30,91 +31,104 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: '知识库', link: '/data-structures-and-algorithms/' },
+      {
+        text: '知识库',
+        items: [
+          { text: '数据结构与算法', link: '/data-structures-and-algorithms/' },
+          { text: '操作系统', link: '/operating-systems/' },
+          { text: '计算机网络', link: '/computer-networks/' },
+          { text: '数据库', link: '/databases/' },
+          { text: '系统设计', link: '/system-design/' },
+          { text: '工程实践', link: '/engineering-practice/' },
+          { text: '编程语言', link: '/programming-languages/' },
+          { text: 'Web 与框架', link: '/web-and-frameworks/' },
+          { text: 'AI 技术', link: '/ai-technology/' },
+        ],
+      },
     ],
 
-    sidebar: [
-      {
-        text: '数据结构与算法',
-        link: '/data-structures-and-algorithms/',
-        collapsed: false,
-        items: [
-          { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
-          { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
-        ],
-      },
-      {
-        text: '操作系统',
-        link: '/operating-systems/',
-        collapsed: true,
-        items: [
-          { text: '进程与线程', link: '/operating-systems/process-and-thread' },
-        ],
-      },
-      {
-        text: '计算机网络',
-        link: '/computer-networks/',
-        collapsed: true,
-        items: [
-          { text: 'TCP 与 UDP', link: '/computer-networks/tcp-udp' },
-        ],
-      },
-      {
-        text: '数据库',
-        link: '/databases/',
-        collapsed: true,
-        items: [
-          { text: '索引原理', link: '/databases/indexing' },
-        ],
-      },
-      {
-        text: '系统设计',
-        link: '/system-design/',
-        collapsed: true,
-        items: [
-          { text: '缓存策略', link: '/system-design/caching-strategies' },
-          { text: '限流与熔断', link: '/system-design/rate-limiting' },
-          { text: '消息队列', link: '/system-design/message-queue' },
-          { text: '微服务架构', link: '/system-design/microservices' },
-        ],
-      },
-      {
-        text: '工程实践',
-        link: '/engineering-practice/',
-        collapsed: true,
-        items: [
-          { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
-          { text: 'Docker 容器化', link: '/engineering-practice/docker' },
-        ],
-      },
-      {
-        text: '编程语言',
-        link: '/programming-languages/',
-        collapsed: true,
-        items: [
-          { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
-        ],
-      },
-      {
-        text: 'Web 与框架',
-        link: '/web-and-frameworks/',
-        collapsed: true,
-        items: [
-          { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
-        ],
-      },
-      {
-        text: 'AI 技术',
-        link: '/ai-technology/',
-        collapsed: true,
-        items: [
-          { text: 'LLM 大语言模型基础', link: '/ai-technology/llm-fundamentals' },
-          { text: 'RAG 检索增强生成', link: '/ai-technology/rag' },
-          { text: 'Prompt Engineering', link: '/ai-technology/prompt-engineering' },
-          { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
-        ],
-      },
-    ],
+    sidebar: {
+      '/data-structures-and-algorithms/': [
+        {
+          text: '数据结构与算法',
+          items: [
+            { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
+            { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
+          ],
+        },
+      ],
+      '/operating-systems/': [
+        {
+          text: '操作系统',
+          items: [
+            { text: '进程与线程', link: '/operating-systems/process-and-thread' },
+          ],
+        },
+      ],
+      '/computer-networks/': [
+        {
+          text: '计算机网络',
+          items: [
+            { text: 'TCP 与 UDP', link: '/computer-networks/tcp-udp' },
+          ],
+        },
+      ],
+      '/databases/': [
+        {
+          text: '数据库',
+          items: [
+            { text: '索引原理', link: '/databases/indexing' },
+          ],
+        },
+      ],
+      '/system-design/': [
+        {
+          text: '系统设计',
+          items: [
+            { text: '缓存策略', link: '/system-design/caching-strategies' },
+            { text: '限流与熔断', link: '/system-design/rate-limiting' },
+            { text: '消息队列', link: '/system-design/message-queue' },
+            { text: '微服务架构', link: '/system-design/microservices' },
+          ],
+        },
+      ],
+      '/engineering-practice/': [
+        {
+          text: '工程实践',
+          items: [
+            { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
+            { text: 'Docker 容器化', link: '/engineering-practice/docker' },
+          ],
+        },
+      ],
+      '/programming-languages/': [
+        {
+          text: '编程语言',
+          items: [
+            { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
+          ],
+        },
+      ],
+      '/web-and-frameworks/': [
+        {
+          text: 'Web 与框架',
+          items: [
+            { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
+          ],
+        },
+      ],
+      '/ai-technology/': [
+        {
+          text: 'AI 技术',
+          items: [
+            { text: 'LLM 大语言模型基础', link: '/ai-technology/llm-fundamentals' },
+            { text: 'RAG 检索增强生成', link: '/ai-technology/rag' },
+            { text: 'Prompt Engineering', link: '/ai-technology/prompt-engineering' },
+            { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
+          ],
+        },
+      ],
+    },
 
     outline: {
       level: [2, 3],
@@ -143,7 +157,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/liukun2634/dev-interview-guide' },
+      { icon: 'github', link: 'https://github.com/liukun2634/dev-interview-guide', ariaLabel: 'Powered by Kun Liu' },
     ],
 
     lastUpdated: {
