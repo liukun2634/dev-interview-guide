@@ -1,0 +1,1238 @@
+/* ============================================================
+   Dev Interview Guide — Warm Manuscript Theme
+   GitHub Docs structure · Parchment warmth · Reading-first
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;0,8..60,800;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
+
+/* ============================================================
+   Design Tokens — Light (Warm Parchment)
+   ============================================================ */
+:root {
+  /* Brand — Deep Teal */
+  --w-teal-50:  #f0fdfa;
+  --w-teal-100: #ccfbf1;
+  --w-teal-200: #99f6e4;
+  --w-teal-300: #5eead4;
+  --w-teal-400: #2dd4bf;
+  --w-teal-500: #14b8a6;
+  --w-teal-600: #0d9488;
+  --w-teal-700: #0f766e;
+  --w-teal-800: #115e59;
+  --w-teal-900: #134e4a;
+
+  /* Warm Neutrals — Parchment palette */
+  --w-warm-50:  #faf8f5;
+  --w-warm-100: #f5f1eb;
+  --w-warm-150: #eee9e0;
+  --w-warm-200: #e4ded3;
+  --w-warm-300: #cdc5b7;
+  --w-warm-400: #a39a8b;
+  --w-warm-500: #7d756a;
+  --w-warm-600: #5c564d;
+  --w-warm-700: #433f39;
+  --w-warm-800: #2e2b27;
+  --w-warm-900: #1d1b18;
+
+  /* Surfaces */
+  --w-bg:          #faf8f5;
+  --w-bg-soft:     #f5f1eb;
+  --w-bg-card:     #ffffff;
+  --w-bg-code:     #f7f4ef;
+  --w-border:      #e4ded3;
+  --w-border-hover:#cdc5b7;
+
+  /* Text */
+  --w-text:   #2e2b27;
+  --w-text-2: #5c564d;
+  --w-text-3: #a39a8b;
+
+  /* Accent */
+  --w-accent:       #0d7c6b;
+  --w-accent-hover: #0a6b5c;
+  --w-accent-light: #eef9f6;
+  --w-accent-soft:  rgba(13, 124, 107, 0.05);
+  --w-accent-muted: rgba(13, 124, 107, 0.12);
+
+  /* Radius */
+  --w-radius: 8px;
+  --w-radius-lg: 12px;
+
+  /* Status */
+  --w-green:     #16a34a;
+  --w-green-bg:  #f0fdf4;
+  --w-amber:     #b45309;
+  --w-amber-bg:  #fffbeb;
+  --w-red:       #dc2626;
+  --w-red-bg:    #fef2f2;
+  --w-info:      #0d7c6b;
+  --w-info-bg:   #eef9f6;
+  --w-orange:    #ea580c;
+  --w-orange-bg: #fff7ed;
+
+  /* Typography */
+  --w-font-display: 'Source Serif 4', 'Noto Sans SC', Georgia, 'Times New Roman', serif;
+  --w-font-body: 'IBM Plex Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --w-font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* VitePress overrides */
+  --vp-font-family-base: var(--w-font-body);
+  --vp-font-family-mono: var(--w-font-mono);
+
+  --vp-c-brand-1:    var(--w-accent);
+  --vp-c-brand-2:    var(--w-accent-hover);
+  --vp-c-brand-3:    var(--w-teal-500);
+  --vp-c-brand-soft: var(--w-accent-soft);
+
+  --vp-c-bg:      var(--w-bg);
+  --vp-c-bg-alt:  var(--w-bg-soft);
+  --vp-c-bg-elv:  var(--w-bg-card);
+  --vp-c-bg-soft: var(--w-bg-soft);
+
+  --vp-c-text-1: var(--w-text);
+  --vp-c-text-2: var(--w-text-2);
+  --vp-c-text-3: var(--w-text-3);
+
+  --vp-c-divider:        var(--w-border);
+  --vp-sidebar-bg-color: var(--w-bg);
+  --vp-layout-max-width: 1440px;
+}
+
+/* ============================================================
+   Design Tokens — Dark (Warm Night)
+   ============================================================ */
+.dark {
+  --w-bg:          #1a1816;
+  --w-bg-soft:     #222019;
+  --w-bg-card:     #2a2720;
+  --w-bg-code:     #252219;
+  --w-border:      #3a362e;
+  --w-border-hover:#524c42;
+
+  --w-text:   #e8e2d8;
+  --w-text-2: #a39a8b;
+  --w-text-3: #6d655b;
+
+  --w-accent:       #2dd4bf;
+  --w-accent-hover: #5eead4;
+  --w-accent-light: #1a2925;
+  --w-accent-soft:  rgba(45, 212, 191, 0.06);
+  --w-accent-muted: rgba(45, 212, 191, 0.12);
+
+  --w-green:      #4ade80;
+  --w-green-bg:   rgba(74, 222, 128, 0.08);
+  --w-amber:      #fbbf24;
+  --w-amber-bg:   rgba(251, 191, 36, 0.08);
+  --w-red:        #f87171;
+  --w-red-bg:     rgba(248, 113, 113, 0.08);
+  --w-info:       #2dd4bf;
+  --w-info-bg:    rgba(45, 212, 191, 0.08);
+  --w-orange:     #fb923c;
+  --w-orange-bg:  rgba(251, 146, 60, 0.08);
+
+  --vp-c-bg:      var(--w-bg);
+  --vp-c-bg-alt:  var(--w-bg-soft);
+  --vp-c-bg-elv:  var(--w-bg-card);
+  --vp-c-bg-soft: var(--w-bg-soft);
+  --vp-c-text-1:  var(--w-text);
+  --vp-c-text-2:  var(--w-text-2);
+  --vp-c-text-3:  var(--w-text-3);
+  --vp-c-divider: var(--w-border);
+  --vp-sidebar-bg-color: var(--w-bg);
+}
+
+/* ============================================================
+   Global
+   ============================================================ */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: var(--w-accent-light);
+  color: var(--w-accent-hover);
+}
+
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Navigation — Clean top bar (GitHub Docs style)
+   ============================================================ */
+.VPNav {
+  border-bottom: 1px solid var(--w-border) !important;
+  background: rgba(250, 248, 245, 0.92) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+.dark .VPNav {
+  background: rgba(26, 24, 22, 0.92) !important;
+}
+
+.VPNavBar {
+  background: transparent !important;
+}
+
+.VPNavBar .title {
+  font-family: var(--w-font-display) !important;
+  font-size: 16px !important;
+  font-weight: 700;
+  color: var(--w-text) !important;
+  letter-spacing: -0.01em;
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--w-text-2);
+  transition: color 0.2s;
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover,
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--w-accent);
+}
+
+/* Search button */
+.VPNavBarSearch .DocSearch-Button,
+.VPNavBarSearchButton {
+  border-radius: var(--w-radius) !important;
+  border: 1px solid var(--w-border) !important;
+  background: var(--w-bg-soft) !important;
+}
+
+/* ============================================================
+   Sidebar — Clean, warm
+   ============================================================ */
+.VPSidebar {
+  border-right: 1px solid var(--w-border) !important;
+  background: var(--w-bg) !important;
+  padding-top: 68px !important;
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--w-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--w-text);
+  padding: 20px 0 6px;
+  letter-spacing: 0;
+}
+
+.VPSidebarItem .text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--w-text-2);
+}
+
+.VPSidebarItem .VPSidebarItem .item {
+  padding: 3px 0;
+}
+
+/* Active state — teal left accent */
+.VPSidebarItem.is-active > .item .link {
+  color: var(--w-accent) !important;
+  font-weight: 600;
+  position: relative;
+}
+
+.VPSidebarItem.is-active > .item .link::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  background: var(--w-accent);
+  border-radius: 0 3px 3px 0;
+}
+
+.VPSidebarItem.level-0 > .item .caret {
+  color: var(--w-text-3);
+}
+
+/* ============================================================
+   Content — Reading optimized (wider, larger, warmer)
+   ============================================================ */
+.VPContent .vp-doc {
+  max-width: 820px;
+}
+
+.vp-doc {
+  font-size: 16.5px;
+  line-height: 2;
+  color: var(--w-text);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+
+/* ============================================================
+   Headings — Serif display font
+   ============================================================ */
+.vp-doc h1 {
+  font-family: var(--w-font-display);
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin-top: 2rem;
+  margin-bottom: 1.25rem;
+  color: var(--w-text);
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--w-border);
+}
+
+.vp-doc h2 {
+  font-family: var(--w-font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  margin-top: 3rem;
+  margin-bottom: 0.85rem;
+  color: var(--w-text);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--w-border);
+}
+
+.vp-doc h3 {
+  font-family: var(--w-font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 2.25rem;
+  margin-bottom: 0.6rem;
+  color: var(--w-text);
+}
+
+.vp-doc h4 {
+  font-family: var(--w-font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  color: var(--w-text-2);
+}
+
+.vp-doc h1 .header-anchor,
+.vp-doc h2 .header-anchor,
+.vp-doc h3 .header-anchor {
+  opacity: 0;
+  transition: opacity 0.2s;
+  color: var(--w-text-3);
+  text-decoration: none !important;
+}
+
+.vp-doc h1:hover .header-anchor,
+.vp-doc h2:hover .header-anchor,
+.vp-doc h3:hover .header-anchor {
+  opacity: 1;
+}
+
+/* ============================================================
+   Paragraph & Inline
+   ============================================================ */
+.vp-doc p { margin-bottom: 1.5em; }
+.vp-doc strong { font-weight: 600; color: var(--w-text); }
+.vp-doc em { color: var(--w-text-2); }
+
+/* ============================================================
+   Links — Teal, subtle underline
+   ============================================================ */
+.vp-doc a {
+  color: var(--w-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--w-accent-muted);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  font-weight: 500;
+  transition: color 0.2s, text-decoration-color 0.2s;
+}
+
+.vp-doc a:hover {
+  color: var(--w-accent-hover);
+  text-decoration-color: var(--w-accent-hover);
+}
+
+/* ============================================================
+   Code Blocks — Warm paper feel
+   ============================================================ */
+.vp-doc div[class*='language-'] {
+  background-color: var(--w-bg-code) !important;
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  overflow: hidden;
+  position: relative;
+  margin: 1.75rem 0;
+}
+
+.vp-doc div[class*='language-'] > pre {
+  background: transparent !important;
+  padding: 18px 22px !important;
+}
+
+.vp-doc div[class*='language-'] code {
+  font-family: var(--w-font-mono);
+  font-size: 13.5px;
+  line-height: 1.8;
+}
+
+/* Language label */
+.vp-doc div[class*='language-'] > span.lang {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  color: var(--w-text-3);
+  font-size: 11px;
+  font-family: var(--w-font-mono);
+  z-index: 2;
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Copy button */
+.vp-doc div[class*='language-'] .copy {
+  top: 4px !important;
+  right: 56px !important;
+  background: var(--w-bg-soft) !important;
+  border: 1px solid var(--w-border) !important;
+  border-radius: var(--w-radius) !important;
+  opacity: 0 !important;
+  transition: opacity 0.2s !important;
+}
+
+.vp-doc div[class*='language-']:hover .copy {
+  opacity: 1 !important;
+}
+
+/* Inline code */
+.vp-doc :not(pre) > code {
+  background: var(--w-bg-soft);
+  border: 1px solid var(--w-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.875em;
+  font-family: var(--w-font-mono);
+  color: var(--w-accent);
+  font-weight: 500;
+}
+
+/* ============================================================
+   Tables — Warm, readable
+   ============================================================ */
+.vp-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.75rem 0;
+  font-size: 14px;
+  display: block;
+  overflow-x: auto;
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  overflow: hidden;
+}
+
+.vp-doc table th {
+  background: var(--w-bg-soft);
+  font-weight: 600;
+  text-align: left;
+  padding: 11px 16px;
+  border-bottom: 1.5px solid var(--w-border);
+  font-size: 13px;
+  color: var(--w-text-2);
+  letter-spacing: 0.01em;
+}
+
+.vp-doc table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--w-border);
+  vertical-align: top;
+  line-height: 1.75;
+}
+
+.vp-doc table tr:last-child td { border-bottom: none; }
+
+.vp-doc table tr:hover td {
+  background: var(--w-accent-soft);
+}
+
+/* ============================================================
+   Blockquotes — Warm left-bar
+   ============================================================ */
+.vp-doc blockquote {
+  border-left: 3px solid var(--w-accent-muted);
+  padding: 0.75em 1.25em;
+  margin: 1.75em 0;
+  color: var(--w-text-2);
+  background: var(--w-bg-soft);
+  border-radius: 0 var(--w-radius) var(--w-radius) 0;
+}
+
+.vp-doc blockquote p {
+  margin: 0;
+  font-style: italic;
+  font-family: var(--w-font-display);
+}
+
+/* ============================================================
+   Custom Blocks — Tinted left border
+   ============================================================ */
+.vp-doc .custom-block {
+  border-radius: var(--w-radius);
+  padding: 14px 18px;
+  margin: 1.75rem 0;
+  font-size: 14.5px;
+  line-height: 1.8;
+  border-left: 4px solid transparent;
+}
+
+.vp-doc .custom-block .custom-block-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.vp-doc .custom-block.tip {
+  background: var(--w-green-bg);
+  border-left-color: var(--w-green);
+}
+.vp-doc .custom-block.tip .custom-block-title { color: var(--w-green); }
+
+.vp-doc .custom-block.info {
+  background: var(--w-info-bg);
+  border-left-color: var(--w-info);
+}
+.vp-doc .custom-block.info .custom-block-title { color: var(--w-info); }
+
+.vp-doc .custom-block.warning {
+  background: var(--w-amber-bg);
+  border-left-color: var(--w-amber);
+}
+.vp-doc .custom-block.warning .custom-block-title { color: var(--w-amber); }
+
+.vp-doc .custom-block.danger {
+  background: var(--w-red-bg);
+  border-left-color: var(--w-red);
+}
+.vp-doc .custom-block.danger .custom-block-title { color: var(--w-red); }
+
+/* ============================================================
+   HR & Lists
+   ============================================================ */
+.vp-doc hr {
+  border: none;
+  height: 1px;
+  background: var(--w-border);
+  margin: 2.5rem 0;
+}
+
+.vp-doc ul,
+.vp-doc ol {
+  padding-left: 1.6em;
+  margin-bottom: 1.5em;
+}
+
+.vp-doc li {
+  margin-bottom: 0.5em;
+  line-height: 1.85;
+}
+
+.vp-doc li::marker {
+  color: var(--w-accent);
+}
+
+/* ============================================================
+   Outline / TOC — Right sidebar
+   ============================================================ */
+.VPDocAside .outline-title {
+  font-family: var(--w-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-text-3);
+  margin-bottom: 12px;
+}
+
+.VPDocOutlineItem .outline-link {
+  font-size: 13px;
+  color: var(--w-text-3);
+  line-height: 1.6;
+  padding: 3px 0 3px 14px;
+  border-left: 1.5px solid var(--w-border);
+  transition: color 0.2s, border-color 0.2s;
+  text-decoration: none;
+  display: block;
+}
+
+.VPDocOutlineItem .outline-link:hover,
+.VPDocOutlineItem .outline-link.active {
+  color: var(--w-accent);
+  border-left-color: var(--w-accent);
+}
+
+/* ============================================================
+   Doc Footer
+   ============================================================ */
+.VPDocFooter {
+  border-top: 1px solid var(--w-border);
+  padding-top: 24px;
+  margin-top: 56px;
+}
+
+.VPDocFooter .pager-link {
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  padding: 18px 22px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+}
+
+.VPDocFooter .pager-link:hover {
+  border-color: var(--w-accent);
+  box-shadow: 0 2px 12px var(--w-accent-soft);
+}
+
+.VPDocFooter .pager-label {
+  font-family: var(--w-font-mono);
+  font-size: 11px;
+  color: var(--w-text-3);
+  font-weight: 500;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.VPDocFooter .pager-title {
+  font-family: var(--w-font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--w-text);
+}
+
+.VPLastUpdated {
+  font-size: 13px;
+  color: var(--w-text-3);
+}
+
+/* ============================================================
+   Hero — Warm, inviting, serif title
+   ============================================================ */
+.VPHero {
+  padding-top: 80px !important;
+  padding-bottom: 36px !important;
+}
+
+.VPHero .name {
+  font-family: var(--w-font-display) !important;
+  font-size: 3.2rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.1 !important;
+  color: var(--w-text) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--w-text) !important;
+}
+
+.VPHero .text {
+  font-family: var(--w-font-display) !important;
+  font-size: 1.5rem !important;
+  font-weight: 400 !important;
+  font-style: italic !important;
+  color: var(--w-accent) !important;
+  margin-top: 12px !important;
+}
+
+.VPHero .tagline {
+  font-size: 15.5px !important;
+  line-height: 1.8 !important;
+  color: var(--w-text-2) !important;
+  max-width: 560px;
+  margin-top: 14px !important;
+}
+
+/* CTA Buttons */
+.VPHero .VPButton.brand {
+  background: var(--w-accent) !important;
+  border-color: var(--w-accent) !important;
+  border-radius: var(--w-radius) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 10px 28px !important;
+  transition: background 0.2s, box-shadow 0.2s !important;
+}
+
+.VPHero .VPButton.brand:hover {
+  background: var(--w-accent-hover) !important;
+  border-color: var(--w-accent-hover) !important;
+  box-shadow: 0 4px 16px rgba(13, 124, 107, 0.2) !important;
+}
+
+.VPHero .VPButton.alt {
+  background: transparent !important;
+  border: 1px solid var(--w-border-hover) !important;
+  color: var(--w-text-2) !important;
+  border-radius: var(--w-radius) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  transition: border-color 0.2s, color 0.2s !important;
+}
+
+.VPHero .VPButton.alt:hover {
+  border-color: var(--w-accent) !important;
+  color: var(--w-accent) !important;
+}
+
+/* ============================================================
+   Tag System — Warm teal accent
+   ============================================================ */
+.dig-tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: var(--w-font-mono);
+  line-height: 1.7;
+  margin: 2px 4px 2px 0;
+}
+
+.dig-tag--category {
+  background: var(--w-accent-light);
+  color: var(--w-accent);
+  border: 1px solid var(--w-accent-muted);
+}
+
+.dig-tag--easy {
+  background: var(--w-green-bg);
+  color: var(--w-green);
+  border: 1px solid rgba(22, 163, 74, 0.15);
+}
+
+.dig-tag--medium {
+  background: var(--w-amber-bg);
+  color: var(--w-amber);
+  border: 1px solid rgba(180, 83, 9, 0.15);
+}
+
+.dig-tag--hard {
+  background: var(--w-red-bg);
+  color: var(--w-red);
+  border: 1px solid rgba(220, 38, 38, 0.15);
+}
+
+.dig-tag--hot {
+  background: var(--w-orange-bg);
+  color: var(--w-orange);
+  border: 1px solid rgba(234, 88, 12, 0.15);
+}
+
+/* ============================================================
+   Interview Questions Block
+   ============================================================ */
+.dig-questions {
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.dig-questions__header {
+  background: var(--w-text);
+  color: var(--w-bg);
+  padding: 10px 18px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dark .dig-questions__header {
+  background: var(--w-bg-card);
+  color: var(--w-text);
+  border-bottom: 1px solid var(--w-border);
+}
+
+.dig-questions__item {
+  padding: 12px 18px 12px 44px;
+  border-bottom: 1px solid var(--w-border);
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--w-text);
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: background 0.15s;
+}
+
+.dig-questions__item:last-child { border-bottom: none; }
+
+.dig-questions__item:hover {
+  background: var(--w-accent-soft);
+}
+
+.dig-questions__item::before {
+  content: 'Q';
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--w-font-mono);
+  color: #ffffff;
+  background: var(--w-accent);
+  width: 19px;
+  height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   Key Points Callout
+   ============================================================ */
+.dig-keypoints {
+  background: var(--w-bg-card);
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.dig-keypoints__title {
+  background: var(--w-accent);
+  color: #ffffff;
+  padding: 10px 18px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.dig-keypoints__body {
+  padding: 16px 18px;
+  font-size: 14.5px;
+  line-height: 1.85;
+  background: var(--w-accent-soft);
+}
+
+.dig-keypoints__body ul {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.dig-keypoints__body li {
+  margin-bottom: 6px;
+}
+
+/* ============================================================
+   Homepage — Stats row
+   ============================================================ */
+.m-home {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.m-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 56px;
+}
+
+.m-stat {
+  text-align: center;
+  padding: 24px 12px 20px;
+  background: var(--w-bg-card);
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.m-stat:hover {
+  border-color: var(--w-accent-muted);
+  box-shadow: 0 2px 12px var(--w-accent-soft);
+}
+
+.m-stat__value {
+  display: block;
+  font-family: var(--w-font-display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 6px;
+  color: var(--w-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-stat__suffix {
+  font-size: 0.6em;
+  font-weight: 600;
+}
+
+.m-stat__label {
+  font-size: 12.5px;
+  color: var(--w-text-3);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================
+   Homepage — Section Title
+   ============================================================ */
+.m-section-title {
+  font-family: var(--w-font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--w-text-2);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.m-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--w-border);
+}
+
+/* ============================================================
+   Homepage — Domain Grid
+   ============================================================ */
+.m-domains {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 56px;
+}
+
+@media (min-width: 1024px) {
+  .m-domains {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* --- Standard card --- */
+.m-domain-card {
+  background: var(--w-bg-card);
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius-lg);
+  padding: 22px 20px 18px;
+  text-decoration: none !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: inherit !important;
+  transition: border-color 0.2s, box-shadow 0.25s, transform 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.m-domain-card:hover {
+  border-color: var(--w-border-hover);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+  text-decoration: none !important;
+}
+
+/* --- Featured card (AI) — accent border with warm glow --- */
+.m-domain-card--featured {
+  grid-column: 1 / -1;
+  border: 1.5px solid var(--w-accent);
+  background: linear-gradient(135deg, var(--w-accent-light) 0%, var(--w-bg-card) 100%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto auto;
+  column-gap: 20px;
+  row-gap: 4px;
+  padding: 24px 24px 20px;
+}
+
+.m-domain-card--featured:hover {
+  box-shadow: 0 6px 24px rgba(13, 124, 107, 0.1);
+}
+
+.m-domain-card--featured .m-domain-card__icon {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  font-size: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: var(--w-bg-card);
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius);
+}
+
+.m-domain-card--featured .m-domain-card__badge {
+  grid-row: 1;
+  grid-column: 2;
+  align-self: end;
+}
+
+.m-domain-card--featured .m-domain-card__title {
+  grid-row: 2;
+  grid-column: 2;
+  font-size: 18px;
+}
+
+.m-domain-card--featured .m-domain-card__desc {
+  grid-row: 3;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.m-domain-card--featured .m-domain-card__tags {
+  grid-row: 4;
+  grid-column: 1 / -1;
+}
+
+.m-domain-card--featured .m-domain-card__tag {
+  background: var(--w-accent-soft);
+  border-color: var(--w-accent-muted);
+  color: var(--w-accent);
+}
+
+.dark .m-domain-card--featured {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.04) 0%, var(--w-bg-card) 100%);
+  border-color: rgba(45, 212, 191, 0.3);
+}
+
+.dark .m-domain-card--featured .m-domain-card__tag {
+  background: rgba(45, 212, 191, 0.08);
+  border-color: rgba(45, 212, 191, 0.15);
+  color: var(--w-accent);
+}
+
+.m-domain-card--featured .m-domain-card__arrow {
+  display: none;
+}
+
+/* Featured label */
+.m-domain-card--featured::after {
+  content: 'HOT';
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--w-font-mono);
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--w-accent);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* --- Card inner elements --- */
+.m-domain-card__icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.m-domain-card__badge {
+  font-size: 10.5px;
+  font-family: var(--w-font-mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--w-text-3);
+  width: fit-content;
+  text-transform: uppercase;
+}
+
+.m-domain-card__title {
+  font-family: var(--w-font-display);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--w-text);
+  line-height: 1.3;
+}
+
+.m-domain-card__desc {
+  font-size: 13px;
+  color: var(--w-text-3);
+  line-height: 1.65;
+  flex-grow: 1;
+}
+
+.m-domain-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.m-domain-card__tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-family: var(--w-font-mono);
+  font-weight: 500;
+  background: var(--w-bg-soft);
+  border: 1px solid var(--w-border);
+  color: var(--w-text-3);
+  letter-spacing: 0.01em;
+}
+
+.m-domain-card__arrow {
+  font-size: 16px;
+  color: var(--w-text-3);
+  transition: color 0.2s, transform 0.2s;
+  align-self: flex-end;
+}
+
+.m-domain-card:hover .m-domain-card__arrow {
+  color: var(--w-accent);
+  transform: translateX(2px);
+}
+
+/* ============================================================
+   Homepage — Features
+   ============================================================ */
+.m-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 48px;
+}
+
+.m-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 20px;
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius-lg);
+  background: var(--w-bg-card);
+  transition: border-color 0.2s, box-shadow 0.25s;
+}
+
+.m-feature:hover {
+  border-color: var(--w-border-hover);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.m-feature__icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.m-feature__title {
+  font-family: var(--w-font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--w-text);
+}
+
+.m-feature__desc {
+  font-size: 13px;
+  color: var(--w-text-3);
+  line-height: 1.65;
+}
+
+/* ============================================================
+   Footer — Warmth
+   ============================================================ */
+.VPFooter {
+  border-top: 1px solid var(--w-border) !important;
+  background: var(--w-bg-soft) !important;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 768px) {
+  .m-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .m-domains {
+    grid-template-columns: 1fr;
+  }
+
+  .m-domain-card--featured {
+    grid-template-columns: 1fr;
+  }
+
+  .m-domain-card--featured .m-domain-card__icon {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .m-domain-card--featured .m-domain-card__badge {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .m-domain-card--featured .m-domain-card__title {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .m-features {
+    grid-template-columns: 1fr;
+  }
+
+  .VPHero .name {
+    font-size: 2.2rem !important;
+  }
+
+  .VPHero .text {
+    font-size: 1.2rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .vp-doc h1 { font-size: 1.7rem; }
+  .vp-doc h2 { font-size: 1.25rem; }
+  .vp-doc { font-size: 15.5px; line-height: 1.9; }
+}
+
+/* ============================================================
+   Scrollbar — Warm thin track
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--w-border-hover);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--w-text-3);
+}
+
+/* ============================================================
+   Page transition
+   ============================================================ */
+.VPContent {
+  transition: opacity 0.15s ease;
+}

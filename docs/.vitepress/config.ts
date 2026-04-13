@@ -11,7 +11,7 @@ export default defineConfig({
   head: [
     ['meta', { name: 'keywords', content: '程序员面试,算法,数据结构,系统设计,数据库,操作系统,计算机网络,Java,Docker,AI,LLM,面试题' }],
     ['meta', { name: 'author', content: 'Dev Interview Guide' }],
-    ['meta', { name: 'theme-color', content: '#0d9488' }],
+    ['meta', { name: 'theme-color', content: '#0969da' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'Dev Interview Guide' }],
     ['meta', { property: 'og:title', content: 'Dev Interview Guide — 程序员面试知识体系' }],
@@ -69,16 +69,23 @@ export default defineConfig({
         ],
       },
       {
-        text: '系统设计与工程实践',
+        text: '系统设计',
         link: '/system-design/',
         collapsed: true,
         items: [
           { text: '缓存策略', link: '/system-design/caching-strategies' },
           { text: '限流与熔断', link: '/system-design/rate-limiting' },
-          { text: '分布式 ID 生成', link: '/system-design/distributed-id' },
           { text: '消息队列', link: '/system-design/message-queue' },
           { text: '微服务架构', link: '/system-design/microservices' },
-          { text: 'Docker 容器化', link: '/system-design/docker' },
+        ],
+      },
+      {
+        text: '工程实践',
+        link: '/engineering-practice/',
+        collapsed: true,
+        items: [
+          { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
+          { text: 'Docker 容器化', link: '/engineering-practice/docker' },
         ],
       },
       {

@@ -1,0 +1,892 @@
+/* ============================================================
+   Dev Interview Guide — GitHub Docs Theme
+   Based on GitHub Primer Design System
+   Exact tokens from @primer/primitives
+   ============================================================ */
+
+/* ============================================================
+   Design Tokens — Light Mode
+   Warm page background (#faf9f7) for reading comfort,
+   all other values from Primer light theme
+   ============================================================ */
+:root {
+  /* Primer system font stack */
+  --ghd-font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --ghd-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Backgrounds */
+  --ghd-bgColor-default: #faf9f7;
+  --ghd-bgColor-muted: #f6f8fa;
+  --ghd-bgColor-inset: #f0eeeb;
+  --ghd-bgColor-emphasis: #25292e;
+  --ghd-bgColor-white: #ffffff;
+
+  /* Foreground */
+  --ghd-fgColor-default: #1f2328;
+  --ghd-fgColor-muted: #59636e;
+  --ghd-fgColor-onEmphasis: #ffffff;
+
+  /* Borders */
+  --ghd-borderColor-default: #d1d9e0;
+  --ghd-borderColor-muted: #d1d9e0b3;
+  --ghd-borderColor-emphasis: #818b98;
+
+  /* Accent (links, focus, active) */
+  --ghd-fgColor-accent: #0969da;
+  --ghd-fgColor-accent-hover: #0550ae;
+  --ghd-bgColor-accent-emphasis: #0969da;
+  --ghd-bgColor-accent-muted: #ddf4ff;
+
+  /* Status colors */
+  --ghd-success-fg: #1a7f37;
+  --ghd-success-muted: #dafbe1;
+  --ghd-attention-fg: #9a6700;
+  --ghd-attention-muted: #fff8c5;
+  --ghd-danger-fg: #d1242f;
+  --ghd-danger-muted: #ffebe9;
+  --ghd-severe-fg: #bc4c00;
+  --ghd-severe-muted: #fff1e5;
+  --ghd-done-fg: #8250df;
+  --ghd-done-muted: #fbefff;
+
+  /* Code background */
+  --ghd-code-bg: rgba(175, 184, 193, 0.2);
+
+  /* Radius */
+  --ghd-radius: 6px;
+
+  /* Shadows */
+  --ghd-shadow-sm: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --ghd-shadow-md: 0 3px 6px rgba(140, 149, 159, 0.15);
+  --ghd-shadow-lg: 0 8px 24px rgba(140, 149, 159, 0.2);
+
+  /* Map to VitePress variables */
+  --vp-font-family-base: var(--ghd-font-body);
+  --vp-font-family-mono: var(--ghd-font-mono);
+
+  --vp-c-brand-1: var(--ghd-fgColor-accent);
+  --vp-c-brand-2: var(--ghd-fgColor-accent-hover);
+  --vp-c-brand-3: #218bff;
+  --vp-c-brand-soft: rgba(9, 105, 218, 0.06);
+
+  --vp-c-bg: var(--ghd-bgColor-default);
+  --vp-c-bg-alt: var(--ghd-bgColor-muted);
+  --vp-c-bg-elv: var(--ghd-bgColor-white);
+  --vp-c-bg-soft: var(--ghd-bgColor-muted);
+
+  --vp-c-text-1: var(--ghd-fgColor-default);
+  --vp-c-text-2: var(--ghd-fgColor-muted);
+  --vp-c-text-3: #6e7781;
+
+  --vp-c-divider: var(--ghd-borderColor-default);
+  --vp-c-gutter: var(--ghd-borderColor-default);
+  --vp-c-border: var(--ghd-borderColor-default);
+
+  --vp-sidebar-bg-color: var(--ghd-bgColor-default);
+  --vp-layout-max-width: 1400px;
+
+  /* Map old --gh-* vars used by HomeContent scoped styles */
+  --gh-bg-card: var(--ghd-bgColor-white);
+  --gh-bg-subtle: var(--ghd-bgColor-muted);
+  --gh-bg-inset: var(--ghd-bgColor-inset);
+  --gh-border: var(--ghd-borderColor-default);
+  --gh-border-hover: var(--ghd-borderColor-emphasis);
+  --gh-fg-default: var(--ghd-fgColor-default);
+  --gh-fg-muted: var(--ghd-fgColor-muted);
+  --gh-fg-subtle: #6e7781;
+  --gh-fg-on-emphasis: var(--ghd-fgColor-onEmphasis);
+  --gh-accent: var(--ghd-fgColor-accent);
+  --gh-accent-hover: var(--ghd-fgColor-accent-hover);
+  --gh-accent-subtle: rgba(9, 105, 218, 0.06);
+  --gh-accent-fg: var(--ghd-fgColor-accent);
+  --gh-accent-subtle2: var(--ghd-bgColor-accent-muted);
+  --gh-radius: var(--ghd-radius);
+  --gh-shadow-md: var(--ghd-shadow-md);
+  --gh-font-mono: var(--ghd-font-mono);
+  --gh-success: var(--ghd-success-fg);
+  --gh-success-subtle: var(--ghd-success-muted);
+  --gh-attention: var(--ghd-attention-fg);
+  --gh-attention-subtle: var(--ghd-attention-muted);
+  --gh-danger: var(--ghd-danger-fg);
+  --gh-danger-subtle: var(--ghd-danger-muted);
+  --gh-severe: var(--ghd-severe-fg);
+  --gh-severe-subtle: var(--ghd-severe-muted);
+}
+
+/* ============================================================
+   Design Tokens — Dark Mode
+   GitHub dark default palette from @primer/primitives
+   ============================================================ */
+.dark {
+  --ghd-bgColor-default: #0d1117;
+  --ghd-bgColor-muted: #151b23;
+  --ghd-bgColor-inset: #010409;
+  --ghd-bgColor-emphasis: #3d444d;
+  --ghd-bgColor-white: #161b22;
+
+  --ghd-fgColor-default: #e6edf3;
+  --ghd-fgColor-muted: #9198a1;
+  --ghd-fgColor-onEmphasis: #ffffff;
+
+  --ghd-borderColor-default: #3d444d;
+  --ghd-borderColor-muted: #3d444d80;
+  --ghd-borderColor-emphasis: #656c76;
+
+  --ghd-fgColor-accent: #4493f8;
+  --ghd-fgColor-accent-hover: #79c0ff;
+  --ghd-bgColor-accent-emphasis: #1f6feb;
+  --ghd-bgColor-accent-muted: #388bfd1a;
+
+  --ghd-success-fg: #3fb950;
+  --ghd-success-muted: rgba(46, 160, 67, 0.15);
+  --ghd-attention-fg: #d29922;
+  --ghd-attention-muted: rgba(187, 128, 9, 0.15);
+  --ghd-danger-fg: #f85149;
+  --ghd-danger-muted: rgba(248, 81, 73, 0.1);
+  --ghd-severe-fg: #db6d28;
+  --ghd-severe-muted: rgba(219, 109, 40, 0.1);
+  --ghd-done-fg: #ab7df8;
+  --ghd-done-muted: rgba(171, 125, 248, 0.15);
+
+  --ghd-code-bg: rgba(110, 118, 129, 0.4);
+
+  --ghd-shadow-sm: 0 0 transparent;
+  --ghd-shadow-md: 0 3px 6px #010409;
+  --ghd-shadow-lg: 0 8px 24px #010409;
+
+  --vp-c-bg: var(--ghd-bgColor-default);
+  --vp-c-bg-alt: var(--ghd-bgColor-muted);
+  --vp-c-bg-elv: var(--ghd-bgColor-white);
+  --vp-c-bg-soft: var(--ghd-bgColor-muted);
+  --vp-c-text-1: var(--ghd-fgColor-default);
+  --vp-c-text-2: var(--ghd-fgColor-muted);
+  --vp-c-text-3: #656c76;
+  --vp-c-divider: var(--ghd-borderColor-default);
+  --vp-c-border: var(--ghd-borderColor-default);
+  --vp-sidebar-bg-color: var(--ghd-bgColor-default);
+
+  --gh-bg-card: var(--ghd-bgColor-white);
+  --gh-bg-subtle: var(--ghd-bgColor-muted);
+  --gh-bg-inset: var(--ghd-bgColor-inset);
+  --gh-border: var(--ghd-borderColor-default);
+  --gh-border-hover: var(--ghd-borderColor-emphasis);
+  --gh-fg-default: var(--ghd-fgColor-default);
+  --gh-fg-muted: var(--ghd-fgColor-muted);
+  --gh-fg-subtle: #656c76;
+  --gh-fg-on-emphasis: var(--ghd-fgColor-onEmphasis);
+  --gh-accent: var(--ghd-fgColor-accent);
+  --gh-accent-hover: var(--ghd-fgColor-accent-hover);
+  --gh-accent-subtle: rgba(56, 139, 253, 0.1);
+  --gh-accent-fg: var(--ghd-fgColor-accent);
+  --gh-accent-subtle2: var(--ghd-bgColor-accent-muted);
+  --gh-shadow-md: var(--ghd-shadow-md);
+  --gh-success: var(--ghd-success-fg);
+  --gh-success-subtle: var(--ghd-success-muted);
+  --gh-attention: var(--ghd-attention-fg);
+  --gh-attention-subtle: var(--ghd-attention-muted);
+  --gh-danger: var(--ghd-danger-fg);
+  --gh-danger-subtle: var(--ghd-danger-muted);
+  --gh-severe: var(--ghd-severe-fg);
+  --gh-severe-subtle: var(--ghd-severe-muted);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(9, 105, 218, 0.15);
+  color: var(--ghd-fgColor-default);
+}
+
+.dark ::selection {
+  background: rgba(56, 139, 253, 0.2);
+}
+
+/* ============================================================
+   Navigation — GitHub flat header
+   ============================================================ */
+.VPNav {
+  background: var(--ghd-bgColor-white) !important;
+  border-bottom: 1px solid var(--ghd-borderColor-default) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.dark .VPNav {
+  background: var(--ghd-bgColor-muted) !important;
+}
+
+.VPNavBar {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.VPNavBar .title {
+  font-size: 16px !important;
+  font-weight: 600;
+  color: var(--ghd-fgColor-default) !important;
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ghd-fgColor-default);
+}
+
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover,
+.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
+  color: var(--ghd-fgColor-accent);
+}
+
+/* Search — matches Primer control style */
+.VPNavBarSearch .DocSearch-Button,
+.VPNavBarSearchButton {
+  border-radius: var(--ghd-radius) !important;
+  border: 1px solid var(--ghd-borderColor-default) !important;
+  background: var(--ghd-bgColor-muted) !important;
+  font-size: 14px !important;
+}
+
+/* ============================================================
+   Sidebar — Primer tree nav
+   ============================================================ */
+.VPSidebar {
+  border-right: 1px solid var(--ghd-borderColor-default) !important;
+  background: var(--ghd-bgColor-default) !important;
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ghd-fgColor-default);
+  text-transform: none;
+}
+
+.VPSidebarItem .text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ghd-fgColor-muted);
+}
+
+.VPSidebarItem.is-active > .item .link {
+  color: var(--ghd-fgColor-default) !important;
+  font-weight: 600;
+  background: rgba(9, 105, 218, 0.06);
+  border-radius: var(--ghd-radius);
+}
+
+.dark .VPSidebarItem.is-active > .item .link {
+  background: rgba(56, 139, 253, 0.1);
+}
+
+.VPSidebarItem .link:hover {
+  color: var(--ghd-fgColor-accent) !important;
+}
+
+/* Active sidebar indicator bar */
+.VPSidebarItem.is-active > .item > .indicator {
+  background: var(--ghd-fgColor-accent) !important;
+}
+
+/* ============================================================
+   Page Layout — Content
+   ============================================================ */
+.VPContent .VPDoc .container .content {
+  max-width: 880px;
+}
+
+.vp-doc {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ghd-fgColor-default);
+}
+
+/* ============================================================
+   Headings — Primer markdown style
+   h1/h2: 600 weight, border-bottom
+   ============================================================ */
+.vp-doc h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--ghd-borderColor-default);
+  color: var(--ghd-fgColor-default);
+}
+
+.vp-doc h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 24px 0 16px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--ghd-borderColor-default);
+  color: var(--ghd-fgColor-default);
+}
+
+.vp-doc h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 24px 0 16px;
+  color: var(--ghd-fgColor-default);
+}
+
+.vp-doc h4,
+.vp-doc h5,
+.vp-doc h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 24px 0 16px;
+  color: var(--ghd-fgColor-default);
+}
+
+/* Anchor links */
+.vp-doc h1 .header-anchor,
+.vp-doc h2 .header-anchor,
+.vp-doc h3 .header-anchor,
+.vp-doc h4 .header-anchor {
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--ghd-fgColor-accent);
+  text-decoration: none !important;
+}
+
+.vp-doc h1:hover .header-anchor,
+.vp-doc h2:hover .header-anchor,
+.vp-doc h3:hover .header-anchor,
+.vp-doc h4:hover .header-anchor {
+  opacity: 1;
+}
+
+/* ============================================================
+   Paragraph & Inline
+   ============================================================ */
+.vp-doc p {
+  margin: 0 0 16px;
+}
+
+.vp-doc strong {
+  font-weight: 600;
+  color: var(--ghd-fgColor-default);
+}
+
+/* ============================================================
+   Links — GitHub blue, underline on hover
+   ============================================================ */
+.vp-doc a {
+  color: var(--ghd-fgColor-accent);
+  text-decoration: none;
+  font-weight: 400;
+}
+
+.vp-doc a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   Code Blocks — GitHub style
+   ============================================================ */
+.vp-doc div[class*='language-'] {
+  background-color: var(--ghd-bgColor-muted) !important;
+  border: 1px solid var(--ghd-borderColor-default);
+  border-radius: var(--ghd-radius);
+  margin: 0 0 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.vp-doc div[class*='language-'] > pre {
+  background: transparent !important;
+  padding: 16px !important;
+  margin: 0 !important;
+}
+
+.vp-doc div[class*='language-'] code {
+  font-family: var(--ghd-font-mono);
+  font-size: 13.6px;
+  line-height: 1.45;
+  tab-size: 4;
+}
+
+.vp-doc div[class*='language-'] > span.lang {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  color: var(--ghd-fgColor-muted);
+  font-size: 12px;
+  font-family: var(--ghd-font-mono);
+  opacity: 0.6;
+  z-index: 2;
+}
+
+/* Copy button */
+.vp-doc div[class*='language-'] .copy {
+  top: 4px !important;
+  right: 52px !important;
+  background: var(--ghd-bgColor-white) !important;
+  border: 1px solid var(--ghd-borderColor-default) !important;
+  border-radius: var(--ghd-radius) !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s !important;
+}
+
+.vp-doc div[class*='language-']:hover .copy {
+  opacity: 1 !important;
+}
+
+/* Inline code */
+.vp-doc :not(pre) > code {
+  background: var(--ghd-code-bg);
+  border-radius: var(--ghd-radius);
+  padding: 0.2em 0.4em;
+  font-size: 85%;
+  font-family: var(--ghd-font-mono);
+  color: var(--ghd-fgColor-default);
+  font-weight: 400;
+  border: none;
+}
+
+/* ============================================================
+   Tables — GitHub markdown
+   ============================================================ */
+.vp-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 16px;
+  font-size: 14px;
+  display: table;
+  overflow: auto;
+}
+
+.vp-doc table th,
+.vp-doc table td {
+  padding: 6px 13px;
+  border: 1px solid var(--ghd-borderColor-default);
+}
+
+.vp-doc table th {
+  font-weight: 600;
+  text-align: left;
+  background: transparent;
+}
+
+.vp-doc table tr {
+  background-color: var(--ghd-bgColor-white);
+  border-top: 1px solid var(--ghd-borderColor-default);
+}
+
+.dark .vp-doc table tr {
+  background-color: var(--ghd-bgColor-default);
+}
+
+.vp-doc table tr:nth-child(2n) {
+  background-color: var(--ghd-bgColor-muted);
+}
+
+/* ============================================================
+   Blockquotes — Primer
+   ============================================================ */
+.vp-doc blockquote {
+  border-left: 0.25em solid var(--ghd-borderColor-default);
+  padding: 0 1em;
+  margin: 0 0 16px;
+  color: var(--ghd-fgColor-muted);
+  background: transparent;
+}
+
+.vp-doc blockquote p { margin: 0; }
+
+/* ============================================================
+   Custom Blocks — GitHub callout style
+   ============================================================ */
+.vp-doc .custom-block {
+  border: 1px solid transparent;
+  border-radius: var(--ghd-radius);
+  padding: 16px;
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.vp-doc .custom-block .custom-block-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.vp-doc .custom-block.tip {
+  background: var(--ghd-success-muted);
+  border-color: var(--ghd-success-fg);
+  border-left-width: 3px;
+}
+.vp-doc .custom-block.tip .custom-block-title { color: var(--ghd-success-fg); }
+
+.vp-doc .custom-block.info {
+  background: var(--ghd-bgColor-accent-muted);
+  border-color: var(--ghd-fgColor-accent);
+  border-left-width: 3px;
+}
+.vp-doc .custom-block.info .custom-block-title { color: var(--ghd-fgColor-accent); }
+
+.vp-doc .custom-block.warning {
+  background: var(--ghd-attention-muted);
+  border-color: var(--ghd-attention-fg);
+  border-left-width: 3px;
+}
+.vp-doc .custom-block.warning .custom-block-title { color: var(--ghd-attention-fg); }
+
+.vp-doc .custom-block.danger {
+  background: var(--ghd-danger-muted);
+  border-color: var(--ghd-danger-fg);
+  border-left-width: 3px;
+}
+.vp-doc .custom-block.danger .custom-block-title { color: var(--ghd-danger-fg); }
+
+/* ============================================================
+   HR & Lists
+   ============================================================ */
+.vp-doc hr {
+  height: 0.25em;
+  border: 0;
+  background: var(--ghd-borderColor-default);
+  margin: 24px 0;
+  padding: 0;
+}
+
+.vp-doc ul,
+.vp-doc ol {
+  padding-left: 2em;
+  margin: 0 0 16px;
+}
+
+.vp-doc li { margin-bottom: 0; }
+.vp-doc li + li { margin-top: 0.25em; }
+.vp-doc li::marker { color: var(--ghd-fgColor-muted); }
+
+/* ============================================================
+   Outline / TOC
+   ============================================================ */
+.VPDocAside .outline-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ghd-fgColor-default);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.VPDocOutlineItem .outline-link {
+  font-size: 12px;
+  color: var(--ghd-fgColor-muted);
+  line-height: 1.5;
+  padding: 4px 0 4px 16px;
+  border-left: 2px solid transparent;
+  text-decoration: none;
+  display: block;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.VPDocOutlineItem .outline-link:hover {
+  color: var(--ghd-fgColor-accent);
+}
+
+.VPDocOutlineItem .outline-link.active {
+  color: var(--ghd-fgColor-default);
+  border-left-color: var(--ghd-fgColor-accent);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Footer — Prev / Next
+   ============================================================ */
+.VPDocFooter {
+  border-top: 1px solid var(--ghd-borderColor-default);
+  margin-top: 32px;
+  padding-top: 16px;
+}
+
+.VPDocFooter .pager-link {
+  border: 1px solid var(--ghd-borderColor-default);
+  border-radius: var(--ghd-radius);
+  padding: 16px;
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+
+.VPDocFooter .pager-link:hover {
+  border-color: var(--ghd-fgColor-accent);
+}
+
+.VPDocFooter .pager-label {
+  font-size: 12px;
+  color: var(--ghd-fgColor-muted);
+  font-weight: 400;
+}
+
+.VPDocFooter .pager-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ghd-fgColor-accent);
+}
+
+.VPLastUpdated {
+  font-size: 12px;
+  color: var(--ghd-fgColor-muted);
+}
+
+/* ============================================================
+   Homepage — Full-width page layout
+   ============================================================ */
+.VPPage {
+  padding-left: 0 !important;
+}
+
+.VPPage .ghd-home {
+  max-width: none;
+}
+
+/* ============================================================
+   Tag System — GitHub label style
+   ============================================================ */
+.dig-tag {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 2em;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  margin: 2px 4px 2px 0;
+  border: 1px solid transparent;
+}
+
+.dig-tag--category {
+  background: var(--ghd-bgColor-accent-muted);
+  color: var(--ghd-fgColor-accent);
+}
+
+.dig-tag--easy {
+  background: var(--ghd-success-muted);
+  color: var(--ghd-success-fg);
+}
+
+.dig-tag--medium {
+  background: var(--ghd-attention-muted);
+  color: var(--ghd-attention-fg);
+}
+
+.dig-tag--hard {
+  background: var(--ghd-danger-muted);
+  color: var(--ghd-danger-fg);
+}
+
+.dig-tag--hot {
+  background: var(--ghd-severe-muted);
+  color: var(--ghd-severe-fg);
+}
+
+/* ============================================================
+   Interview Questions Block
+   ============================================================ */
+.dig-questions {
+  border: 1px solid var(--ghd-borderColor-default);
+  border-radius: var(--ghd-radius);
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.dig-questions__header {
+  background: var(--ghd-bgColor-muted);
+  color: var(--ghd-fgColor-default);
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1px solid var(--ghd-borderColor-default);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dig-questions__item {
+  padding: 8px 16px 8px 40px;
+  border-bottom: 1px solid var(--ghd-borderColor-default);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ghd-fgColor-default);
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: background 0.12s;
+}
+
+.dig-questions__item:last-child { border-bottom: none; }
+
+.dig-questions__item:hover {
+  background: rgba(9, 105, 218, 0.06);
+}
+
+.dark .dig-questions__item:hover {
+  background: rgba(56, 139, 253, 0.08);
+}
+
+.dig-questions__item::before {
+  content: 'Q';
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--ghd-font-mono);
+  color: var(--ghd-fgColor-onEmphasis);
+  background: var(--ghd-fgColor-accent);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ghd-radius);
+}
+
+/* ============================================================
+   Key Points Callout
+   ============================================================ */
+.dig-keypoints {
+  background: var(--ghd-bgColor-white);
+  border: 1px solid var(--ghd-borderColor-default);
+  border-radius: var(--ghd-radius);
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.dig-keypoints__title {
+  background: var(--ghd-bgColor-accent-emphasis);
+  color: var(--ghd-fgColor-onEmphasis);
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.dig-keypoints__body {
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--ghd-bgColor-accent-muted);
+}
+
+.dig-keypoints__body ul {
+  margin: 0;
+  padding-left: 1.5em;
+}
+
+.dig-keypoints__body li { margin-bottom: 4px; }
+
+/* ============================================================
+   VPFooter
+   ============================================================ */
+.VPFooter {
+  border-top: 1px solid var(--ghd-borderColor-default) !important;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 640px) {
+  .vp-doc h1 { font-size: 1.5rem; }
+  .vp-doc h2 { font-size: 1.25rem; }
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  background: var(--ghd-borderColor-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ghd-borderColor-emphasis);
+}
+
+/* ============================================================
+   VPHero override — hidden on page layout, but just in case
+   ============================================================ */
+.VPHero {
+  padding: 48px 24px 32px !important;
+}
+
+.VPHero .name {
+  font-size: 48px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--ghd-fgColor-default) !important;
+  background: none !important;
+  -webkit-text-fill-color: var(--ghd-fgColor-default) !important;
+}
+
+.VPHero .text {
+  font-size: 20px !important;
+  font-weight: 400 !important;
+  color: var(--ghd-fgColor-muted) !important;
+  line-height: 1.5 !important;
+}
+
+.VPHero .tagline {
+  font-size: 16px !important;
+  color: var(--ghd-fgColor-muted) !important;
+  line-height: 1.5 !important;
+}
+
+.VPHero .VPButton.brand {
+  background: var(--ghd-bgColor-accent-emphasis) !important;
+  border-color: rgba(31, 35, 40, 0.15) !important;
+  border-radius: var(--ghd-radius) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  padding: 5px 16px !important;
+  line-height: 20px !important;
+  box-shadow: var(--ghd-shadow-sm) !important;
+}
+
+.VPHero .VPButton.brand:hover {
+  background: var(--ghd-fgColor-accent-hover) !important;
+}
+
+.VPHero .VPButton.alt {
+  background: var(--ghd-bgColor-muted) !important;
+  border: 1px solid var(--ghd-borderColor-default) !important;
+  color: var(--ghd-fgColor-default) !important;
+  border-radius: var(--ghd-radius) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  padding: 5px 16px !important;
+  line-height: 20px !important;
+  box-shadow: var(--ghd-shadow-sm) !important;
+}
+
+.VPHero .VPButton.alt:hover {
+  background: var(--ghd-bgColor-inset) !important;
+}
