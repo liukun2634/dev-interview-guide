@@ -1,10 +1,12 @@
 <template>
-  <a v-if="showBack" class="sidebar-back" :href="withBase('/')">
-    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-      <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z"></path>
-    </svg>
-    返回主页
-  </a>
+  <div v-if="showBack" class="sidebar-back-wrapper">
+    <a class="sidebar-back" :href="withBase('/')">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+        <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L4.81 7h7.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06Z"></path>
+      </svg>
+      返回主页
+    </a>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -20,21 +22,24 @@ const showBack = computed(() => {
 </script>
 
 <style scoped>
+.sidebar-back-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
 .sidebar-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   font-weight: 400;
-  color: var(--ghd-fgColor-muted);
+  color: var(--ghd-fgColor-accent);
   text-decoration: none;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--ghd-borderColor-default);
-  transition: color 0.15s;
+  transition: font-weight 0.15s;
 }
 
 .sidebar-back:hover {
-  color: var(--ghd-fgColor-accent);
+  font-weight: 600;
 }
 </style>

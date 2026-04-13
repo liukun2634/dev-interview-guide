@@ -307,25 +307,28 @@ body {
   display: none !important;
 }
 
-/* Vertical divider after appearance toggle */
-.VPNavBarAppearance {
-  display: flex !important;
-  align-items: center;
-}
+/* ---- Header right-side order: Search → Appearance → divider → GitHub Star ---- */
 
-.VPNavBarAppearance::after {
-  content: '';
-  width: 1px;
-  height: 24px;
-  background: var(--ghd-borderColor-default);
-  margin-left: 12px;
-}
-
-/* Search — right-aligned, hide placeholder text */
+/* Search */
 .VPNavBarSearch {
-  order: 100 !important;
+  order: 10 !important;
   flex-grow: 0 !important;
-  padding-left: 16px !important;
+  padding-left: 8px !important;
+}
+
+.DocSearch-Button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 8px !important;
+  width: auto !important;
+  min-width: auto !important;
+  height: 28px !important;
+  cursor: pointer !important;
+}
+
+.DocSearch-Button:hover {
+  opacity: 0.7;
 }
 
 .DocSearch-Button-Placeholder {
@@ -334,6 +337,25 @@ body {
 
 .DocSearch-Button-Keys {
   display: none !important;
+}
+
+/* Appearance toggle */
+.VPNavBarAppearance {
+  order: 20 !important;
+}
+
+/* Push social-links and extra out of the way (empty but occupy order slots) */
+.VPNavBarSocialLinks {
+  order: 50 !important;
+}
+
+.VPNavBarExtra {
+  order: 50 !important;
+}
+
+/* Hamburger always last */
+.VPNavBarHamburger {
+  order: 100 !important;
 }
 
 /* Hide all nav bar divider lines — VPNav border-bottom is the only separator */

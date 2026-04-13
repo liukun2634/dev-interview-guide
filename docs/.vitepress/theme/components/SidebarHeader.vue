@@ -1,7 +1,7 @@
 <template>
   <div class="sidebar-header" v-if="currentSection">
     <a class="sidebar-section-title" :href="withBase(currentSection.link)">
-      {{ currentSection.text }}
+      概述
     </a>
   </div>
 </template>
@@ -33,13 +33,13 @@ const currentSection = computed(() => {
 
 <style scoped>
 .sidebar-header {
-  padding-top: 16px;
-  margin-bottom: 16px;
+  padding-top: 48px;
+  margin-bottom: 8px;
 }
 
 .sidebar-section-title {
   display: block;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ghd-fgColor-default);
   text-decoration: none;
