@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 import mathjax3 from 'markdown-it-mathjax3'
 
 export default defineConfig({
-  title: 'Dev Interview Guide',
+  title: '程序员面试手册',
   description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
@@ -30,22 +30,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    nav: [
-      {
-        text: '知识库',
-        items: [
-          { text: '数据结构与算法', link: '/data-structures-and-algorithms/' },
-          { text: '操作系统', link: '/operating-systems/' },
-          { text: '计算机网络', link: '/computer-networks/' },
-          { text: '数据库', link: '/databases/' },
-          { text: '系统设计', link: '/system-design/' },
-          { text: '工程实践', link: '/engineering-practice/' },
-          { text: '编程语言', link: '/programming-languages/' },
-          { text: 'Web 与框架', link: '/web-and-frameworks/' },
-          { text: 'AI 技术', link: '/ai-technology/' },
-        ],
-      },
-    ],
+    nav: [],
 
     sidebar: {
       '/data-structures-and-algorithms/': [
@@ -156,9 +141,7 @@ export default defineConfig({
       },
     },
 
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/liukun2634/dev-interview-guide', ariaLabel: 'Powered by Kun Liu' },
-    ],
+    socialLinks: [],
 
     lastUpdated: {
       text: '最后更新',

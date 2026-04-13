@@ -239,6 +239,13 @@ body {
 /* Ensure content-body is always transparent — VPNav provides the background */
 .VPNavBar .content-body {
   background-color: transparent !important;
+  justify-content: flex-start !important;
+}
+
+/* Make content fill full width since title is hidden */
+.VPNavBar .content {
+  flex-grow: 1 !important;
+  padding-left: 0 !important;
 }
 
 /* Override has-sidebar split layout — keep header uniform like homepage */
@@ -259,6 +266,8 @@ body {
 }
 
 .VPNavBar.has-sidebar .content {
+  position: relative !important;
+  z-index: 1 !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
@@ -267,31 +276,64 @@ body {
   padding-left: 0 !important;
 }
 
-.VPNavBar .title {
-  font-size: 16px !important;
-  font-weight: 600;
-  color: var(--ghd-fgColor-default) !important;
-  border-bottom-color: transparent !important;
+/* Ensure nav bar elements are clickable */
+.VPNavBar .container,
+.VPNavBar .container > .title,
+.VPNavBar .container > .content {
+  pointer-events: auto !important;
 }
 
-.VPNavBar .VPNavBarMenu .VPNavBarMenuLink {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--ghd-fgColor-default);
+/* Hide default VitePress title — NavHeader brand replaces it */
+.VPNavBarTitle {
+  display: none !important;
 }
 
-.VPNavBar .VPNavBarMenu .VPNavBarMenuLink:hover,
-.VPNavBar .VPNavBarMenu .VPNavBarMenuLink.active {
-  color: var(--ghd-fgColor-accent);
+.VPNavBar .container > .title {
+  display: none !important;
 }
 
-/* Search — matches Primer control style */
-.VPNavBarSearch .DocSearch-Button,
-.VPNavBarSearchButton {
-  border-radius: var(--ghd-radius) !important;
-  border: 1px solid var(--ghd-borderColor-default) !important;
-  background: var(--ghd-bgColor-muted) !important;
-  font-size: 14px !important;
+/* Show VitePress title on mobile where NavHeader is hidden */
+@media (max-width: 768px) {
+  .VPNavBarTitle {
+    display: flex !important;
+  }
+  .VPNavBar .container > .title {
+    display: flex !important;
+  }
+}
+
+/* Hide VPNavBarMenu since nav items moved to NavHeader */
+.VPNavBar .VPNavBarMenu {
+  display: none !important;
+}
+
+/* Vertical divider after appearance toggle */
+.VPNavBarAppearance {
+  display: flex !important;
+  align-items: center;
+}
+
+.VPNavBarAppearance::after {
+  content: '';
+  width: 1px;
+  height: 24px;
+  background: var(--ghd-borderColor-default);
+  margin-left: 12px;
+}
+
+/* Search — right-aligned, hide placeholder text */
+.VPNavBarSearch {
+  order: 100 !important;
+  flex-grow: 0 !important;
+  padding-left: 16px !important;
+}
+
+.DocSearch-Button-Placeholder {
+  display: none !important;
+}
+
+.DocSearch-Button-Keys {
+  display: none !important;
 }
 
 /* Hide all nav bar divider lines — VPNav border-bottom is the only separator */
@@ -307,7 +349,7 @@ body {
   display: none !important;
 }
 
-/* Nav dropdown (知识库) — Primer flyout */
+/* Nav dropdown flyout — Primer style (for any remaining flyouts) */
 .VPFlyout .VPMenu {
   background: var(--ghd-bgColor-white) !important;
   border: 1px solid var(--ghd-borderColor-default) !important;
@@ -318,25 +360,6 @@ body {
 
 .dark .VPFlyout .VPMenu {
   background: var(--ghd-bgColor-muted) !important;
-}
-
-.VPFlyout .VPMenu .VPMenuLink a {
-  font-size: 14px;
-  color: var(--ghd-fgColor-default);
-}
-
-.VPFlyout .VPMenu .VPMenuLink a:hover {
-  color: var(--ghd-fgColor-accent);
-}
-
-/* Nav flyout button text */
-.VPFlyout .button .text {
-  font-size: 14px;
-  color: var(--ghd-fgColor-default);
-}
-
-.VPFlyout .button:hover .text {
-  color: var(--ghd-fgColor-accent);
 }
 
 /* ============================================================
