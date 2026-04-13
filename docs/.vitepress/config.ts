@@ -31,7 +31,6 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: '知识库', link: '/data-structures-and-algorithms/' },
-      { text: 'GitHub', link: 'https://github.com/liukun2634/dev-interview-guide' },
     ],
 
     sidebar: [
