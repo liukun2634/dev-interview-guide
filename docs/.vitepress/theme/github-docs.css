@@ -392,8 +392,8 @@ body {
   background: var(--ghd-bgColor-default) !important;
 }
 
-/* Hide first level-0 group title — SidebarHeader component handles it */
-.VPSidebarItem.level-0:first-child > .item {
+/* Hide non-collapsible level-0 group title — SidebarHeader component handles it */
+.VPSidebarItem.level-0:not(.collapsible) > .item {
   display: none !important;
 }
 
