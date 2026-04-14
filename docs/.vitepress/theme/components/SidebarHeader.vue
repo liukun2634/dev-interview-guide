@@ -1,7 +1,7 @@
 <template>
   <div class="sidebar-header" v-if="currentSection">
     <a class="sidebar-section-title" :href="withBase(currentSection.link)">
-      概述
+      章节提要
     </a>
   </div>
 </template>
