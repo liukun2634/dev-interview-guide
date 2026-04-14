@@ -4,7 +4,7 @@
     <div class="ghd-hero">
       <div class="ghd-hero__inner">
         <h1 class="ghd-hero__title">程序员面试手册</h1>
-        <p class="ghd-hero__desc">系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域</p>
+        <p class="ghd-hero__desc">系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，由 AI 辅助生成</p>
       </div>
     </div>
 
