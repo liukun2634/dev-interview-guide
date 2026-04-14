@@ -104,11 +104,6 @@ export default defineConfig({
       ],
       '/ai-technology/': [
         {
-          text: 'AI 技术',
-          link: '/ai-technology/',
-          items: [],
-        },
-        {
           text: 'AI 基础',
           collapsed: false,
           items: [
