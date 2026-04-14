@@ -35,6 +35,8 @@ const currentSection = computed(() => {
 .sidebar-header {
   padding-top: 48px;
   margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ghd-borderColor-default);
 }
 
 .sidebar-section-title {
