@@ -185,40 +185,7 @@ ToT 适用于需要**探索和规划**的复杂任务，如数学证明、博弈
 
 ### ReAct（Reasoning + Acting）
 
-将**推理（Reasoning）与行动（Acting）交替进行**，模型在思考后执行外部工具调用，再根据观察结果继续推理：
-
-```python
-react_prompt = """请回答以下问题，你可以使用工具来获取信息。
-
-可用工具：
-- search(query): 搜索互联网信息
-- calculate(expression): 计算数学表达式
-- lookup(term): 在知识库中查找术语
-
-请按以下格式回答：
-Thought: 我需要思考的内容
-Action: 要使用的工具和参数
-Observation: 工具返回的结果
-... (可以重复多轮)
-Thought: 我现在可以给出最终答案
-Answer: 最终回答
-
-问题：{question}"""
-
-# ReAct 执行示例
-"""
-Thought: 我需要查找当前人民币对美元的汇率来回答这个问题
-Action: search("2024年人民币对美元汇率")
-Observation: 当前汇率约为 1 美元 = 7.24 人民币
-Thought: 现在我需要计算 1000 美元等于多少人民币
-Action: calculate("1000 * 7.24")
-Observation: 7240
-Thought: 我已经有足够的信息来回答
-Answer: 按当前汇率，1000 美元约合 7240 元人民币
-"""
-```
-
-ReAct 模式是**AI Agent 系统的核心设计模式**，后续在 Agent 章节会进一步深入讨论。
+ReAct 将推理与行动交替进行，是 AI Agent 的核心设计模式。详见 [AI Agent 智能体](./ai-agents)。
 
 ---
 
@@ -305,77 +272,7 @@ extraction_prompt = """从以下简历文本中提取候选人信息。
 
 ## 工具使用与 Function Calling
 
-Function Calling（函数调用）允许 LLM 在生成过程中**识别需要调用外部工具的时机**，并输出结构化的调用参数，从而将 LLM 与外部系统连接。
-
-### 工作流程
-
-```
-用户查询 → LLM 判断是否需要工具
-                │
-         ┌──── 是 ────┐           ┌─── 否 ───┐
-         ▼             │           ▼           │
-  输出工具名称和参数   │     直接生成回答       │
-         │             │                       │
-         ▼             │
-  应用层执行工具调用   │
-         │             │
-         ▼             │
-  将工具结果回传 LLM   │
-         │             │
-         ▼             │
-  LLM 基于结果生成回答 │
-```
-
-### 定义工具的示例
-
-```python
-# 定义工具 Schema（以 OpenAI 格式为例）
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "获取指定城市的当前天气信息",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "城市名称，如：北京"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "温度单位"
-                    }
-                },
-                "required": ["city"]
-            }
-        }
-    }
-]
-
-# 模型会返回结构化的工具调用请求
-# {"name": "get_weather", "arguments": {"city": "上海", "unit": "celsius"}}
-
-# Anthropic Claude Tool Use 格式
-anthropic_tools = [
-    {
-        "name": "get_weather",
-        "description": "获取指定城市的当前天气信息",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "city": {"type": "string", "description": "城市名称"},
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
-            },
-            "required": ["city"]
-        }
-    }
-]
-```
-
-**关键要点**：Function Calling 的本质是让模型输出**结构化的工具调用意图**，实际的工具执行由应用层代码完成，模型本身不执行任何外部操作。
+Function Calling 允许 LLM 在生成过程中识别需要调用外部工具的时机，并输出结构化的调用参数。关于 Function Calling 的工作流程、工具定义格式及 MCP 协议的详细介绍，请参阅 [AI Agent 智能体](./ai-agents)。
 
 ---
 

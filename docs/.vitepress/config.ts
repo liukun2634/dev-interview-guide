@@ -105,11 +105,39 @@ export default defineConfig({
       '/ai-technology/': [
         {
           text: 'AI 技术',
+          link: '/ai-technology/',
+          items: [],
+        },
+        {
+          text: 'AI 基础',
+          collapsed: false,
           items: [
-            { text: 'LLM 大语言模型基础', link: '/ai-technology/llm-fundamentals' },
+            { text: 'AI 概述与发展历程', link: '/ai-technology/ai-overview' },
+            { text: 'LLM 大语言模型原理', link: '/ai-technology/llm-fundamentals' },
+          ],
+        },
+        {
+          text: 'LLM 应用技术',
+          collapsed: false,
+          items: [
+            { text: 'Prompt Engineering 提示工程', link: '/ai-technology/prompt-engineering' },
+            { text: 'Embedding 与向量数据库', link: '/ai-technology/embedding-and-vector-db' },
             { text: 'RAG 检索增强生成', link: '/ai-technology/rag' },
-            { text: 'Prompt Engineering', link: '/ai-technology/prompt-engineering' },
+          ],
+        },
+        {
+          text: 'AI Agent 与工具',
+          collapsed: false,
+          items: [
             { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
+          ],
+        },
+        {
+          text: 'AI 工程实践',
+          collapsed: false,
+          items: [
+            { text: '模型微调与训练', link: '/ai-technology/model-training' },
+            { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },
           ],
         },
       ],

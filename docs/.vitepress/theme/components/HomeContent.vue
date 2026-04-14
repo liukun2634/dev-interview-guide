@@ -51,7 +51,7 @@
 <script setup lang="ts">
 const featured = {
   title: 'AI 技术',
-  desc: 'Transformer 架构、大语言模型原理、RAG 检索增强生成、Prompt Engineering、AI Agent 智能体',
+  desc: 'LLM 原理、Prompt Engineering、RAG、Embedding 与向量数据库、AI Agent、模型微调、应用架构设计',
   link: '/dev-interview-guide/ai-technology/',
 }
 

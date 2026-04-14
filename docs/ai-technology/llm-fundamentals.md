@@ -118,16 +118,7 @@ $$
 
 这一阶段的目标是让模型学习语言的通用知识，包括语法、事实信息、推理能力等。
 
-### 微调 Fine-tuning
-
-在预训练模型的基础上，使用**特定任务的标注数据**进行进一步训练。常见微调方式包括：
-
-| 方式 | 说明 | 适用场景 |
-|------|------|----------|
-| **全量微调（Full Fine-tuning）** | 更新模型所有参数 | 数据充足、任务差异大 |
-| **LoRA（Low-Rank Adaptation）** | 冻结原始参数，仅训练低秩分解的增量矩阵 | 资源有限、快速适配 |
-| **Prompt Tuning** | 冻结模型，仅学习输入前缀的连续向量 | 极少参数调整 |
-| **指令微调（Instruction Tuning）** | 使用指令-回答对进行训练 | 提升模型遵循指令的能力 |
+微调是在预训练模型基础上，使用特定任务数据进一步训练的过程，详见 [模型微调与训练](./model-training)。
 
 ---
 
@@ -226,68 +217,19 @@ def sample_with_temperature(logits: np.ndarray, temperature: float = 1.0,
 
 ## RLHF 人类反馈强化学习
 
-RLHF（Reinforcement Learning from Human Feedback）是使 LLM 输出与人类偏好对齐的关键技术，GPT 系列和 Claude 均采用了这一方法。
-
-### 三阶段流程
-
-```
-阶段 1：监督微调 (SFT)
-  预训练模型 + 人工标注的高质量对话 → SFT 模型
-
-阶段 2：奖励模型训练 (Reward Model)
-  收集人类对多个回答的偏好排序 → 训练奖励模型 (RM)
-
-阶段 3：强化学习优化 (PPO/DPO)
-  SFT 模型 + RM 反馈 → 使用 PPO 算法优化策略
-```
-
-**DPO（Direct Preference Optimization）** 是近年来的替代方案，跳过显式的奖励模型训练，直接从偏好数据中优化策略，简化了流程。
+RLHF（Reinforcement Learning from Human Feedback）是使 LLM 输出与人类偏好对齐的关键技术。关于 RLHF 的三阶段流程、DPO 等替代方案的详细介绍，请参阅 [模型微调与训练](./model-training)。
 
 ---
 
-## 主流模型家族对比
+## 主流模型家族
 
-| 模型 | 开发者 | 架构 | 参数规模 | 开源 | 特点 |
-|------|--------|------|----------|------|------|
-| **GPT-4** | OpenAI | Decoder-Only (MoE) | 未公开 | 否 | 多模态、推理能力强 |
-| **Claude** | Anthropic | Decoder-Only | 未公开 | 否 | 长上下文、安全对齐 |
-| **LLaMA 3** | Meta | Decoder-Only | 8B / 70B / 405B | 是 | 社区生态丰富 |
-| **Qwen 2.5** | 阿里云 | Decoder-Only | 0.5B ~ 72B | 是 | 中英文表现优异 |
-| **DeepSeek V3** | DeepSeek | Decoder-Only (MoE) | 671B (37B 激活) | 是 | MoE 架构、高性价比 |
+关于 GPT-4、Claude、LLaMA、Qwen、DeepSeek 等主流模型的详细对比，以及 MoE 架构和多模态 AI 的介绍，请参阅 [AI 概述与发展历程](./ai-overview)。
 
 ---
 
 ## 推理优化
 
-### KV Cache
-
-在自回归生成中，每生成一个新 Token 都需要计算注意力。由于已生成 Token 的 Key 和 Value 不会改变，可以将其**缓存**起来，避免重复计算。
-
-- **无 KV Cache**：生成第 $n$ 个 Token 需要处理前 $n-1$ 个 Token，总复杂度 $O(n^2)$
-- **有 KV Cache**：每步只需计算新 Token 的 Q，与缓存的 K、V 做注意力，复杂度降至 $O(n)$
-
-### 量化 Quantization
-
-将模型参数从高精度（FP16/BF16）转换为低精度（INT8/INT4），以减少显存占用和加速推理。
-
-| 量化级别 | 精度损失 | 显存节省 | 适用场景 |
-|----------|----------|----------|----------|
-| **FP16** | 无 | 基准 | 训练 & 推理 |
-| **INT8** | 极低 | ~50% | 生产部署 |
-| **INT4** | 较低 | ~75% | 边缘设备、资源受限 |
-| **GPTQ / AWQ** | 低 | ~75% | 高质量 INT4 量化方案 |
-
-### 推测解码 Speculative Decoding
-
-使用一个**小模型（Draft Model）**快速生成多个候选 Token，再由**大模型一次性验证**。若验证通过则接受，否则从大模型的分布重新采样。
-
-```
-小模型（快）: 连续预测 K 个 Token → [t1, t2, t3, t4, t5]
-大模型（慢）: 一次性验证全部 K 个   → 接受前 3 个 [t1, t2, t3] ✓
-                                      → 第 4 个拒绝，从大模型重新采样 t4'
-```
-
-这种方法在不损失生成质量的前提下，可将推理速度提升**2~3 倍**。
+KV Cache、量化（Quantization）、推测解码（Speculative Decoding）等推理优化技术的详细介绍，请参阅 [AI 应用架构设计](./ai-architecture)。
 
 ---
 
@@ -310,18 +252,14 @@ RLHF（Reinforcement Learning from Human Feedback）是使 LLM 输出与人类�
 <div class="dig-questions">
   <div class="dig-questions__header">
     <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
+    <span style="font-size: 12px; opacity: 0.8;">2 道高频</span>
   </div>
   <div class="dig-questions__item">
     <span>1. 请解释 Transformer 的自注意力机制及其计算过程</span>
     <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
   </div>
   <div class="dig-questions__item">
-    <span>2. 对比预训练与微调的区别，并说明 LoRA 的原理</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. Temperature、Top-K、Top-P 三种采样策略有何区别？如何选择？</span>
+    <span>2. Temperature、Top-K、Top-P 三种采样策略有何区别？如何选择？</span>
     <span class="dig-tag dig-tag--easy" style="margin: 0;">简单</span>
   </div>
 </div>
@@ -348,34 +286,7 @@ RLHF（Reinforcement Learning from Human Feedback）是使 LLM 输出与人类�
 
 ---
 
-### Q2：对比预训练与微调的区别，并说明 LoRA 的原理
-
-**要点**：
-
-| 对比维度 | 预训练 | 微调 |
-|----------|--------|------|
-| 数据 | 大规模无标注文本（TB 级） | 特定任务标注数据（通常较少） |
-| 目标 | 学习通用语言知识 | 适配特定任务或领域 |
-| 参数更新 | 所有参数从头训练 | 更新全部或部分参数 |
-| 计算成本 | 极高（数周~数月，数千 GPU） | 较低（数小时~数天） |
-
-**LoRA 原理**：
-
-LoRA 的核心思想是**冻结预训练模型的原始权重 $W$，在其旁边添加一个低秩分解的增量矩阵**：
-
-$$
-W' = W + \Delta W = W + BA
-$$
-
-其中 $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times d}$, $r \ll d$。
-
-- 只训练 $A$ 和 $B$，参数量从 $d^2$ 降到 $2dr$
-- 推理时可将 $\Delta W$ 合并到原始权重中，**不增加推理开销**
-- 典型的 rank $r$ 取值为 8~64
-
----
-
-### Q3：Temperature、Top-K、Top-P 三种采样策略有何区别？如何选择？
+### Q2：Temperature、Top-K、Top-P 三种采样策略有何区别？如何选择？
 
 **要点**：
 

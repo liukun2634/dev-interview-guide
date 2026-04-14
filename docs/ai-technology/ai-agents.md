@@ -375,6 +375,137 @@ def reflection_loop(agent, task: str, max_reflections: int = 3) -> str:
 | **CrewAI** | CrewAI | 多 Agent 角色扮演、任务协作 | 多 Agent 协作场景 | 中等 |
 | **Claude Agent SDK** | Anthropic | 原生 Tool Use、简洁 API | Anthropic 生态应用 | 低 |
 | **OpenAI Assistants** | OpenAI | 托管服务、内置代码解释器和文件检索 | OpenAI 生态应用 | 低 |
+| **Dify** | Dify.AI | 可视化编排、低代码平台 | 快速搭建 AI 应用 | 低 |
+| **Coze** | 字节跳动 | 可视化 Agent 构建、丰富插件生态 | 国内应用场景 | 低 |
+
+---
+
+## Function Calling 与工具调用
+
+Function Calling（函数调用）是 Agent 与外部世界交互的核心能力。LLM 在生成过程中**识别需要调用外部工具的时机**，并输出结构化的调用参数。
+
+### 工作流程
+
+```
+用户查询 → LLM 判断是否需要工具
+                │
+         ┌──── 是 ────┐           ┌─── 否 ───┐
+         ▼             │           ▼           │
+  输出工具名称和参数   │     直接生成回答       │
+         │             │                       │
+         ▼             │
+  应用层执行工具调用   │
+         │             │
+         ▼             │
+  将工具结果回传 LLM   │
+         │             │
+         ▼             │
+  LLM 基于结果生成回答 │
+```
+
+### 工具定义示例
+
+```python
+# OpenAI Function Calling 格式
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "获取指定城市的当前天气信息",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "城市名称，如：北京"},
+                    "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+                },
+                "required": ["city"]
+            }
+        }
+    }
+]
+
+# Anthropic Claude Tool Use 格式
+anthropic_tools = [
+    {
+        "name": "get_weather",
+        "description": "获取指定城市的当前天气信息",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "城市名称"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+            },
+            "required": ["city"]
+        }
+    }
+]
+```
+
+### 工具调用模式
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| **串行调用** | LLM 一次请求一个工具，等待结果后继续 | 步骤有依赖关系的任务 |
+| **并行调用** | LLM 一次请求多个工具，同时执行 | 独立的数据获取任务 |
+| **链式调用** | 一个工具的输出作为另一个工具的输入 | 多步处理流水线 |
+
+**关键要点**：Function Calling 的本质是让模型输出**结构化的工具调用意图**，实际的工具执行由应用层代码完成，模型本身不执行任何外部操作。
+
+---
+
+## MCP（Model Context Protocol）
+
+MCP 是 Anthropic 于 2024 年发布的**开放协议**，旨在标准化 LLM 应用与外部数据源和工具之间的通信方式——类似于"AI 领域的 USB 接口"。
+
+### 为什么需要 MCP
+
+| 问题 | 没有 MCP | 有 MCP |
+|------|---------|--------|
+| **工具集成** | 每个工具每个平台需单独适配 (M×N) | 工具实现一次 MCP Server，所有平台通用 (M+N) |
+| **协议标准** | OpenAI、Claude、Gemini 格式各不同 | 统一的开放协议 |
+| **生态复用** | 工具代码无法跨项目复用 | MCP Server 可直接在不同应用间共享 |
+
+### 架构
+
+```
+┌─────────────────────────────────────────────────┐
+│                  MCP Host                        │
+│  (Claude Desktop / IDE / 自定义应用)              │
+│                                                   │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│   │MCP Client│  │MCP Client│  │MCP Client│      │
+│   └────┬─────┘  └────┬─────┘  └────┬─────┘      │
+│        │              │              │            │
+└────────┼──────────────┼──────────────┼────────────┘
+         │              │              │
+    ┌────▼─────┐  ┌────▼─────┐  ┌────▼─────┐
+    │MCP Server│  │MCP Server│  │MCP Server│
+    │ (GitHub) │  │(Database)│  │ (Slack)  │
+    └──────────┘  └──────────┘  └──────────┘
+```
+
+- **Host**：LLM 应用（如 Claude Desktop、IDE 扩展）
+- **Client**：Host 内的连接管理器，与 Server 建立 1:1 连接
+- **Server**：轻量级进程，暴露工具、资源和 Prompt 模板
+
+### MCP 核心原语
+
+| 原语 | 说明 | 类比 |
+|------|------|------|
+| **Tools** | Agent 可调用的函数（如搜索、查询数据库） | Function Calling |
+| **Resources** | 只读数据源（如文件内容、API 数据） | RESTful GET 端点 |
+| **Prompts** | 预定义的 Prompt 模板 | Prompt 库 |
+
+### MCP vs 原生 Function Calling
+
+| 维度 | Function Calling | MCP |
+|------|-----------------|-----|
+| **定义位置** | 在 API 请求中定义工具 | 在独立的 MCP Server 中定义 |
+| **可复用性** | 绑定到特定应用代码 | Server 可跨应用复用 |
+| **标准化** | 各厂商格式不同 | 统一开放协议 |
+| **生态** | 每个应用自己实现 | 社区共享 MCP Server |
+| **传输层** | HTTP API | stdio / HTTP+SSE |
 
 ---
 
