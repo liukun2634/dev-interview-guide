@@ -397,6 +397,60 @@ body {
   display: none !important;
 }
 
+/* --- Level-0: Collapsible group containers --- */
+
+.VPSidebarItem.level-0 {
+  padding-bottom: 16px !important;
+}
+
+.VPSidebarItem.collapsed.level-0 {
+  padding-bottom: 4px !important;
+}
+
+/* Subtle separator between adjacent groups */
+.VPSidebarItem.level-0.collapsible + .VPSidebarItem.level-0.collapsible {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ghd-borderColor-muted);
+}
+
+/* --- Level-0: Group title typography --- */
+
+.VPSidebarItem.level-0.collapsible > .item > .text {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--ghd-fgColor-default) !important;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+/* --- Caret / Chevron --- */
+
+.VPSidebarItem.level-0.collapsible > .item > .caret {
+  width: 28px;
+  height: 28px;
+  margin-right: -4px;
+  color: var(--ghd-fgColor-muted);
+  transition: color 0.15s;
+}
+
+.VPSidebarItem.level-0.collapsible > .item:hover > .caret {
+  color: var(--ghd-fgColor-default);
+}
+
+.VPSidebarItem.level-0.collapsible > .item > .caret .caret-icon {
+  font-size: 14px !important;
+  transition: transform 0.2s ease;
+}
+
+/* --- Level-1: Article links --- */
+
+/* Left indent for articles under collapsible groups */
+.VPSidebarItem.level-0.collapsible .VPSidebarItem.level-1 {
+  padding-left: 12px;
+}
+
 .VPSidebarItem .text {
   font-size: 14px;
   line-height: 1.5;

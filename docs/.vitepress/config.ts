@@ -105,7 +105,7 @@ export default defineConfig({
       '/ai-technology/': [
         {
           text: 'AI 基础',
-          collapsed: false,
+          collapsed: true,
           items: [
             { text: 'AI 概述与发展历程', link: '/ai-technology/ai-overview' },
             { text: 'LLM 大语言模型原理', link: '/ai-technology/llm-fundamentals' },
@@ -113,7 +113,7 @@ export default defineConfig({
         },
         {
           text: 'LLM 应用技术',
-          collapsed: false,
+          collapsed: true,
           items: [
             { text: 'Prompt Engineering 提示工程', link: '/ai-technology/prompt-engineering' },
             { text: 'Embedding 与向量数据库', link: '/ai-technology/embedding-and-vector-db' },
@@ -122,14 +122,14 @@ export default defineConfig({
         },
         {
           text: 'AI Agent 与工具',
-          collapsed: false,
+          collapsed: true,
           items: [
             { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
           ],
         },
         {
           text: 'AI 工程实践',
-          collapsed: false,
+          collapsed: true,
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },

@@ -34,7 +34,7 @@ const currentSection = computed(() => {
 <style scoped>
 .sidebar-header {
   padding-top: 48px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ghd-borderColor-default);
 }
