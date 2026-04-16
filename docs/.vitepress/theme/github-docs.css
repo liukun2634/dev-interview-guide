@@ -389,7 +389,11 @@ body {
    ============================================================ */
 .VPSidebar {
   border-right: 1px solid var(--ghd-borderColor-default) !important;
-  background: var(--ghd-bgColor-default) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.14)) !important;
+}
+
+.dark .VPSidebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)) !important;
 }
 
 /* Hide non-collapsible level-0 group title — SidebarHeader component handles it */
@@ -460,12 +464,12 @@ body {
 .VPSidebarItem.is-active > .item .link {
   color: var(--ghd-fgColor-default) !important;
   font-weight: 600;
-  background: rgba(9, 105, 218, 0.06);
+  background: var(--ghd-bgColor-accent-muted);
   border-radius: var(--ghd-radius);
 }
 
 .dark .VPSidebarItem.is-active > .item .link {
-  background: rgba(56, 139, 253, 0.1);
+  background: rgba(109, 211, 199, 0.12);
 }
 
 .VPSidebarItem .link:hover {
@@ -480,6 +484,10 @@ body {
 /* ============================================================
    Page Layout — Content
    ============================================================ */
+.VPDoc .container {
+  max-width: none;
+}
+
 .VPContent .VPDoc .container .content {
   max-width: 880px;
 }

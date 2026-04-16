@@ -1,16 +1,13 @@
 <template>
   <div class="ghd-home">
-    <!-- Hero -->
     <div class="ghd-hero">
       <div class="ghd-hero__inner">
         <h1 class="ghd-hero__title">程序员面试手册</h1>
-        <p class="ghd-hero__desc">系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，由 AI 辅助生成</p>
+        <p class="ghd-hero__desc">系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域</p>
       </div>
     </div>
 
-    <!-- Main content -->
     <div class="ghd-content">
-      <!-- Featured topic -->
       <div class="ghd-featured">
         <a :href="featured.link" class="ghd-featured__card">
           <div class="ghd-featured__head">
@@ -24,7 +21,6 @@
         </a>
       </div>
 
-      <!-- Topic list -->
       <h2 class="ghd-section-title">全部分类</h2>
       <div class="ghd-topics">
         <a

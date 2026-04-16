@@ -3,7 +3,7 @@ import mathjax3 from 'markdown-it-mathjax3'
 
 export default defineConfig({
   title: '程序员面试手册',
-  description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域，含代码示例与高频真题',
+  description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
   ignoreDeadLinks: true,
@@ -16,10 +16,10 @@ export default defineConfig({
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'Dev Interview Guide' }],
     ['meta', { property: 'og:title', content: 'Dev Interview Guide — 程序员面试知识体系' }],
-    ['meta', { property: 'og:description', content: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库等 8 大领域，含代码示例与高频真题' }],
+    ['meta', { property: 'og:description', content: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，含代码示例与高频真题' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     ['meta', { name: 'twitter:title', content: 'Dev Interview Guide — 程序员面试知识体系' }],
-    ['meta', { name: 'twitter:description', content: '系统化的程序员面试知识体系，涵盖 8 大领域' }],
+    ['meta', { name: 'twitter:description', content: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域' }],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/dev-interview-guide/favicon.svg' }],
   ],
 
