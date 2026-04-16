@@ -1,8 +1,8 @@
 ---
-title: 图基础
+title: 图建模与遍历
 ---
 
-# 图基础
+# 图建模与遍历
 
 <span class="dig-tag dig-tag--category">图与搜索</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 

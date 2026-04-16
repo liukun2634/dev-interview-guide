@@ -1,56 +1,26 @@
 ---
-title: 复杂度与递归
+title: 复杂度判断
 ---
 
-# 复杂度与递归
+# 复杂度判断
 
-<span class="dig-tag dig-tag--category">基础方法</span> <span class="dig-tag dig-tag--easy">⭐ 基础</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
+<span class="dig-tag dig-tag--category">基础知识</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-复杂度回答的是“解法值不值得用”，递归回答的是“问题能不能自然拆开”。这两个能力是后续所有专题的共同前置知识。
+这一页的核心内容已经并入 [算法技巧](./algorithm-patterns)。为了兼容旧链接，本页暂时保留，但后续建议直接看总表版的算法技巧。
 :::
 
-## 复杂度分析看什么
+## 现在应该看哪里
 
-### 时间复杂度
+- 如果你想建立“题目特征 + 数据范围 -> 方法入口 + 复杂度上限”的第一反应，直接看 [算法技巧](./algorithm-patterns)。
+- 那一页已经把复杂度判断、题目特征和常用方法整合到一张总表里。
 
-- 看主循环执行多少次。
-- 看递归树展开了多少层。
-- 看每层做了多少工作。
+## 为什么合并
 
-### 空间复杂度
+1. 复杂度判断不应该脱离题型识别单独背。
+2. 真正做题时，你会同时看题目特征和数据范围，而不是分两步切换页面。
+3. 合并后更适合作为第一反应速查表。
 
-- 额外数组、哈希表、栈的大小。
-- 递归调用栈是否会额外占空间。
+## 过渡说明
 
-## 递归分析模板
-
-1. 函数定义是什么。
-2. 递归终止条件是什么。
-3. 当前层做什么。
-4. 子问题返回后如何合并。
-
-## 常见误区
-
-1. 只会背 $O(n)$、$O(\log n)$，不会解释来源。
-2. 递归只会写，不会说函数语义。
-3. 忽略递归栈空间，把空间复杂度说错。
-
-<div class="dig-questions">
-  <div class="dig-questions__header">
-    <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 个基础追问</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>1. 这个解法的时间复杂度和空间复杂度分别是多少？</span>
-    <span class="dig-tag dig-tag--easy" style="margin: 0;">基础</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>2. 递归为什么一定会结束？</span>
-    <span class="dig-tag dig-tag--easy" style="margin: 0;">基础</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. 递归能不能改成迭代？代价是什么？</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-</div>
+- 旧链接暂时还可用，但后续如果继续补内容，将只在 [算法技巧](./algorithm-patterns) 里维护。

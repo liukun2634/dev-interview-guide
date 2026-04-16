@@ -35,25 +35,22 @@ export default defineConfig({
     sidebar: {
       '/data-structures-and-algorithms/': [
         {
-          text: '数据结构与算法',
-          items: [
-            { text: '章节提要', link: '/data-structures-and-algorithms/' },
-          ],
-        },
-        {
-          text: '基础方法',
+          text: '基础知识',
           collapsed: false,
           items: [
-            { text: '基础方法导览', link: '/data-structures-and-algorithms/foundations/' },
-            { text: '复杂度与递归', link: '/data-structures-and-algorithms/foundations/complexity-recursion' },
+            { text: '一般流程', link: '/data-structures-and-algorithms/foundations/problem-solving-workflow' },
+            { text: '算法技巧', link: '/data-structures-and-algorithms/foundations/algorithm-patterns' },
+            { text: 'Java环境配置', link: '/data-structures-and-algorithms/foundations/java-problem-solving-basics' },
+            { text: '调试技巧', link: '/data-structures-and-algorithms/foundations/debug-and-review' },
+            { text: 'AI 时代刷题', link: '/data-structures-and-algorithms/foundations/ai-assisted-practice' },
           ],
         },
         {
           text: '数组与字符串',
           collapsed: false,
           items: [
-            { text: '数组与字符串导览', link: '/data-structures-and-algorithms/arrays/' },
-            { text: '数组与字符串基础', link: '/data-structures-and-algorithms/arrays/array-basics' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/arrays/' },
+            { text: '线性扫描与区间处理', link: '/data-structures-and-algorithms/arrays/array-basics' },
             { text: '双指针', link: '/data-structures-and-algorithms/arrays/two-pointers' },
             { text: '滑动窗口', link: '/data-structures-and-algorithms/arrays/sliding-window' },
             { text: '前缀和与差分', link: '/data-structures-and-algorithms/arrays/prefix-sum-difference' },
@@ -63,23 +60,23 @@ export default defineConfig({
           text: '链表',
           collapsed: false,
           items: [
-            { text: '链表导览', link: '/data-structures-and-algorithms/linked-list/' },
-            { text: '链表基础', link: '/data-structures-and-algorithms/linked-list/linked-list-basics' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/linked-list/' },
+            { text: '链表题处理框架', link: '/data-structures-and-algorithms/linked-list/linked-list-basics' },
           ],
         },
         {
           text: '栈与队列',
           collapsed: false,
           items: [
-            { text: '栈与队列导览', link: '/data-structures-and-algorithms/stack-queue/' },
-            { text: '栈与队列基础', link: '/data-structures-and-algorithms/stack-queue/stack-queue-basics' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/stack-queue/' },
+            { text: '顺序结构处理框架', link: '/data-structures-and-algorithms/stack-queue/stack-queue-basics' },
           ],
         },
         {
           text: '哈希',
           collapsed: false,
           items: [
-            { text: '哈希分类导览', link: '/data-structures-and-algorithms/hash/' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/hash/' },
             { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
           ],
         },
@@ -87,7 +84,7 @@ export default defineConfig({
           text: '树与堆',
           collapsed: false,
           items: [
-            { text: '树与堆导览', link: '/data-structures-and-algorithms/tree/' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/tree/' },
             { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
             { text: '二叉搜索树', link: '/data-structures-and-algorithms/tree/binary-search-tree' },
             { text: '堆与优先队列', link: '/data-structures-and-algorithms/tree/heap-priority-queue' },
@@ -99,8 +96,8 @@ export default defineConfig({
           text: '图与搜索',
           collapsed: false,
           items: [
-            { text: '图与搜索导览', link: '/data-structures-and-algorithms/graph-search/' },
-            { text: '图基础', link: '/data-structures-and-algorithms/graph-search/graph-basics' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/graph-search/' },
+            { text: '图建模与遍历', link: '/data-structures-and-algorithms/graph-search/graph-basics' },
             { text: 'BFS 与 DFS', link: '/data-structures-and-algorithms/graph-search/bfs-dfs' },
             { text: '二分查找', link: '/data-structures-and-algorithms/graph-search/binary-search' },
             { text: '拓扑排序', link: '/data-structures-and-algorithms/graph-search/topological-sort' },
@@ -112,7 +109,7 @@ export default defineConfig({
           text: '动态规划',
           collapsed: false,
           items: [
-            { text: '动态规划分类导览', link: '/data-structures-and-algorithms/dynamic-programming/' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/dynamic-programming/' },
             { text: '线性 DP', link: '/data-structures-and-algorithms/dynamic-programming/linear-dp' },
             { text: '区间 DP', link: '/data-structures-and-algorithms/dynamic-programming/interval-dp' },
             { text: '树形 DP', link: '/data-structures-and-algorithms/dynamic-programming/tree-dp' },
@@ -124,7 +121,7 @@ export default defineConfig({
           text: '贪心与技巧',
           collapsed: false,
           items: [
-            { text: '贪心与技巧导览', link: '/data-structures-and-algorithms/greedy-techniques/' },
+            { text: '概念与处理', link: '/data-structures-and-algorithms/greedy-techniques/' },
             { text: '贪心算法', link: '/data-structures-and-algorithms/greedy-techniques/greedy' },
             { text: '位运算技巧', link: '/data-structures-and-algorithms/greedy-techniques/bitwise' },
           ],
