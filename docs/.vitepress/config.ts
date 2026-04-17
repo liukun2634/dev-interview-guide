@@ -139,8 +139,16 @@ export default withMermaid(defineConfig({
       '/computer-networks/': [
         {
           text: '计算机网络',
+          collapsed: false,
           items: [
+            { text: '章节概览', link: '/computer-networks/' },
+            { text: '网络模型', link: '/computer-networks/network-model' },
             { text: 'TCP 与 UDP', link: '/computer-networks/tcp-udp' },
+            { text: 'HTTP 与 HTTPS', link: '/computer-networks/http-https' },
+            { text: 'DNS', link: '/computer-networks/dns' },
+            { text: 'WebSocket', link: '/computer-networks/websocket' },
+            { text: '网络安全', link: '/computer-networks/network-security' },
+            { text: 'CDN 与负载均衡', link: '/computer-networks/cdn-load-balancing' },
           ],
         },
       ],
