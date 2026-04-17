@@ -629,15 +629,21 @@ body {
 /* Copy button */
 .vp-doc div[class*='language-'] .copy {
   top: 4px !important;
-  right: 52px !important;
-  background: var(--ghd-bgColor-white) !important;
+  right: 12px !important;
+  background-color: var(--ghd-bgColor-white) !important;
   border: 1px solid var(--ghd-borderColor-default) !important;
   border-radius: var(--ghd-radius) !important;
   opacity: 0 !important;
   transition: opacity 0.15s !important;
+  z-index: 3 !important;
 }
 
-.vp-doc div[class*='language-']:hover .copy {
+.vp-doc div[class*='language-']:hover .copy,
+.vp-doc div[class*='language-'] .copy:focus {
+  opacity: 1 !important;
+}
+
+.vp-doc div[class*='language-'] .copy.copied {
   opacity: 1 !important;
 }
 

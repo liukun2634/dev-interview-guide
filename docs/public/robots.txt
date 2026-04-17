@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://liukun2634.github.io/dev-interview-guide/sitemap.xml

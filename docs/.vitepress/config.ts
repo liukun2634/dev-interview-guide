@@ -10,6 +10,10 @@ export default withMermaid(defineConfig({
   ignoreDeadLinks: true,
   srcExclude: ['**/superpowers/**', '**/devops/**'],
 
+  sitemap: {
+    hostname: 'https://liukun2634.github.io/dev-interview-guide',
+  },
+
   head: [
     ['meta', { name: 'keywords', content: '程序员面试,算法,数据结构,系统设计,数据库,操作系统,计算机网络,Java,Docker,AI,LLM,面试题' }],
     ['meta', { name: 'author', content: 'Dev Interview Guide' }],
@@ -50,11 +54,11 @@ export default withMermaid(defineConfig({
           text: '数组与字符串',
           collapsed: false,
           items: [
-            { text: '概念与处理', link: '/data-structures-and-algorithms/arrays/' },
-            { text: '线性扫描与区间处理', link: '/data-structures-and-algorithms/arrays/array-basics' },
+            { text: '概念与技巧', link: '/data-structures-and-algorithms/arrays/' },
             { text: '双指针', link: '/data-structures-and-algorithms/arrays/two-pointers' },
             { text: '滑动窗口', link: '/data-structures-and-algorithms/arrays/sliding-window' },
             { text: '前缀和与差分', link: '/data-structures-and-algorithms/arrays/prefix-sum-difference' },
+            { text: '二分查找', link: '/data-structures-and-algorithms/arrays/binary-search' },
           ],
         },
         {
@@ -321,6 +325,14 @@ export default withMermaid(defineConfig({
             { text: 'LLM 推理优化', link: '/ai-technology/inference-optimization' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },
             { text: 'AI 系统设计面试题', link: '/ai-technology/ai-system-design' },
+          ],
+        },
+        {
+          text: 'AI 面试准备',
+          collapsed: true,
+          items: [
+            { text: 'AI 时代面试准备策略', link: '/ai-technology/ai-interview-prep' },
+            { text: '全栈工程师 AI 实战能力', link: '/ai-technology/ai-for-fullstack' },
           ],
         },
       ],
