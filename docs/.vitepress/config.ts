@@ -131,8 +131,14 @@ export default withMermaid(defineConfig({
       '/operating-systems/': [
         {
           text: '操作系统',
+          collapsed: false,
           items: [
+            { text: '章节概览', link: '/operating-systems/' },
             { text: '进程与线程', link: '/operating-systems/process-and-thread' },
+            { text: '内存管理', link: '/operating-systems/memory-management' },
+            { text: 'I/O 模型', link: '/operating-systems/io-model' },
+            { text: 'CPU 调度', link: '/operating-systems/cpu-scheduling' },
+            { text: '文件系统', link: '/operating-systems/file-system' },
           ],
         },
       ],
@@ -155,15 +161,29 @@ export default withMermaid(defineConfig({
       '/databases/': [
         {
           text: '数据库',
+          collapsed: false,
           items: [
+            { text: '章节概览', link: '/databases/' },
+            { text: 'MySQL 架构', link: '/databases/mysql-architecture' },
             { text: '索引原理', link: '/databases/indexing' },
+            { text: '事务与锁', link: '/databases/transaction-lock' },
+            { text: 'SQL 优化', link: '/databases/sql-optimization' },
+            { text: 'MySQL 日志', link: '/databases/mysql-logs' },
+            { text: '分库分表', link: '/databases/sharding' },
+            { text: 'Redis 核心', link: '/databases/redis' },
           ],
         },
       ],
       '/system-design/': [
         {
           text: '系统设计',
+          collapsed: false,
           items: [
+            { text: '章节概览', link: '/system-design/' },
+            { text: '系统设计方法论', link: '/system-design/system-design-methodology' },
+            { text: '分布式理论', link: '/system-design/distributed-theory' },
+            { text: '分布式事务', link: '/system-design/distributed-transaction' },
+            { text: '高可用架构', link: '/system-design/high-availability' },
             { text: '缓存策略', link: '/system-design/caching-strategies' },
             { text: '限流与熔断', link: '/system-design/rate-limiting' },
             { text: '消息队列', link: '/system-design/message-queue' },
@@ -174,17 +194,28 @@ export default withMermaid(defineConfig({
       '/engineering-practice/': [
         {
           text: '工程实践',
+          collapsed: false,
           items: [
-            { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
+            { text: '章节概览', link: '/engineering-practice/' },
+            { text: '设计模式', link: '/engineering-practice/design-patterns' },
+            { text: 'Git 工作流', link: '/engineering-practice/git-workflow' },
+            { text: '监控与日志', link: '/engineering-practice/monitoring-logging' },
             { text: 'Docker 容器化', link: '/engineering-practice/docker' },
+            { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
           ],
         },
       ],
       '/programming-languages/': [
         {
           text: '编程语言',
+          collapsed: false,
           items: [
+            { text: '章节概览', link: '/programming-languages/' },
             { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
+            { text: 'Java 并发编程', link: '/programming-languages/java-concurrency' },
+            { text: 'Java 集合框架', link: '/programming-languages/java-collections' },
+            { text: 'JVM 深入', link: '/programming-languages/jvm-internals' },
+            { text: 'Java 新特性', link: '/programming-languages/java-modern-features' },
           ],
         },
       ],
