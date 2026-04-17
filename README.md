@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/public/favicon.svg" width="80" height="80" alt="logo" />
-
 # 程序员面试手册
 
 **系统化的程序员面试知识体系，覆盖 9 大领域**
