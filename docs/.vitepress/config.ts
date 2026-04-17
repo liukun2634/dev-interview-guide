@@ -1,7 +1,8 @@
 import { defineConfig } from 'vitepress'
 import mathjax3 from 'markdown-it-mathjax3'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   title: '程序员面试手册',
   description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
@@ -181,9 +182,69 @@ export default defineConfig({
       ],
       '/web-and-frameworks/': [
         {
-          text: 'Web 与框架',
+          text: 'Web 基础',
+          collapsed: false,
           items: [
-            { text: 'RESTful API', link: '/web-and-frameworks/restful-api' },
+            { text: '章节概览', link: '/web-and-frameworks/' },
+            { text: 'Web 基础', link: '/web-and-frameworks/web-basics' },
+          ],
+        },
+        {
+          text: 'Spring 核心',
+          collapsed: false,
+          items: [
+            { text: '概念与处理', link: '/web-and-frameworks/spring-core/' },
+            { text: 'IoC 与依赖注入', link: '/web-and-frameworks/spring-core/ioc-di' },
+            { text: 'Bean 生命周期与作用域', link: '/web-and-frameworks/spring-core/bean-lifecycle' },
+            { text: 'AOP 原理与实践', link: '/web-and-frameworks/spring-core/aop' },
+          ],
+        },
+        {
+          text: 'Spring MVC',
+          collapsed: false,
+          items: [
+            { text: '概念与处理', link: '/web-and-frameworks/spring-mvc/' },
+            { text: '请求处理流程', link: '/web-and-frameworks/spring-mvc/request-flow' },
+            { text: 'RESTful API', link: '/web-and-frameworks/spring-mvc/restful-api' },
+          ],
+        },
+        {
+          text: 'Spring Boot',
+          collapsed: false,
+          items: [
+            { text: '概念与处理', link: '/web-and-frameworks/spring-boot/' },
+            { text: '自动配置原理', link: '/web-and-frameworks/spring-boot/auto-configuration' },
+            { text: '配置体系与 Profile', link: '/web-and-frameworks/spring-boot/configuration' },
+          ],
+        },
+        {
+          text: '数据访问与事务',
+          collapsed: false,
+          items: [
+            { text: '概念与处理', link: '/web-and-frameworks/data-access/' },
+            { text: '事务管理与传播行为', link: '/web-and-frameworks/data-access/transaction' },
+            { text: 'JPA 与 MyBatis 集成', link: '/web-and-frameworks/data-access/orm-integration' },
+          ],
+        },
+        {
+          text: 'Spring Security',
+          collapsed: false,
+          items: [
+            { text: 'Spring Security', link: '/web-and-frameworks/spring-security' },
+          ],
+        },
+        {
+          text: 'Spring Boot 3 与新特性',
+          collapsed: false,
+          items: [
+            { text: 'Spring Boot 3 新特性', link: '/web-and-frameworks/spring-boot3-new-features' },
+          ],
+        },
+        {
+          text: 'Spring Cloud 速查',
+          collapsed: false,
+          items: [
+            { text: 'Spring Cloud 速查', link: '/web-and-frameworks/spring-cloud-overview' },
           ],
         },
       ],
@@ -217,7 +278,10 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
+            { text: '模型评估与对齐', link: '/ai-technology/evaluation-and-alignment' },
+            { text: 'LLM 推理优化', link: '/ai-technology/inference-optimization' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },
+            { text: 'AI 系统设计面试题', link: '/ai-technology/ai-system-design' },
           ],
         },
       ],
@@ -265,4 +329,4 @@ export default defineConfig({
       text: '在 GitHub 上编辑此页',
     },
   },
-})
+}))
