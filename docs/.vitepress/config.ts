@@ -114,12 +114,13 @@ export default withMermaid(defineConfig({
           text: '动态规划',
           collapsed: false,
           items: [
-            { text: '概念与处理', link: '/data-structures-and-algorithms/dynamic-programming/' },
-            { text: '线性 DP', link: '/data-structures-and-algorithms/dynamic-programming/linear-dp' },
-            { text: '区间 DP', link: '/data-structures-and-algorithms/dynamic-programming/interval-dp' },
+            { text: 'DP 总论与解题方法论', link: '/data-structures-and-algorithms/dynamic-programming/' },
+            { text: '线性与网格 DP', link: '/data-structures-and-algorithms/dynamic-programming/linear-dp' },
+            { text: '背包 DP', link: '/data-structures-and-algorithms/dynamic-programming/knapsack-dp' },
+            { text: '序列与回文 DP', link: '/data-structures-and-algorithms/dynamic-programming/sequence-dp' },
+            { text: '区间与状态机 DP', link: '/data-structures-and-algorithms/dynamic-programming/interval-and-state-machine-dp' },
             { text: '树形 DP', link: '/data-structures-and-algorithms/dynamic-programming/tree-dp' },
-            { text: '状态压缩 DP', link: '/data-structures-and-algorithms/dynamic-programming/state-compression-dp' },
-            { text: '典型动态规划问题', link: '/data-structures-and-algorithms/dynamic-programming/classic-problems' },
+            { text: '状压与计数 DP', link: '/data-structures-and-algorithms/dynamic-programming/advanced-dp' },
           ],
         },
         {
