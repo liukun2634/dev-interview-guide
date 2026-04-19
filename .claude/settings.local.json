@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"=== Checking $$ formula pairing ===\")",
+      "Bash(echo \"llm-fundamentals.md: $\\(grep '\\\\$\\\\$' docs/ai-technology/llm-fundamentals.md)",
+      "Bash(start http://localhost:5182/dev-interview-guide/)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5186/dev-interview-guide/)",
+      "Bash(curl -s http://localhost:5186/dev-interview-guide/system-design/)",
+      "Bash(git rm *)"
+    ]
+  }
+}

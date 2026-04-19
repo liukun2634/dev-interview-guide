@@ -104,7 +104,7 @@ export default withMermaid(defineConfig({
             { text: '概念与处理', link: '/data-structures-and-algorithms/graph-search/' },
             { text: '图建模与遍历', link: '/data-structures-and-algorithms/graph-search/graph-basics' },
             { text: 'BFS 与 DFS', link: '/data-structures-and-algorithms/graph-search/bfs-dfs' },
-            { text: '二分查找', link: '/data-structures-and-algorithms/graph-search/binary-search' },
+
             { text: '拓扑排序', link: '/data-structures-and-algorithms/graph-search/topological-sort' },
             { text: '最短路', link: '/data-structures-and-algorithms/graph-search/shortest-path' },
             { text: '回溯', link: '/data-structures-and-algorithms/graph-search/backtracking' },

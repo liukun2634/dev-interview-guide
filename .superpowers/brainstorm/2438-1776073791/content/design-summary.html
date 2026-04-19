@@ -1,0 +1,85 @@
+<h2>完整设计方案确认</h2>
+<p class="subtitle">程序员面试手册 — 浅绿自然主题 · 以下是所有设计决策的汇总</p>
+
+<div class="section">
+  <h3>设计决策汇总</h3>
+
+  <div style="display:grid;gap:16px;margin-top:16px;">
+    <!-- Decision 1 -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:#059669;color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:700;">1</span>
+        <span style="font-size:15px;font-weight:700;color:#065f46;">色调方向</span>
+      </div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">浅绿自然风 — 淡绿底色 (#f6faf6)，翠绿强调色 (#059669)，清新护眼，适合长时间阅读</div>
+    </div>
+
+    <!-- Decision 2 -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:#059669;color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:700;">2</span>
+        <span style="font-size:15px;font-weight:700;color:#065f46;">首页 AI 突出方式</span>
+      </div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">AI 宽卡片 — 2 列网格，AI 技术横跨 2 列，浅绿渐变 + 绿色边框 + HOT 标签。其他 7 个领域标准卡片排列</div>
+    </div>
+
+    <!-- Decision 3 -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:#059669;color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:700;">3</span>
+        <span style="font-size:15px;font-weight:700;color:#065f46;">侧边栏</span>
+      </div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">全展开 + 可折叠 — 默认展开所有章节，但支持点击折叠。当前文章绿色高亮，章节标题加粗分隔</div>
+    </div>
+
+    <!-- Decision 4 -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:#059669;color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:700;">4</span>
+        <span style="font-size:15px;font-weight:700;color:#065f46;">代码块</span>
+      </div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">极简白底 + 轻装饰 — 浅灰白底，细边框，顶部显示语言标签和复制按钮，无其他装饰</div>
+    </div>
+
+    <!-- Decision 5 -->
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:#059669;color:#fff;font-size:11px;padding:2px 10px;border-radius:99px;font-weight:700;">5</span>
+        <span style="font-size:15px;font-weight:700;color:#065f46;">文章排版</span>
+      </div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">卡片式正文 — 白色卡片包裹，面包屑导航，标签行（分类/难度/频率），阅读时间。Tip 用左侧绿色边框</div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;">
+  <h3>附加设计要素</h3>
+  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px 20px;line-height:1.8;font-size:14px;color:#374151;">
+    <div style="margin-bottom:8px;"><strong>站名：</strong>程序员面试手册 (Dev Interview Guide)</div>
+    <div style="margin-bottom:8px;"><strong>字体：</strong>Inter + Noto Sans SC (正文) / JetBrains Mono (代码)</div>
+    <div style="margin-bottom:8px;"><strong>暗色模式：</strong>保留 VitePress 原生切换，深绿色系暗色方案</div>
+    <div style="margin-bottom:8px;"><strong>面试真题块：</strong>保留现有 dig-questions 样式，适配绿色主题</div>
+    <div style="margin-bottom:8px;"><strong>标签系统：</strong>保留 5 种标签 (分类/简单/中级/困难/高频)，适配新色系</div>
+    <div style="margin-bottom:8px;"><strong>数学公式：</strong>保留 KaTeX 支持</div>
+    <div><strong>移除：</strong>macOS 代码块装饰、ReadingProgress 进度条、首页统计行和功能展示</div>
+  </div>
+</div>
+
+<div style="margin-top:24px;text-align:center;">
+  <div class="options" style="max-width:400px;margin:0 auto;">
+    <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+      <div class="letter" style="background:#059669;">✓</div>
+      <div class="content">
+        <h3>确认方案</h3>
+        <p>所有设计决策正确，可以进入实施</p>
+      </div>
+    </div>
+    <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+      <div class="letter" style="background:#d97706;">✎</div>
+      <div class="content">
+        <h3>需要修改</h3>
+        <p>某些决策需要调整，在终端说明</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -50,53 +50,29 @@ AI Agent：
 
 AI Agent 的运行遵循**感知 → 规划 → 行动 → 记忆**的循环模式：
 
-```
-                        AI Agent 架构全景图
+```mermaid
+graph TD
+    subgraph Agent["Agent 核心循环"]
+        A[感知 Perception] --> B[规划 Planning]
+        B <--> M[记忆系统 Memory]
+        B --> C[行动 Action]
+        C --> T[工具集 Tools]
+        T --> D[反思 Reflection]
+        D -->|自我修正| A
+    end
 
-  ┌────────────────────────────────────────────────────────┐
-  │                     Agent 核心循环                      │
-  │                                                        │
-  │          ┌──────────┐                                  │
-  │          │  感知     │◄── 用户输入 / 环境信息           │
-  │          │ Perception│◄── 工具返回结果                  │
-  │          └────┬─────┘                                  │
-  │               │                                        │
-  │               ▼                                        │
-  │          ┌──────────┐     ┌──────────────────┐        │
-  │          │  规划     │────►│  记忆系统         │        │
-  │          │ Planning  │◄────│  Memory           │        │
-  │          └────┬─────┘     │  ┌─────────────┐ │        │
-  │               │           │  │ 短期记忆     │ │        │
-  │               │           │  │ (对话上下文)  │ │        │
-  │               │           │  ├─────────────┤ │        │
-  │               ▼           │  │ 长期记忆     │ │        │
-  │          ┌──────────┐     │  │ (向量存储)   │ │        │
-  │          │  行动     │     │  ├─────────────┤ │        │
-  │          │ Action    │     │  │ 工作记忆     │ │        │
-  │          └────┬─────┘     │  │ (当前任务态) │ │        │
-  │               │           │  └─────────────┘ │        │
-  │               ▼           └──────────────────┘        │
-  │          ┌──────────┐                                  │
-  │          │  工具集    │                                  │
-  │          │  Tools    │                                  │
-  │          │ ┌──────┐ │                                  │
-  │          │ │搜索   │ │                                  │
-  │          │ ├──────┤ │                                  │
-  │          │ │代码执行│ │                                  │
-  │          │ ├──────┤ │                                  │
-  │          │ │API调用│ │                                  │
-  │          │ ├──────┤ │                                  │
-  │          │ │文件操作│ │                                  │
-  │          │ └──────┘ │                                  │
-  │          └────┬─────┘                                  │
-  │               │                                        │
-  │               ▼                                        │
-  │          ┌──────────┐                                  │
-  │          │  反思     │── 自我评估 → 修正 → 重新规划     │
-  │          │ Reflection│                                  │
-  │          └──────────┘                                  │
-  │                                                        │
-  └────────────────────────────────────────────────────────┘
+    Input["用户输入 / 环境信息"] --> A
+    T --- T1[搜索]
+    T --- T2[代码执行]
+    T --- T3[API 调用]
+    T --- T4[文件操作]
+
+    subgraph Mem["记忆系统"]
+        M1[短期记忆<br/>对话上下文]
+        M2[长期记忆<br/>向量存储]
+        M3[工作记忆<br/>当前任务状态]
+    end
+    M --- Mem
 ```
 
 ---
@@ -373,6 +349,7 @@ def reflection_loop(agent, task: str, max_reflections: int = 3) -> str:
 | **LangGraph** | LangChain | 基于图的工作流、支持循环和状态管理 | 复杂 Agent 工作流 | 较高 |
 | **AutoGPT** | Significant Gravitas | 全自主执行、目标驱动 | 探索性实验 | 低 |
 | **CrewAI** | CrewAI | 多 Agent 角色扮演、任务协作 | 多 Agent 协作场景 | 中等 |
+| **AutoGen** | Microsoft | 多 Agent 对话式编排、灵活拓扑、代码执行 | 研究探索、复杂多 Agent 协作 | 较高 |
 | **Claude Agent SDK** | Anthropic | 原生 Tool Use、简洁 API | Anthropic 生态应用 | 低 |
 | **OpenAI Assistants** | OpenAI | 托管服务、内置代码解释器和文件检索 | OpenAI 生态应用 | 低 |
 | **Dify** | Dify.AI | 可视化编排、低代码平台 | 快速搭建 AI 应用 | 低 |
@@ -387,20 +364,23 @@ Function Calling（函数调用）是 Agent 与外部世界交互的核心能力
 ### 工作流程
 
 ```
-用户查询 → LLM 判断是否需要工具
-                │
-         ┌──── 是 ────┐           ┌─── 否 ───┐
-         ▼             │           ▼           │
-  输出工具名称和参数   │     直接生成回答       │
-         │             │                       │
-         ▼             │
-  应用层执行工具调用   │
-         │             │
-         ▼             │
-  将工具结果回传 LLM   │
-         │             │
-         ▼             │
-  LLM 基于结果生成回答 │
+User Query --> LLM Decision
+                  |
+           +------+------+
+           |             |
+      Need Tools    No Tools
+           |             |
+    Output tool      Generate
+    name + args      response
+           |
+    App executes
+    tool call
+           |
+    Return result
+    to LLM
+           |
+    LLM generates
+    final response
 ```
 
 ### 工具定义示例
@@ -468,21 +448,16 @@ MCP 是 Anthropic 于 2024 年发布的**开放协议**，旨在标准化 LLM �
 
 ### 架构
 
-```
-┌─────────────────────────────────────────────────┐
-│                  MCP Host                        │
-│  (Claude Desktop / IDE / 自定义应用)              │
-│                                                   │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐      │
-│   │MCP Client│  │MCP Client│  │MCP Client│      │
-│   └────┬─────┘  └────┬─────┘  └────┬─────┘      │
-│        │              │              │            │
-└────────┼──────────────┼──────────────┼────────────┘
-         │              │              │
-    ┌────▼─────┐  ┌────▼─────┐  ┌────▼─────┐
-    │MCP Server│  │MCP Server│  │MCP Server│
-    │ (GitHub) │  │(Database)│  │ (Slack)  │
-    └──────────┘  └──────────┘  └──────────┘
+```mermaid
+graph TD
+    subgraph Host["MCP Host (Claude Desktop / IDE / 自定义应用)"]
+        C1[MCP Client]
+        C2[MCP Client]
+        C3[MCP Client]
+    end
+    C1 --> S1["MCP Server<br/>(GitHub)"]
+    C2 --> S2["MCP Server<br/>(Database)"]
+    C3 --> S3["MCP Server<br/>(Slack)"]
 ```
 
 - **Host**：LLM 应用（如 Claude Desktop、IDE 扩展）
@@ -516,33 +491,27 @@ MCP 是 Anthropic 于 2024 年发布的**开放协议**，旨在标准化 LLM �
 ### 协作模式
 
 ```
-模式一：主从模式（Orchestrator-Worker）
+Pattern 1: Orchestrator-Worker
 
-  ┌──────────────┐
-  │  Orchestrator │── 分配任务 ──► Agent A (搜索)
-  │  (任务调度器)  │── 分配任务 ──► Agent B (分析)
-  │               │── 分配任务 ──► Agent C (撰写)
-  └──────┬───────┘
-         │
-         ▼
-    汇总结果 → 最终输出
+  Orchestrator ----> Agent A (Search)
+       |-----------> Agent B (Analyze)
+       |-----------> Agent C (Write)
+       |
+    Aggregate --> Final Output
 
 
-模式二：辩论模式（Debate）
+Pattern 2: Debate
 
-  Agent A ──► 提出方案
-       │
-  Agent B ──► 质疑和挑战
-       │
-  Agent A ──► 修正补充
-       │
-  Judge  ──► 最终裁决
+  Agent A --> Propose
+  Agent B --> Challenge
+  Agent A --> Revise
+  Judge   --> Final Decision
 
 
-模式三：流水线模式（Pipeline）
+Pattern 3: Pipeline
 
-  Agent A ──► Agent B ──► Agent C ──► 最终输出
-  (研究)      (分析)      (撰写)
+  Agent A --> Agent B --> Agent C --> Final Output
+  (Research)  (Analyze)   (Write)
 ```
 
 ### 多 Agent 示例
@@ -772,6 +741,29 @@ class CostAwareAgent:
 
 ---
 
+### Agent 评估方法
+
+评估 Agent 系统的效果比评估单次 LLM 调用更复杂，需要从多个维度衡量：
+
+| 评估维度 | 指标 | 说明 |
+|----------|------|------|
+| **任务完成率** | 成功完成目标任务的比例 | 最核心的指标 |
+| **工具选择准确率** | 选择正确工具的比例 | 反映规划能力 |
+| **步骤效率** | 完成任务的平均步数 vs 最优步数 | 越接近最优越好 |
+| **错误恢复率** | 遇到错误后成功恢复的比例 | 反映鲁棒性 |
+| **成本效率** | 完成任务消耗的 Token 数 / API 调用次数 | 生产环境关键指标 |
+
+**主流评估基准**：
+
+| 基准 | 考察能力 | 说明 |
+|------|----------|------|
+| **AgentBench** | 多种环境下的 Agent 能力 | 包含 Web、数据库、代码等 8 个环境 |
+| **SWE-Bench** | 自动修复真实 GitHub Issue | 考察代码理解和修改能力，难度高 |
+| **WebArena** | 浏览器操作自动化 | 在真实网站上完成任务 |
+| **GAIA** | 通用 AI 助手能力 | 需要多种工具和多步推理 |
+
+---
+
 ## 常见陷阱
 
 ::: warning ⚠️ 常见误区
@@ -793,7 +785,7 @@ class CostAwareAgent:
 <div class="dig-questions">
   <div class="dig-questions__header">
     <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
+    <span style="font-size: 12px; opacity: 0.8;">4 道高频</span>
   </div>
   <div class="dig-questions__item">
     <span>1. 请描述 AI Agent 的核心架构及其与简单 LLM 调用的区别</span>
@@ -806,6 +798,10 @@ class CostAwareAgent:
   <div class="dig-questions__item">
     <span>3. 在生产环境中部署 Agent 系统，面临哪些主要挑战？如何应对？</span>
     <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
+  </div>
+  <div class="dig-questions__item">
+    <span>4. 如何评估一个 Agent 系统的性能？有哪些关键指标？</span>
+    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
   </div>
 </div>
 
@@ -865,6 +861,24 @@ Agent 的记忆系统分为三个层次：
 | **延迟过高** | 多轮 LLM 调用和工具执行导致响应时间长 | 并行执行独立任务；缓存常见子任务结果；流式输出中间状态 |
 
 **核心原则**：在生产环境中，应采用**渐进式自主**策略——从人机协作（Human-in-the-Loop）开始，观察 Agent 的可靠性后再逐步减少人工干预。
+
+---
+
+### Q4：如何评估一个 Agent 系统的性能？有哪些关键指标？
+
+**要点**：
+
+Agent 评估比单次 LLM 调用评估更复杂，需要从**五个维度**综合衡量：
+
+1. **任务完成率**：最核心指标——Agent 是否真正解决了用户的问题。需要明确定义"完成"的标准（如代码通过测试、信息完整准确）
+2. **工具选择准确率**：Agent 是否选对了工具、传入了正确参数。错误的工具选择会导致连锁失败
+3. **步骤效率**：完成任务用了多少步？与最优路径相比是否有大量冗余步骤
+4. **错误恢复率**：当工具调用失败或中间结果不符预期时，Agent 能否自行修正
+5. **成本效率**：Token 消耗和 API 调用次数，直接影响生产环境的运营成本
+
+**评估基准**：SWE-Bench（代码修复）是最有影响力的 Agent 基准，因为它使用真实 GitHub Issue 作为任务，贴近实际开发场景。AgentBench 和 GAIA 则提供更广泛的通用能力评估。
+
+**面试加分点**：指出 Agent 评估应区分**过程评估**（每步决策质量）和**结果评估**（最终任务完成），两者都很重要——一个 Agent 可能通过低效路径完成任务，过程评估能发现改进空间。
 
 ---
 

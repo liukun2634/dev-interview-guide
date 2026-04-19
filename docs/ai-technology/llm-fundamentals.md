@@ -68,6 +68,38 @@ $$
 
 现代 LLM 大多采用**旋转位置编码（RoPE, Rotary Position Embedding）**，它将位置信息编码为旋转矩阵，具有更好的外推能力。
 
+#### RoPE 旋转位置编码
+
+RoPE（Rotary Position Embedding）的核心思想是通过**旋转矩阵**将位置信息编码到向量中。对于位置 $m$ 处的向量 $x$，RoPE 将其每两个维度视为一个二维平面上的向量，按照与位置成正比的角度进行旋转：
+
+$$
+f(x, m) = \begin{pmatrix} x_1 \\ x_2 \end{pmatrix} \otimes \begin{pmatrix} \cos m\theta \\ \sin m\theta \end{pmatrix}
+$$
+
+**关键优势**：
+- **相对位置感知**：两个 Token 的注意力得分只取决于它们的**相对距离**，而非绝对位置
+- **长度外推**：通过调整 $\theta$ 的基数，可扩展到训练时未见过的序列长度
+- **兼容线性注意力**：旋转操作不破坏点积结构
+
+#### ALiBi（Attention with Linear Biases）
+
+ALiBi 采用完全不同的思路——不修改 Embedding，而是在注意力得分上直接**减去一个与距离成正比的偏置**：
+
+$$
+\text{softmax}(q_i \cdot k_j - m \cdot |i - j|)
+$$
+
+其中 $m$ 是每个注意力头的固定斜率参数（无需训练）。距离越远，惩罚越大。
+
+#### 位置编码方案对比
+
+| 方案 | 原理 | 可训练参数 | 长度外推 | 代表模型 |
+|------|------|-----------|----------|----------|
+| **Sinusoidal** | 正弦/余弦函数 | 无 | 差 | 原始 Transformer |
+| **RoPE** | 旋转矩阵 | 无 | 好（可调基数） | LLaMA, Qwen, GPT-NeoX |
+| **ALiBi** | 线性注意力偏置 | 无 | 好 | BLOOM, MPT |
+| **Learned** | 可学习向量 | 有 | 差 | GPT-2, BERT |
+
 ### 前馈网络 Feed-Forward Network
 
 每个 Transformer 层中，注意力子层之后是一个逐位置的前馈网络（FFN）：
@@ -80,28 +112,13 @@ $$
 
 ### 整体结构示意
 
-```
-输入 Token 序列
-       │
-  ┌────▼────┐
-  │ Embedding │ + Positional Encoding
-  └────┬────┘
-       │
-  ┌────▼─────────────────┐
-  │  Multi-Head Attention │◄── Masked (Decoder-Only)
-  │  + Residual + LayerNorm│
-  └────┬─────────────────┘
-       │
-  ┌────▼─────────────────┐
-  │  Feed-Forward Network │
-  │  + Residual + LayerNorm│
-  └────┬─────────────────┘
-       │
-       ×N 层（N = 32~128）
-       │
-  ┌────▼────┐
-  │ LM Head │ → 下一个 Token 概率分布
-  └─────────┘
+```mermaid
+graph TD
+    A["输入 Token 序列"] --> B["Embedding + Positional Encoding"]
+    B --> C["Multi-Head Attention<br/>+ Residual + LayerNorm<br/>(Masked for Decoder-Only)"]
+    C --> D["Feed-Forward Network<br/>+ Residual + LayerNorm"]
+    D -->|"×N 层 (N=32~128)"| C
+    D --> E["LM Head → 下一个 Token 概率分布"]
 ```
 
 ---
@@ -136,6 +153,68 @@ LLM 不直接处理原始文本，而是先将文本切分为**子词（Subword�
 - **Vocabulary Size**（词表大小）：通常 32K~150K
 - **Token ≠ 单词**：一个英文单词可能被拆为多个 Token（如 `"uncomfortable"` → `["un", "comfort", "able"]`）
 - 中文通常按字或常用词切分，每个汉字约消耗 1~2 个 Token
+
+### BPE 算法详解
+
+BPE（Byte-Pair Encoding）是最主流的分词算法，其训练过程如下：
+
+1. **初始化**：将训练语料拆分为单个字节（或字符）作为初始词表
+2. **统计**：计算所有相邻 Token 对的出现频率
+3. **合并**：将频率最高的 Token 对合并为新 Token，加入词表
+4. **重复**：回到第 2 步，直到词表达到目标大小
+
+**示例**（词表大小目标为 6）：
+
+```
+初始词表: [a, b, c, d]
+语料: "abab cdab abcd"
+
+第 1 轮: "ab" 出现 3 次 → 合并 → 词表: [a, b, c, d, ab]
+第 2 轮: "ab" 已合并，"cd" 出现 2 次 → 合并 → 词表: [a, b, c, d, ab, cd]
+```
+
+### Token 效率与多语言影响
+
+不同语言在同一模型中的 Token 化效率差异很大，这直接影响 API 成本和上下文利用率：
+
+| 文本 | GPT-4 Token 数 | Claude Token 数 | 说明 |
+|------|---------------|-----------------|------|
+| "Hello world" | 2 | 2 | 英文效率最高 |
+| "你好世界" | 4 | 3~4 | 中文消耗约 2 倍 |
+| "こんにちは" | 3~5 | 3~4 | 日文类似中文 |
+
+**面试要点**：理解 Tokenization 对 LLM 的影响——它决定了模型的有效上下文长度、推理成本和多语言性能差异。
+
+---
+
+## 上下文窗口与长文本处理
+
+标准 Transformer 的自注意力计算量为 $O(n^2)$，严重限制了上下文窗口长度。以下是主流的长文本处理技术：
+
+### 滑动窗口注意力 Sliding Window Attention
+
+每个 Token 只关注其前后固定窗口 $w$ 内的 Token，将复杂度降至 $O(n \cdot w)$。通过多层堆叠，信息仍可在层间传播到更远的位置。
+
+> **全注意力**：每个 Token 关注所有位置（$O(n^2)$）。**滑动窗口**（如 $w=3$）：每个 Token 只关注前后 $w$ 个位置（$O(n \cdot w)$），通过多层堆叠传播远距离信息。
+
+代表模型：Mistral 7B（窗口大小 4096）。
+
+### 稀疏注意力 Sparse Attention
+
+结合**局部窗口**和**全局 Token**，兼顾局部信息和长距离依赖：
+
+- **Longformer**：滑动窗口 + 部分 Token 全局关注（如 [CLS]）
+- **BigBird**：滑动窗口 + 全局 Token + 随机连接
+
+### 长度外推技术
+
+当推理时的序列长度超过训练长度时，需要位置编码外推：
+
+| 技术 | 原理 | 效果 |
+|------|------|------|
+| **NTK-aware Scaling** | 修改 RoPE 的基数 $\theta$，扩展频率分辨率 | 2~4 倍外推，无需微调 |
+| **YaRN** | 分频段处理 RoPE，高频保持、低频插值 | 更好的外推质量 |
+| **Dynamic NTK** | 根据序列长度动态调整缩放因子 | 自适应不同长度 |
 
 ---
 
@@ -229,7 +308,38 @@ RLHF（Reinforcement Learning from Human Feedback）是使 LLM 输出与人类�
 
 ## 推理优化
 
-KV Cache、量化（Quantization）、推测解码（Speculative Decoding）等推理优化技术的详细介绍，请参阅 [AI 应用架构设计](./ai-architecture)。
+KV Cache、量化（Quantization）、推测解码（Speculative Decoding）等推理优化技术的详细介绍，请参阅 [LLM 推理优化](./inference-optimization)。
+
+---
+
+## 幻觉 Hallucination
+
+幻觉是指 LLM **生成看似合理但事实上错误或无依据的内容**，是面试中的高频考点。
+
+### 幻觉的类型
+
+| 类型 | 描述 | 示例 |
+|------|------|------|
+| **事实性幻觉** | 生成与客观事实不符的内容 | 编造不存在的论文引用 |
+| **忠实性幻觉** | 生成与提供的上下文矛盾的内容 | 总结文档时添加原文没有的信息 |
+| **指令幻觉** | 未遵循指令约束，如格式、范围限定 | 被要求只用中文回答却夹杂英文 |
+
+### 产生原因
+
+1. **训练数据噪声**：预训练语料中包含错误、过时或矛盾的信息
+2. **曝光偏差（Exposure Bias）**：训练时使用真实数据，推理时使用自身生成的 Token，误差逐步累积
+3. **知识边界模糊**：模型无法区分"知道"和"不知道"，倾向于生成流畅但不确定的内容
+4. **频率捷径**：模型可能偏向生成训练数据中高频出现的模式，而非基于上下文推理
+
+### 缓解策略
+
+| 策略 | 原理 | 适用场景 |
+|------|------|----------|
+| **RAG** | 检索外部知识作为生成依据 | 需要最新/领域知识时 |
+| **Self-Consistency** | 多次采样取多数一致的答案 | 推理类任务 |
+| **Chain-of-Verification (CoVe)** | 生成后自问自答验证关键事实 | 事实性问答 |
+| **置信度校准** | 让模型输出置信度并拒绝低置信度回答 | 高可靠性要求场景 |
+| **Grounding** | 要求模型引用原文句子作为依据 | 文档摘要/分析 |
 
 ---
 
@@ -252,7 +362,7 @@ KV Cache、量化（Quantization）、推测解码（Speculative Decoding）等�
 <div class="dig-questions">
   <div class="dig-questions__header">
     <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">2 道高频</span>
+    <span style="font-size: 12px; opacity: 0.8;">4 道高频</span>
   </div>
   <div class="dig-questions__item">
     <span>1. 请解释 Transformer 的自注意力机制及其计算过程</span>
@@ -261,6 +371,14 @@ KV Cache、量化（Quantization）、推测解码（Speculative Decoding）等�
   <div class="dig-questions__item">
     <span>2. Temperature、Top-K、Top-P 三种采样策略有何区别？如何选择？</span>
     <span class="dig-tag dig-tag--easy" style="margin: 0;">简单</span>
+  </div>
+  <div class="dig-questions__item">
+    <span>3. RoPE 和 ALiBi 在处理位置信息上有什么区别？各自的优缺点？</span>
+    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
+  </div>
+  <div class="dig-questions__item">
+    <span>4. LLM 幻觉的主要原因有哪些？如何缓解？</span>
+    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
   </div>
 </div>
 
@@ -306,6 +424,46 @@ Top-K 和 Top-P 通常与 Temperature 组合使用。Top-P 相比 Top-K 更灵�
 
 ---
 
+### Q3：RoPE 和 ALiBi 在处理位置信息上有什么区别？各自的优缺点？
+
+**要点**：
+
+**RoPE（Rotary Position Embedding）**：
+- 通过旋转矩阵将位置信息编码到 Q/K 向量中
+- 注意力得分自然反映相对距离
+- 优点：理论优雅、广泛验证、可通过调整基数实现长度外推（NTK-aware Scaling、YaRN）
+- 缺点：外推时需要额外的技术适配
+
+**ALiBi（Attention with Linear Biases）**：
+- 不修改 Embedding，直接在注意力分数上减去与距离成正比的线性偏置
+- 优点：实现简单、无需训练参数、天然支持长度外推
+- 缺点：线性衰减假设可能丢失某些长距离模式
+
+**选择建议**：RoPE 已成为主流方案（LLaMA、Qwen 等均采用），生态工具支持更好；ALiBi 在特定场景下仍有价值，如需极简实现或零成本外推。
+
+---
+
+### Q4：LLM 幻觉的主要原因有哪些？如何缓解？
+
+**要点**：
+
+**主要原因**：
+1. **训练数据噪声**：语料中包含的错误和矛盾信息被模型学习
+2. **曝光偏差**：训练时使用真实 Token，推理时使用自身生成的 Token，误差逐步放大
+3. **知识边界模糊**：模型缺乏元认知能力，不能准确判断自身知识的可靠性
+4. **概率采样机制**：生成过程本质是概率采样，有可能选中低概率但错误的路径
+
+**缓解策略**：
+- **RAG（检索增强生成）**：为生成提供外部知识依据，是最实用的方案
+- **Self-Consistency**：多次采样取一致答案，适合推理任务
+- **Chain-of-Verification（CoVe）**：生成后自动验证关键事实
+- **Grounding**：要求模型引用原文依据
+- **温度调低**：降低采样随机性，减少"创造性"错误
+
+**面试加分点**：指出幻觉无法完全消除，但可通过架构设计（RAG）和后处理（验证）将影响控制在可接受范围内。
+
+---
+
 ## 延伸阅读
 
 - [Attention Is All You Need (Vaswani et al., 2017)](https://arxiv.org/abs/1706.03762)
@@ -313,3 +471,5 @@ Top-K 和 Top-P 通常与 Temperature 组合使用。Top-P 相比 Top-K 更灵�
 - [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
 - [Training language models to follow instructions with human feedback (InstructGPT)](https://arxiv.org/abs/2203.02155)
 - [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/abs/2302.13971)
+- [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
+- [Train Short, Test Long: Attention with Linear Biases (ALiBi)](https://arxiv.org/abs/2108.12409)

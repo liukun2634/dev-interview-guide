@@ -1,0 +1,110 @@
+<h2>侧边栏设计</h2>
+<p class="subtitle">浅绿主题 · 文章阅读页的左侧导航栏样式</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f6faf6;padding:24px;font-family:system-ui;border-radius:8px;display:flex;gap:16px;">
+        <!-- Sidebar -->
+        <div style="width:200px;flex-shrink:0;background:#fff;border-right:1px solid #e5e7eb;padding:16px 12px;border-radius:8px 0 0 8px;">
+          <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">AI 技术</div>
+          <div style="font-size:12px;color:#059669;background:#ecfdf5;padding:6px 10px;border-radius:6px;margin-bottom:4px;font-weight:600;">LLM 基础</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:4px;">RAG 检索增强</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:4px;">Prompt Engineering</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:12px;">AI Agent</div>
+          <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">数据结构与算法</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:4px;">二叉树</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:12px;">哈希表</div>
+          <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">系统设计</div>
+          <div style="font-size:12px;color:#6b7280;padding:6px 10px;margin-bottom:2px;">缓存策略</div>
+        </div>
+        <!-- Content -->
+        <div style="flex:1;padding:16px;">
+          <div style="font-size:11px;color:#059669;font-weight:600;margin-bottom:4px;">AI 技术</div>
+          <div style="font-size:18px;font-weight:700;color:#1a2e1a;margin-bottom:12px;">LLM 大语言模型基础</div>
+          <div style="width:100%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:90%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:95%;height:8px;background:#e5e7eb;border-radius:4px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 全展开侧边栏</h3>
+      <p>所有章节全部展开，一目了然。当前章节高亮绿底，章节标题加粗分隔。适合内容不多时快速定位，但文章多了会很长。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f6faf6;padding:24px;font-family:system-ui;border-radius:8px;display:flex;gap:16px;">
+        <!-- Sidebar -->
+        <div style="width:200px;flex-shrink:0;background:#fff;border-right:1px solid #e5e7eb;padding:16px 12px;border-radius:8px 0 0 8px;">
+          <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;padding:6px 0;">AI 技术 <span style="color:#059669;font-size:10px;">▼</span></div>
+          <div style="padding-left:12px;border-left:2px solid #d1fae5;margin-bottom:12px;">
+            <div style="font-size:12px;color:#059669;padding:5px 8px;font-weight:600;border-left:2px solid #059669;margin-left:-14px;padding-left:14px;">LLM 基础</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;">RAG 检索增强</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;">Prompt Engineering</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;">AI Agent</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:#374151;display:flex;justify-content:space-between;align-items:center;padding:6px 0;">数据结构与算法 <span style="color:#9ca3af;font-size:10px;">▶</span></div>
+          <div style="font-size:12px;font-weight:700;color:#374151;display:flex;justify-content:space-between;align-items:center;padding:6px 0;margin-top:4px;">操作系统 <span style="color:#9ca3af;font-size:10px;">▶</span></div>
+          <div style="font-size:12px;font-weight:700;color:#374151;display:flex;justify-content:space-between;align-items:center;padding:6px 0;margin-top:4px;">计算机网络 <span style="color:#9ca3af;font-size:10px;">▶</span></div>
+          <div style="font-size:12px;font-weight:700;color:#374151;display:flex;justify-content:space-between;align-items:center;padding:6px 0;margin-top:4px;">数据库 <span style="color:#9ca3af;font-size:10px;">▶</span></div>
+          <div style="font-size:12px;font-weight:700;color:#374151;display:flex;justify-content:space-between;align-items:center;padding:6px 0;margin-top:4px;">系统设计 <span style="color:#9ca3af;font-size:10px;">▶</span></div>
+        </div>
+        <!-- Content -->
+        <div style="flex:1;padding:16px;">
+          <div style="font-size:11px;color:#059669;font-weight:600;margin-bottom:4px;">AI 技术</div>
+          <div style="font-size:18px;font-weight:700;color:#1a2e1a;margin-bottom:12px;">LLM 大语言模型基础</div>
+          <div style="width:100%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:90%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:95%;height:8px;background:#e5e7eb;border-radius:4px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 折叠式 (当前展开)</h3>
+      <p>只展开当前所在章节，其他章节折叠显示标题。活跃文章用左侧绿色竖线指示。侧边栏保持紧凑，内容多了也不会太长。VitePress 原生支持这个模式。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f6faf6;padding:24px;font-family:system-ui;border-radius:8px;display:flex;gap:16px;">
+        <!-- Sidebar -->
+        <div style="width:200px;flex-shrink:0;background:#fff;border-right:1px solid #e5e7eb;padding:16px 12px;border-radius:8px 0 0 8px;">
+          <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:8px;background:#ecfdf5;padding:8px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;">AI 技术 <span style="background:#059669;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;">4</span></div>
+          <div style="padding-left:8px;margin-bottom:12px;">
+            <div style="font-size:12px;color:#059669;padding:5px 8px;font-weight:600;background:#f0fdf4;border-radius:4px;margin-bottom:2px;">LLM 基础</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;margin-bottom:2px;">RAG 检索增强</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;margin-bottom:2px;">Prompt Engineering</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;">AI Agent</div>
+          </div>
+          <div style="font-size:12px;font-weight:600;color:#374151;padding:8px 10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">数据结构与算法 <span style="color:#9ca3af;font-size:9px;padding:1px 5px;border:1px solid #e5e7eb;border-radius:4px;">2</span></div>
+          <div style="padding-left:8px;margin-bottom:12px;">
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;margin-bottom:2px;">二叉树</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;">哈希表</div>
+          </div>
+          <div style="font-size:12px;font-weight:600;color:#374151;padding:8px 10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">系统设计 <span style="color:#9ca3af;font-size:9px;padding:1px 5px;border:1px solid #e5e7eb;border-radius:4px;">6</span></div>
+          <div style="padding-left:8px;">
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;margin-bottom:2px;">缓存策略</div>
+            <div style="font-size:12px;color:#6b7280;padding:5px 8px;margin-bottom:2px;">限流与熔断</div>
+            <div style="font-size:11px;color:#9ca3af;padding:5px 8px;">+4 more...</div>
+          </div>
+        </div>
+        <!-- Content -->
+        <div style="flex:1;padding:16px;">
+          <div style="font-size:11px;color:#059669;font-weight:600;margin-bottom:4px;">AI 技术</div>
+          <div style="font-size:18px;font-weight:700;color:#1a2e1a;margin-bottom:12px;">LLM 大语言模型基础</div>
+          <div style="width:100%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:90%;height:8px;background:#e5e7eb;border-radius:4px;margin-bottom:8px;"></div>
+          <div style="width:95%;height:8px;background:#e5e7eb;border-radius:4px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 全展开 + 文章计数</h3>
+      <p>所有章节全部展开，每个章节标题旁显示文章数量徽章。当前章节绿色高亮。文章多的章节显示 "+N more" 折叠。兼顾全览和紧凑。</p>
+    </div>
+  </div>
+</div>
