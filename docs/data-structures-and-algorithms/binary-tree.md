@@ -1,20 +1,88 @@
 ---
-title: 二叉树 Binary Tree
+title: 二叉树
 ---
 
-# 二叉树 Binary Tree
+# 二叉树
 
 <span class="dig-tag dig-tag--category">数据结构</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-二叉树是每个节点最多有两个子节点的树形结构。面试中二叉树题目占比极高，核心在于**递归思维**与**四种遍历方式**的灵活运用。掌握 DFS（深度优先）和 BFS（广度优先）是解题关键。
+二叉树面试题的核心是递归思维。90% 的二叉树题可以归结为一个问题：对于当前节点，我需要从左右子树获取什么信息，然后如何组合出答案？
 :::
+
+## 识别信号
+
+拿到题目时，先看题目描述属于哪类信号，快速锁定解法：
+
+| 题目信号 | 推荐方法 | 原因 |
+|---------|---------|------|
+| "逐层处理" / "最短距离" / "每层的…" | BFS 层序 | 队列天然按层展开 |
+| "路径和" / "最大深度" / "子树性质" | DFS 后序（自底向上） | 需要先知道子树结果再处理当前节点 |
+| "构建树" / "序列化/反序列化" | DFS 前序（自顶向下） | 根节点先行，方便重建结构 |
+| "BST 相关" / "第 K 小" / "有序" | 中序遍历 | BST 中序结果天然有序 |
+
+## 通用思考框架
+
+### 两种递归思路
+
+解二叉树题时，先判断用哪种递归方式：
+
+**1. 分解思路（分治）**
+
+把问题拆成"左子树的答案"和"右子树的答案"，合并得到当前节点的答案。函数有返回值。
+
+```
+当前答案 = combine(solve(root.left), solve(root.right))
+```
+
+适用条件：当前节点的答案**只依赖**子树返回的结果，不需要路径上的全局状态。
+
+**2. 遍历思路（回溯）**
+
+用一个外部变量记录答案，遍历整棵树的过程中不断更新它。函数通常无返回值（或返回 void）。
+
+```
+void traverse(node) {
+    // 更新全局答案
+    traverse(node.left);
+    traverse(node.right);
+}
+```
+
+适用条件：需要追踪从根到当前节点的路径、或跨子树的累计状态。
+
+> **选择口诀**：答案只看子树结果 → 分解；需要追踪路径/全局状态 → 遍历。
+
+### 四种遍历的选择
+
+| 遍历方式 | 访问顺序 | 适用场景 | 典型题 |
+|---------|---------|---------|-------|
+| 前序 | 根 → 左 → 右 | 需要先处理根再处理子树 | 序列化、构建树 |
+| 中序 | 左 → 根 → 右 | BST 题（结果有序） | 验证 BST、第 K 小 |
+| 后序 | 左 → 右 → 根 | 需要先知道子树信息再处理根 | 最大深度、路径和、平衡判断 |
+| 层序 | 逐层从左到右 | 按层处理、最短距离 | 层序遍历、右视图 |
 
 ## 基本概念
 
-### 定义
+### 节点定义（Java）
 
-二叉树（Binary Tree）是一种树形数据结构，每个节点最多拥有**两个子节点**，分别称为**左子节点（left child）**和**右子节点（right child）**。
+```java
+public class TreeNode {
+    int val;
+    TreeNode left;
+    TreeNode right;
+
+    TreeNode(int val) {
+        this.val = val;
+    }
+
+    TreeNode(int val, TreeNode left, TreeNode right) {
+        this.val = val;
+        this.left = left;
+        this.right = right;
+    }
+}
+```
 
 ### 常见类型
 
@@ -25,292 +93,201 @@ title: 二叉树 Binary Tree
 | **二叉搜索树** BST | 左子树所有节点 < 根节点 < 右子树所有节点 | 平均查找效率 $O(\log n)$ |
 | **AVL 树** | 自平衡 BST，任意节点左右子树高度差 ≤ 1 | 保证 $O(\log n)$ 的最坏情况 |
 
-### 节点定义（TypeScript）
+## 遍历模板
 
-```typescript
-class TreeNode {
-  val: number
-  left: TreeNode | null
-  right: TreeNode | null
+### 前序遍历（根 → 左 → 右）
 
-  constructor(val: number, left: TreeNode | null = null, right: TreeNode | null = null) {
-    this.val = val
-    this.left = left
-    this.right = right
-  }
-}
-```
+```java
+// 递归
+List<Integer> result = new ArrayList<>();
 
----
-
-## 四种遍历方式
-
-### 前序遍历 Pre-order（根 → 左 → 右）
-
-```typescript
-// Recursive approach
-function preorder(root: TreeNode | null): number[] {
-  const result: number[] = []
-
-  function dfs(node: TreeNode | null): void {
-    if (!node) return
-    result.push(node.val)   // visit root first
-    dfs(node.left)
-    dfs(node.right)
-  }
-
-  dfs(root)
-  return result
+void preorder(TreeNode root) {
+    if (root == null) return;
+    result.add(root.val);   // 先访问根
+    preorder(root.left);
+    preorder(root.right);
 }
 
-// Iterative approach using stack
-function preorderIterative(root: TreeNode | null): number[] {
-  if (!root) return []
-  const result: number[] = []
-  const stack: TreeNode[] = [root]
+// 迭代（栈）
+List<Integer> preorderIterative(TreeNode root) {
+    List<Integer> result = new ArrayList<>();
+    if (root == null) return result;
 
-  while (stack.length) {
-    const node = stack.pop()!
-    result.push(node.val)
-    // push right first so left is processed first
-    if (node.right) stack.push(node.right)
-    if (node.left) stack.push(node.left)
-  }
+    Deque<TreeNode> stack = new ArrayDeque<>();
+    stack.push(root);
 
-  return result
-}
-```
-
-### 中序遍历 In-order（左 → 根 → 右）
-
-```typescript
-// Recursive approach
-function inorder(root: TreeNode | null): number[] {
-  const result: number[] = []
-
-  function dfs(node: TreeNode | null): void {
-    if (!node) return
-    dfs(node.left)
-    result.push(node.val)   // visit root in middle
-    dfs(node.right)
-  }
-
-  dfs(root)
-  return result
-}
-
-// Iterative approach
-function inorderIterative(root: TreeNode | null): number[] {
-  const result: number[] = []
-  const stack: TreeNode[] = []
-  let curr: TreeNode | null = root
-
-  while (curr || stack.length) {
-    // go all the way left
-    while (curr) {
-      stack.push(curr)
-      curr = curr.left
+    while (!stack.isEmpty()) {
+        TreeNode node = stack.pop();
+        result.add(node.val);
+        // 先压右再压左，保证左先出栈
+        if (node.right != null) stack.push(node.right);
+        if (node.left != null) stack.push(node.left);
     }
-    curr = stack.pop()!
-    result.push(curr.val)
-    curr = curr.right
-  }
+    return result;
+}
+```
 
-  return result
+### 中序遍历（左 → 根 → 右）
+
+```java
+// 递归
+void inorder(TreeNode root) {
+    if (root == null) return;
+    inorder(root.left);
+    result.add(root.val);   // 中间访问根
+    inorder(root.right);
+}
+
+// 迭代（栈 + curr 指针）
+List<Integer> inorderIterative(TreeNode root) {
+    List<Integer> result = new ArrayList<>();
+    Deque<TreeNode> stack = new ArrayDeque<>();
+    TreeNode curr = root;
+
+    while (curr != null || !stack.isEmpty()) {
+        // 一路向左压栈
+        while (curr != null) {
+            stack.push(curr);
+            curr = curr.left;
+        }
+        curr = stack.pop();
+        result.add(curr.val);
+        curr = curr.right;  // 转向右子树
+    }
+    return result;
 }
 ```
 
 ::: info
-**BST 中序遍历的结果是升序序列**，这是验证/利用 BST 性质的常用手段。
+**BST 中序遍历的结果是升序序列**，这是验证/利用 BST 有序性的核心手段。
 :::
 
-### 后序遍历 Post-order（左 → 右 → 根）
+### 后序遍历（左 → 右 → 根）
 
-```typescript
-// Recursive approach
-function postorder(root: TreeNode | null): number[] {
-  const result: number[] = []
-
-  function dfs(node: TreeNode | null): void {
-    if (!node) return
-    dfs(node.left)
-    dfs(node.right)
-    result.push(node.val)   // visit root last
-  }
-
-  dfs(root)
-  return result
+```java
+// 递归
+void postorder(TreeNode root) {
+    if (root == null) return;
+    postorder(root.left);
+    postorder(root.right);
+    result.add(root.val);   // 最后访问根
 }
 
-// Iterative approach: reverse of modified pre-order (root, right, left)
-function postorderIterative(root: TreeNode | null): number[] {
-  if (!root) return []
-  const result: number[] = []
-  const stack: TreeNode[] = [root]
+// 迭代（改造前序：根→右→左，然后反转结果）
+List<Integer> postorderIterative(TreeNode root) {
+    LinkedList<Integer> result = new LinkedList<>();
+    if (root == null) return result;
 
-  while (stack.length) {
-    const node = stack.pop()!
-    result.unshift(node.val) // prepend to get left-right-root order
-    if (node.left) stack.push(node.left)
-    if (node.right) stack.push(node.right)
-  }
+    Deque<TreeNode> stack = new ArrayDeque<>();
+    stack.push(root);
 
-  return result
+    while (!stack.isEmpty()) {
+        TreeNode node = stack.pop();
+        result.addFirst(node.val);  // 头插，相当于反转
+        if (node.left != null) stack.push(node.left);
+        if (node.right != null) stack.push(node.right);
+    }
+    return result;
 }
 ```
 
-### 层序遍历 Level-order（BFS）
+### 层序遍历（BFS）
 
-```typescript
-function levelOrder(root: TreeNode | null): number[][] {
-  if (!root) return []
-  const result: number[][] = []
-  const queue: TreeNode[] = [root]
+```java
+List<List<Integer>> levelOrder(TreeNode root) {
+    List<List<Integer>> result = new ArrayList<>();
+    if (root == null) return result;
 
-  while (queue.length) {
-    const levelSize = queue.length
-    const currentLevel: number[] = []
+    Queue<TreeNode> queue = new LinkedList<>();
+    queue.offer(root);
 
-    for (let i = 0; i < levelSize; i++) {
-      const node = queue.shift()!
-      currentLevel.push(node.val)
-      if (node.left) queue.push(node.left)
-      if (node.right) queue.push(node.right)
+    while (!queue.isEmpty()) {
+        int levelSize = queue.size();   // 当前层节点数
+        List<Integer> level = new ArrayList<>();
+
+        for (int i = 0; i < levelSize; i++) {
+            TreeNode node = queue.poll();
+            level.add(node.val);
+            if (node.left != null) queue.offer(node.left);
+            if (node.right != null) queue.offer(node.right);
+        }
+        result.add(level);
     }
-
-    result.push(currentLevel)
-  }
-
-  return result
+    return result;
 }
 ```
 
 ::: info
-层序遍历使用**队列（Queue）**而非栈，每一轮循环处理当前层的所有节点，是解决"按层处理"类题目的标准模板。
+层序遍历使用**队列（Queue）**而非栈。用 `levelSize = queue.size()` 在每层开始时"锁定"当前层的节点数，是控制逐层处理的标准技巧。
 :::
 
----
+## 典型例题：二叉树的最大深度
 
-## 常见陷阱
+[LeetCode 104 - 二叉树的最大深度](https://leetcode.cn/problems/maximum-depth-of-binary-tree/)
 
-1. **空节点处理**：递归函数必须在第一行检查 `if (!node) return`，遗漏会导致空指针错误。
-2. **混淆遍历顺序**：前序、中序、后序的区别在于根节点的访问时机，建议记住"根"的位置（前/中/后）。
-3. **层序遍历用错数据结构**：层序需要队列（FIFO），不能用栈（LIFO）。
-4. **BST 性质的范围约束**：BST 要求左子树中**所有**节点 < 根，而非仅左子节点 < 根。验证 BST 时需传递 min/max 边界，而非仅比较父子关系。
+**题目**：给定一棵二叉树，返回其最大深度（根节点到最远叶节点的最长路径上的节点数）。
 
----
+### 分解思路（推荐）
 
-<div class="dig-questions">
-  <div class="dig-questions__header">
-    <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>1. 二叉树的层序遍历（LeetCode 102）</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>2. 二叉树的最大深度（LeetCode 104）</span>
-    <span class="dig-tag dig-tag--easy" style="margin: 0;">简单</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. 验证二叉搜索树（LeetCode 98）</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-</div>
+树的深度 = `1 + max(左子树深度, 右子树深度)`，空树深度为 0。这是典型的**后序分解**。
 
-## 面试真题详解
+```java
+public int maxDepth(TreeNode root) {
+    // base case：空节点深度为 0
+    if (root == null) return 0;
 
-### Q1：二叉树的层序遍历（LeetCode 102）
+    int leftDepth = maxDepth(root.left);
+    int rightDepth = maxDepth(root.right);
 
-**题目**：给定一棵二叉树，返回其节点值的层序遍历结果（即逐层从左到右访问所有节点）。
+    // 当前节点的深度 = 子树最大深度 + 1
+    return 1 + Math.max(leftDepth, rightDepth);
+}
+// 时间复杂度：O(n)，每个节点访问一次
+// 空间复杂度：O(h)，h 为树高，递归栈深度
+```
 
-**解题思路**：BFS 标准模板。用一个队列维护待访问节点，每轮处理一整层，记录层大小 `levelSize` 控制内层循环。
+### 遍历思路（BFS 计层数）
 
-```typescript
-function levelOrder(root: TreeNode | null): number[][] {
-  if (!root) return []
-  const result: number[][] = []
-  const queue: TreeNode[] = [root]
+也可以用层序遍历：每处理完一层深度 +1，最终层数即为最大深度。
 
-  while (queue.length) {
-    const levelSize = queue.length
-    const level: number[] = []
+```java
+public int maxDepthBFS(TreeNode root) {
+    if (root == null) return 0;
+    Queue<TreeNode> queue = new LinkedList<>();
+    queue.offer(root);
+    int depth = 0;
 
-    for (let i = 0; i < levelSize; i++) {
-      const node = queue.shift()!
-      level.push(node.val)
-      if (node.left) queue.push(node.left)
-      if (node.right) queue.push(node.right)
+    while (!queue.isEmpty()) {
+        int levelSize = queue.size();
+        depth++;
+        for (int i = 0; i < levelSize; i++) {
+            TreeNode node = queue.poll();
+            if (node.left != null) queue.offer(node.left);
+            if (node.right != null) queue.offer(node.right);
+        }
     }
-
-    result.push(level)
-  }
-
-  return result
+    return depth;
 }
-// Time: O(n), Space: O(n)
 ```
 
----
+## 延伸题目
 
-### Q2：二叉树的最大深度（LeetCode 104）
+| 题目 | 链接 | 与典型题的区别 | 关键技巧 |
+|------|------|--------------|---------|
+| 层序遍历 | [LC 102](https://leetcode.cn/problems/binary-tree-level-order-traversal/) | BFS 模板直接应用 | Queue + levelSize 控制每层 |
+| 翻转二叉树 | [LC 226](https://leetcode.cn/problems/invert-binary-tree/) | 前序遍历，每个节点交换左右子 | 递归先 swap 再递归两侧 |
+| 对称二叉树 | [LC 101](https://leetcode.cn/problems/symmetric-tree/) | 双指针递归，同时从两侧比较 | 比较左.left vs 右.right，左.right vs 右.left |
+| 验证 BST | [LC 98](https://leetcode.cn/problems/validate-binary-search-tree/) | 需要传递整棵子树的 min/max 范围 | 递归传边界 `(min, max)`，不能只比父子 |
+| 从前序与中序构造二叉树 | [LC 105](https://leetcode.cn/problems/construct-binary-tree-from-preorder-and-inorder-traversal/) | 前序确定根，中序划分左右子树 | HashMap 存中序位置，避免每次线性查找 |
+| 二叉树的右视图 | [LC 199](https://leetcode.cn/problems/binary-tree-right-side-view/) | BFS 取每层最后一个节点 | 层序遍历变体，`i == levelSize - 1` 时记录 |
+| 平衡二叉树 | [LC 110](https://leetcode.cn/problems/balanced-binary-tree/) | 后序遍历 + 提前剪枝 | 返回 -1 表示已不平衡，避免重复计算高度 |
 
-**题目**：给定一棵二叉树，求其最大深度（从根节点到最远叶节点的最长路径上的节点数）。
+## 常见陷阱与调试
 
-**解题思路**：经典递归。树的深度 = `1 + max(左子树深度, 右子树深度)`，空节点深度为 0。
-
-```typescript
-function maxDepth(root: TreeNode | null): number {
-  // base case: empty tree has depth 0
-  if (!root) return 0
-
-  const leftDepth = maxDepth(root.left)
-  const rightDepth = maxDepth(root.right)
-
-  return 1 + Math.max(leftDepth, rightDepth)
-}
-// Time: O(n), Space: O(h) where h is tree height
-```
-
-::: tip
-也可以用 BFS 解：层序遍历时统计层数，每处理完一层深度 +1，最终层数即为最大深度。
-:::
-
----
-
-### Q3：验证二叉搜索树（LeetCode 98）
-
-**题目**：给定一棵二叉树，判断其是否为有效的二叉搜索树。
-
-**常见错误**：只检查节点与其直接父节点的大小关系，忽略了 BST 对整棵子树的约束。
-
-**正确思路**：递归时传递合法的值域 `[min, max]`，每个节点必须严格在该范围内。
-
-```typescript
-function isValidBST(root: TreeNode | null): boolean {
-  function validate(node: TreeNode | null, min: number, max: number): boolean {
-    if (!node) return true
-
-    // node value must be strictly within (min, max)
-    if (node.val <= min || node.val >= max) return false
-
-    // left subtree: all values must be < node.val
-    // right subtree: all values must be > node.val
-    return validate(node.left, min, node.val) &&
-           validate(node.right, node.val, max)
-  }
-
-  return validate(root, -Infinity, Infinity)
-}
-// Time: O(n), Space: O(h)
-```
-
----
-
-## 延伸阅读
-
-- [LeetCode 102 - Binary Tree Level Order Traversal](https://leetcode.com/problems/binary-tree-level-order-traversal/)
-- [LeetCode 104 - Maximum Depth of Binary Tree](https://leetcode.com/problems/maximum-depth-of-binary-tree/)
-- [LeetCode 98 - Validate Binary Search Tree](https://leetcode.com/problems/validate-binary-search-tree/)
-- [LeetCode 94 - Binary Tree Inorder Traversal](https://leetcode.com/problems/binary-tree-inorder-traversal/)
+| 错误 | 症状 | 解决方法 |
+|------|------|---------|
+| 忘记空节点检查 | NullPointerException / 栈溢出 | 递归函数第一行加 `if (root == null) return ...` |
+| 混淆遍历顺序 | 结果顺序错误，BST 题值不有序 | 记住"根"的位置：**前**序=根在前，**中**序=根居中，**后**序=根在后 |
+| 层序用了栈而非队列 | 遍历结果是深度优先而非按层 | 层序必须用 `Queue`（FIFO），不能用 `Stack`（LIFO） |
+| BST 验证只比父子关系 | 某些非法 BST 被误判为合法 | 递归时传递 `(long min, long max)` 范围边界，不能只看相邻两层 |
+| 分解思路用了全局变量 | 变量在多次调用间互相污染 | 分解思路应通过**返回值**传递信息，全局变量留给遍历思路 |
