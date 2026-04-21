@@ -4,19 +4,13 @@ title: 消息队列
 
 # 消息队列 Message Queue
 
-<span class="dig-tag dig-tag--category">系统设计与工程实践</span>
-<span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span>
-<span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+## 概念
 
-::: tip 💡 核心要点
-消息队列（Message Queue）是分布式系统中实现服务解耦、异步处理和削峰填谷的核心中间件。掌握消息队列的核心概念（Producer、Consumer、Broker、Topic、Partition）、两种消息模型（点对点 vs 发布订阅）、三种投递语义（At-most-once / At-least-once / Exactly-once）以及 Kafka 的架构原理，是系统设计面试的高频考点。
-:::
+消息队列（Message Queue）是分布式系统中实现服务解耦、异步处理和削峰填谷的核心中间件。
 
-## 为什么需要消息队列？
+### 为什么需要消息队列？
 
-在分布式系统中，服务之间的直接调用会导致强耦合、性能瓶颈和可用性问题。消息队列通过引入中间层来解决这些问题。
-
-### 1. 服务解耦 (Decoupling)
+**1. 服务解耦 (Decoupling)**
 
 没有消息队列时，上游服务需要知道所有下游服务的接口并逐一调用：
 
@@ -39,14 +33,14 @@ title: 消息队列
               └──► 物流服务     ← 新增下游无需修改订单服务
 ```
 
-### 2. 异步处理 (Async Processing)
+**2. 异步处理 (Async Processing)**
 
 同步调用：用户下单 → 扣库存（50ms）→ 发积分（50ms）→ 发短信（100ms） = **200ms**
 
 异步消息：用户下单 → 扣库存（50ms）→ 发消息到 MQ（5ms） = **55ms**
 积分、短信等由消费者异步处理，用户无需等待。
 
-### 3. 削峰填谷 (Peak Shaving)
+**3. 削峰填谷 (Peak Shaving)**
 
 ```
 请求量
@@ -63,7 +57,7 @@ title: 消息队列
 
 秒杀场景下，瞬时请求写入 MQ，消费者以稳定速率处理，避免数据库被瞬时流量压垮。
 
-## 核心概念
+### 核心概念
 
 | 概念 | 说明 |
 |------|------|
@@ -75,9 +69,9 @@ title: 消息队列
 | **Consumer Group（消费者组）** | 一组消费者共同消费一个 Topic，每条消息只被组内一个消费者处理 |
 | **Offset（偏移量）** | 消息在分区中的位置标识，消费者通过 Offset 追踪消费进度 |
 
-## 消息模型
+### 消息模型
 
-### 点对点模型 (Point-to-Point)
+**点对点模型 (Point-to-Point)**
 
 每条消息只能被**一个消费者**消费，消费后即从队列中移除。
 
@@ -89,7 +83,7 @@ Producer ──► Queue ──► Consumer A（消费消息 1）
 
 适用场景：任务分发、工单处理（每个任务只需处理一次）。
 
-### 发布/订阅模型 (Pub/Sub)
+**发布/订阅模型 (Pub/Sub)**
 
 每条消息可以被**多个订阅者**消费，每个订阅者独立接收完整的消息副本。
 
@@ -103,7 +97,9 @@ Kafka 采用的就是 Pub/Sub 模型，通过 Consumer Group 实现灵活的消�
 - **不同 Group** 订阅同一 Topic → 每个 Group 都能收到全量消息（广播）
 - **同一 Group** 内的多个 Consumer → 分担消费（负载均衡）
 
-## 消息投递语义
+## 核心原理
+
+### 消息投递语义
 
 | 语义 | 说明 | 可能的问题 | 实现难度 |
 |------|------|-----------|---------|
@@ -111,7 +107,7 @@ Kafka 采用的就是 Pub/Sub 模型，通过 Consumer Group 实现灵活的消�
 | **At-least-once** | 消息至少投递一次，不会丢失但可能重复 | 消息重复 | 中 |
 | **Exactly-once** | 消息恰好投递一次，不丢不重 | 无 | 高 |
 
-### At-most-once（最多一次）
+**At-most-once（最多一次）**
 
 Producer 发送消息后不等待确认，Consumer 收到消息后先提交 Offset 再处理。如果处理失败，消息不会重新投递。
 
@@ -122,7 +118,7 @@ Consumer ──► 提交 Offset ──► 处理消息（失败则消息丢失�
 
 适用场景：日志采集、监控指标上报（允许少量数据丢失）。
 
-### At-least-once（至少一次）
+**At-least-once（至少一次）**
 
 Producer 发送消息后等待 Broker 的 ACK 确认，失败则重试。Consumer 先处理消息再提交 Offset，如果提交 Offset 前崩溃，重启后会重新消费。
 
@@ -133,15 +129,15 @@ Consumer ──► 处理消息 ──► 提交 Offset（处理完才提交）
 
 适用场景：大多数业务场景（订单、支付），配合幂等性保证不重复处理。
 
-### Exactly-once（恰好一次）
+**Exactly-once（恰好一次）**
 
 最难实现的语义，通常通过幂等 Producer + 事务性消费来实现。Kafka 0.11+ 支持幂等 Producer 和事务（Transactional API），但有性能开销。
 
 > 实际工程中，大多数系统采用 **At-least-once + 业务幂等** 的方案，兼顾可靠性和性能。
 
-## Kafka 架构详解
+### Kafka 架构详解
 
-### 整体架构
+**整体架构**
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -169,7 +165,7 @@ Consumer Group A:
   Consumer 3 ← P2
 ```
 
-### Partition 与 Offset
+**Partition 与 Offset**
 
 每个 Partition 是一个有序的、不可变的消息序列，新消息追加到末尾。Offset 是消息在 Partition 中的唯一编号。
 
@@ -189,7 +185,49 @@ Partition 1:
          Consumer 当前消费位置
 ```
 
-### Consumer Group Rebalance
+**ISR（In-Sync Replicas）机制**
+
+ISR 是与 Leader 保持完全同步的副本集合。只有 ISR 中的副本才有资格参与 ACK 确认和 Leader 选举。
+
+```
+Leader (Broker 0)          Follower (Broker 1)        Follower (Broker 2)
+      │                           │                           │
+      │◄── 持续同步（已追上）────────│                           │
+      │                           │◄── 落后太多（滞后）─────────│
+      │                           │                           │
+ISR = { Broker 0, Broker 1 }    ← Broker 2 已被踢出 ISR
+```
+
+`acks` 配置对可靠性和性能的影响：
+
+| acks 值 | 含义 | 丢消息风险 | 吞吐量 |
+|---------|------|-----------|--------|
+| `acks=0` | Producer 不等待任何确认，即发即忘 | 高 | 最高 |
+| `acks=1` | Leader 写入本地日志即返回成功 | 中（Leader 宕机未同步则丢失）| 中 |
+| `acks=all`（或 `-1`） | 等待所有 ISR 副本确认写入 | 最低 | 最低 |
+
+`min.insync.replicas` 配置：指定 ISR 中至少需要多少个副本确认，写入才算成功。与 `acks=all` 配合使用：
+
+```
+# 典型高可靠配置
+replication.factor=3         # 3 个副本
+min.insync.replicas=2        # 至少 2 个 ISR 副本确认
+acks=all                     # 等待所有 ISR
+```
+
+上述配置意味着：即使 1 个副本宕机，写入仍然成功；若 2 个副本宕机，写入会失败（抛出 `NotEnoughReplicasException`），从而防止数据丢失。
+
+**ISR 收缩时发生什么：**
+
+当 Follower 副本的消息同步滞后超过 `replica.lag.time.max.ms`（默认 30s），该副本会被踢出 ISR。此时：
+- 若 ISR 大小降至 `min.insync.replicas` 以下，且 `acks=all`，新的写请求会直接报错
+- Leader 会继续工作，等待落后副本追上后重新加入 ISR
+
+`unclean.leader.election.enable`（默认 false）：
+- `false`：只允许 ISR 中的副本成为新 Leader，避免数据丢失，但若 ISR 为空则分区不可用
+- `true`：允许落后的副本（不在 ISR 中）成为 Leader，牺牲一致性换取可用性，**生产环境强烈建议保持 false**
+
+**Consumer Group Rebalance**
 
 当 Consumer Group 中的成员数量发生变化时（消费者加入或离开），Kafka 会触发 **Rebalance（重平衡）**，重新分配 Partition 与 Consumer 的绑定关系。
 
@@ -211,9 +249,7 @@ Rebalance 前：                    Rebalance 后（Consumer 3 离开）：
 - 增大 `session.timeout.ms` 和 `heartbeat.interval.ms`，减少误判消费者离线
 - 使用 Kafka 2.3+ 的 **Cooperative Sticky Assignor**，支持增量 Rebalance，减少影响范围
 
-## 消息顺序性
-
-### 分区级别有序
+### 消息顺序性
 
 Kafka 保证**同一 Partition 内的消息是有序的**。要保证某类消息的顺序，需要将它们路由到同一个 Partition。
 
@@ -223,15 +259,11 @@ producer.send(new ProducerRecord<>("order-topic", orderId, message));
 // Kafka 默认按 key 的 hash 值 % partition 数来选择分区
 ```
 
-### 全局有序的挑战
-
 全局有序要求 Topic 只设 1 个 Partition，但这意味着只能有 1 个 Consumer，完全丧失了并行消费的能力，**吞吐量极低**。
 
 > 实际工程中，大多数场景只需要**业务维度的有序**（如同一用户的操作有序），通过 Partition Key 即可实现，不需要全局有序。
 
-## 死信队列与重试机制
-
-### 死信队列 (Dead Letter Queue, DLQ)
+### 死信队列与重试机制
 
 当消息消费失败且达到最大重试次数后，将消息转移到**死信队列**，避免阻塞正常消息的消费。
 
@@ -244,8 +276,6 @@ producer.send(new ProducerRecord<>("order-topic", orderId, message));
                                          │
                                     人工排查 / 告警
 ```
-
-### 重试机制设计
 
 ```java
 @KafkaListener(topics = "order-topic")
@@ -273,11 +303,11 @@ public void consume(ConsumerRecord<String, String> record) {
 - 设置合理的最大重试次数（通常 3~5 次）
 - 死信队列需要配套监控告警和人工处理机制
 
-## 消息幂等性
+### 消息幂等性
 
 由于 At-least-once 语义下消息可能重复投递，消费者必须保证**幂等处理**（处理多次和处理一次的结果相同）。
 
-### 方案一：数据库唯一约束
+**方案一：数据库唯一约束**
 
 ```java
 // 利用数据库唯一索引防止重复插入
@@ -288,7 +318,7 @@ try {
 }
 ```
 
-### 方案二：Redis 去重
+**方案二：Redis 去重**
 
 ```java
 public boolean processMessage(String messageId, String payload) {
@@ -307,7 +337,7 @@ public boolean processMessage(String messageId, String payload) {
 }
 ```
 
-### 方案三：幂等性 Key（Idempotency Key）
+**方案三：幂等性 Key（Idempotency Key）**
 
 Producer 为每条消息生成全局唯一的幂等 Key，Consumer 处理前检查是否已处理过。
 
@@ -326,7 +356,80 @@ idempotencyStore.save(idempotencyKey);
 processMessage(record.value());
 ```
 
-## 主流消息队列对比
+### RocketMQ 事务消息
+
+RocketMQ 通过**半消息（Half Message）机制**实现分布式事务，保证本地事务与消息发送的原子性。
+
+**半消息流程：**
+
+```
+Producer                    Broker                     Consumer
+   │                           │                           │
+   │──① 发送半消息─────────────►│                           │
+   │                           │（存入内部 half topic，     │
+   │                           │  消费者不可见）            │
+   │◄─② 返回发送结果────────────│                           │
+   │                           │                           │
+   │──③ 执行本地事务            │                           │
+   │   （本地 DB 操作）         │                           │
+   │                           │                           │
+   │──④ 发送 Commit/Rollback──►│                           │
+   │   （成功→Commit，失败→     │                           │
+   │     Rollback）            │                           │
+   │                           │──⑤ Commit: 消息可见──────►│
+   │                           │   Rollback: 消息删除      │
+   │                           │                           │
+   │         （若 Producer 崩溃，Broker 发起回查）          │
+   │◄─⑥ Broker 回查本地事务状态─│                           │
+   │──⑦ 返回事务状态────────────►│                           │
+```
+
+**Java 代码示例（TransactionListener 实现）：**
+
+```java
+// 1. 定义事务监听器
+public class OrderTransactionListener implements TransactionListener {
+
+    @Autowired
+    private OrderService orderService;
+
+    // 执行本地事务（半消息发送成功后调用）
+    @Override
+    public LocalTransactionState executeLocalTransaction(Message msg, Object arg) {
+        try {
+            String orderId = new String(msg.getBody());
+            // 执行本地数据库操作
+            orderService.createOrder(orderId);
+            return LocalTransactionState.COMMIT_MESSAGE; // 本地事务成功，提交消息
+        } catch (Exception e) {
+            log.error("本地事务执行失败", e);
+            return LocalTransactionState.ROLLBACK_MESSAGE; // 本地事务失败，回滚消息
+        }
+    }
+
+    // Broker 回查时调用（用于 Producer 崩溃恢复）
+    @Override
+    public LocalTransactionState checkLocalTransaction(MessageExt msg) {
+        String orderId = new String(msg.getBody());
+        // 查询本地事务是否已完成
+        boolean exists = orderService.orderExists(orderId);
+        return exists
+            ? LocalTransactionState.COMMIT_MESSAGE
+            : LocalTransactionState.ROLLBACK_MESSAGE;
+    }
+}
+
+// 2. 发送事务消息
+TransactionMQProducer producer = new TransactionMQProducer("order-producer-group");
+producer.setTransactionListener(new OrderTransactionListener());
+producer.start();
+
+Message msg = new Message("order-topic", orderId.getBytes());
+// sendMessageInTransaction 会自动走半消息流程
+TransactionSendResult result = producer.sendMessageInTransaction(msg, null);
+```
+
+## 技术选型与对比
 
 | 特性 | Kafka | RabbitMQ | RocketMQ |
 |------|-------|----------|----------|
@@ -346,36 +449,86 @@ processMessage(record.value());
 - **企业应用/复杂路由** → RabbitMQ（灵活的路由机制、低延迟、协议标准化）
 - **电商/金融** → RocketMQ（事务消息、延迟消息、阿里巴巴大规模验证）
 
-## 常见误区
+### 实战案例：延迟消息实现订单超时取消
 
-::: warning 易错点
-1. **消息丢失的三个环节：** Producer 到 Broker（网络丢包）、Broker 存储（宕机未刷盘）、Consumer 消费（提交 Offset 后处理失败）。每个环节都需要针对性方案
-2. **Exactly-once 不等于端到端恰好一次：** Kafka 的 Exactly-once 仅限于 Kafka 内部（Producer → Broker → Consumer），涉及外部系统（如数据库）时，仍需业务幂等保证
-3. **Partition 数量不是越多越好：** 过多的 Partition 会增加 Broker 端文件句柄数、延长 Rebalance 时间、增加端到端延迟
-4. **Consumer Lag 积压需要关注：** 消费者处理速度跟不上生产速度时，消息会积压。需要监控 Consumer Lag，及时扩容消费者或优化处理逻辑
-5. **重试队列要设置上限：** 无限重试会导致消息堆积和资源浪费，超过最大重试次数必须进入死信队列
-:::
+**场景：** 用户下单后 30 分钟未付款，自动取消订单。
 
-<div class="dig-questions">
-  <div class="dig-questions__header">
-    <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>1. 如何保证消息不丢失？从 Producer、Broker、Consumer 三个环节分析</span>
-    <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>2. Kafka 如何保证消息的顺序性？</span>
-    <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. 消费者收到重复消息怎么办？如何实现幂等消费？</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-</div>
+**方案一：RocketMQ 延迟消息**
 
-### Q1: 如何保证消息不丢失
+RocketMQ 原生支持延迟消息，通过预设的延迟级别实现：
+
+```
+延迟级别（delayLevel）:
+1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+                                                  ↑
+                                              级别 16 = 30 分钟
+```
+
+```java
+Message msg = new Message("order-cancel-topic", orderId.getBytes());
+msg.setDelayTimeLevel(16); // 第 16 级 = 30 分钟后投递
+producer.send(msg);
+
+// Consumer 收到消息时订单已经过了 30 分钟
+@RocketMQMessageListener(topic = "order-cancel-topic", consumerGroup = "cancel-group")
+public class OrderCancelConsumer implements RocketMQListener<String> {
+    @Override
+    public void onMessage(String orderId) {
+        orderService.cancelIfUnpaid(orderId); // 检查未付款则取消
+    }
+}
+```
+
+**方案二：Redis ZSET**
+
+以超时时间戳作为 score，轮询工作线程定期扫描到期任务：
+
+```java
+// 下单时将 orderId 放入 ZSET，score = 当前时间 + 30分钟
+long expireAt = System.currentTimeMillis() + 30 * 60 * 1000;
+redis.opsForZSet().add("order:timeout", orderId, expireAt);
+
+// 定时任务（每隔 5s 扫描一次）
+@Scheduled(fixedDelay = 5000)
+public void scanTimeoutOrders() {
+    long now = System.currentTimeMillis();
+    // 取出 score <= now 的所有订单（已到期）
+    Set<String> timeoutOrders = redis.opsForZSet()
+        .rangeByScore("order:timeout", 0, now);
+    for (String orderId : timeoutOrders) {
+        orderService.cancelIfUnpaid(orderId);
+        redis.opsForZSet().remove("order:timeout", orderId);
+    }
+}
+```
+
+**方案三：Kafka + TTL**
+
+Kafka 不原生支持延迟消息，通常通过专门的延迟 Topic + 时间轮调度实现：
+
+```
+Producer ──► delay-30m-topic（带时间戳）
+                  │
+            延迟消费服务（检查消息时间戳，未到期则 sleep/重放）
+                  │
+            到期 ──► order-cancel-topic ──► Consumer 处理
+```
+
+**三种方案对比：**
+
+| 对比维度 | RocketMQ 延迟消息 | Redis ZSET | Kafka + 延迟服务 |
+|---------|-----------------|------------|-----------------|
+| **实现复杂度** | 低（原生支持） | 中 | 高 |
+| **精度** | 固定级别（30m 等） | 秒级（取决于轮询间隔） | 自定义 |
+| **可靠性** | 高（持久化） | 中（依赖 Redis 持久化） | 高（Kafka 持久化） |
+| **扩展性** | 受限于预设级别 | 好（任意时间） | 好（任意时间） |
+| **适用场景** | 电商标准延迟场景 | 中小规模、已有 Redis 基础设施 | 大数据量、已有 Kafka 基础设施 |
+
+> 实际工程中，**RocketMQ 延迟消息**是最简单可靠的方案；若技术栈已有 Redis 且规模不大，**Redis ZSET** 也是轻量选择。
+
+## 面试常问 & 怎么答
+
+### Q1: 如何保证消息不丢失？
 
 从三个环节分别保障：
 
@@ -395,7 +548,7 @@ processMessage(record.value());
 - 消息处理成功后再手动提交 Offset
 - 配合幂等消费，防止重复处理
 
-### Q2: Kafka 如何保证消息顺序性
+### Q2: Kafka 如何保证消息顺序性？
 
 Kafka 保证的是 **Partition 级别的有序性**，而非全局有序。
 
@@ -412,7 +565,7 @@ Kafka 默认使用 key 的 hash 值对 Partition 数取模来选择分区，同�
 - 同一 Partition 只能被同一 Consumer Group 中的一个 Consumer 消费，天然保证顺序
 - 如果需要全局有序，只能设置 1 个 Partition，但吞吐量会大幅下降
 
-### Q3: 如何实现幂等消费
+### Q3: 如何实现幂等消费？
 
 由于网络抖动、Consumer Rebalance 等原因，消息可能被重复投递。消费者需要保证**幂等性** —— 处理多次和处理一次的结果相同。
 
@@ -426,6 +579,33 @@ Kafka 默认使用 key 的 hash 值对 Partition 数取模来选择分区，同�
 | 状态机 | 业务状态只能单向流转（如待支付→已支付），重复消费不影响 | 订单状态变更 |
 
 **最佳实践：** 采用 At-least-once 投递语义 + 业务侧幂等处理，是兼顾可靠性和性能的主流方案。
+
+### Q4: Kafka 为什么吞吐量高？
+
+Kafka 的高吞吐量来自多个层面的设计：
+
+| 技术点 | 说明 |
+|--------|------|
+| **顺序磁盘 I/O** | 消息追加写入，顺序读写比随机读写快 2~3 个数量级 |
+| **零拷贝（Zero Copy）** | 使用 `sendfile` 系统调用，数据从磁盘直接到网卡，跳过用户态拷贝 |
+| **批量发送与压缩** | Producer 将多条消息打包为一个批次（batch）发送，减少网络往返次数 |
+| **Partition 并行** | 多个 Partition 可并行读写，线性扩展吞吐量 |
+| **Page Cache** | 写入先到操作系统 Page Cache（内存），由 OS 异步刷盘，读取优先命中 Cache |
+
+> 面试回答时，把"顺序写 + 零拷贝 + 批量 + 分区并行 + Page Cache"五点串联起来，完整展示对 Kafka 底层的理解。
+
+## 看到什么就先想到这类
+
+| 关键词 / 场景 | 第一反应 |
+|-------------|---------|
+| 异步解耦、削峰填谷 | 引入消息队列 |
+| 高吞吐日志、事件流、大数据 | Kafka |
+| 事务消息、电商订单、金融 | RocketMQ 半消息机制 |
+| 复杂路由、灵活协议、企业集成 | RabbitMQ |
+| 消息丢失问题 | acks=all + min.insync.replicas + 手动提交 Offset |
+| 消息重复问题 | ACK + 幂等消费（数据库唯一键 / Redis SETNX） |
+| 延迟任务、订单超时取消 | RocketMQ 延迟消息 / Redis ZSET |
+| ISR 收缩、脑裂、数据一致性 | unclean.leader.election.enable=false |
 
 ## 延伸阅读
 
