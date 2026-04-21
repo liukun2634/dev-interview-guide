@@ -4,15 +4,11 @@ title: 限流与熔断
 
 # 限流与熔断 Rate Limiting & Circuit Breaker
 
-<span class="dig-tag dig-tag--category">系统设计</span>
-<span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span>
-<span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
+## 概念
 
-::: tip 💡 核心要点
-限流（Rate Limiting）保护服务免受流量洪峰冲击，熔断（Circuit Breaker）在下游服务不可用时快速失败、防止级联故障。两者是分布式系统高可用保障的核心机制，也是系统设计面试的高频考点。掌握常见限流算法（固定窗口、滑动窗口、令牌桶、漏桶）的原理和区别，以及熔断器的状态机模型，是回答此类问题的关键。
-:::
+限流（Rate Limiting）保护服务免受流量洪峰冲击，熔断（Circuit Breaker）在下游服务不可用时快速失败、防止级联故障。两者是分布式系统高可用保障的核心机制，也是系统设计面试的高频考点。
 
-## 为什么需要限流？
+**为什么需要限流？**
 
 在分布式系统中，突发流量（秒杀活动、爬虫、恶意攻击）可能在瞬间打垮服务。限流的目标是：
 
@@ -27,9 +23,19 @@ title: 限流与熔断
 - 接口级别（某接口全局 QPS 上限）
 - 服务级别（整体入口流量上限）
 
-## 四大限流算法
+**为什么需要熔断？**
 
-### 1. 固定窗口 (Fixed Window)
+当下游服务故障时，如果继续发送请求，会导致：
+1. 调用方线程被阻塞，资源耗尽
+2. 故障沿调用链向上传播，引发**级联故障（Cascading Failure）**
+
+熔断器模式的核心思想：**快速失败，保护自身**。
+
+## 核心原理
+
+### 四大限流算法
+
+#### 1. 固定窗口 (Fixed Window)
 
 将时间划分为固定长度的窗口（如每秒），在每个窗口内维护一个计数器，计数器达到阈值则拒绝请求。
 
@@ -74,7 +80,7 @@ public class FixedWindowRateLimiter {
 
 **缺点：** 存在**临界突刺问题** —— 在窗口交界处（如 00:59 发 100 个请求 + 01:00 发 100 个请求），实际 1 秒内通过了 200 个请求，超出预期限制。
 
-### 2. 滑动窗口 (Sliding Window)
+#### 2. 滑动窗口 (Sliding Window)
 
 将固定窗口进一步细分为多个小窗口，统计当前时间向前滑动一个窗口长度内的请求总数，解决固定窗口的临界突刺问题。
 
@@ -132,7 +138,7 @@ public class SlidingWindowRateLimiter {
 
 **缺点：** 需要维护多个子窗口计数，内存占用相对更大。
 
-### 3. 令牌桶 (Token Bucket)
+#### 3. 令牌桶 (Token Bucket)
 
 系统以固定速率往桶中放入令牌，每个请求需要取走一个令牌。桶满时多余的令牌被丢弃。桶空时请求被拒绝。
 
@@ -184,7 +190,7 @@ public class TokenBucketRateLimiter {
 
 > Google Guava 的 `RateLimiter` 就是基于令牌桶算法实现的。
 
-### 4. 漏桶 (Leaky Bucket)
+#### 4. 漏桶 (Leaky Bucket)
 
 请求被放入桶中，桶以**固定速率**处理请求。桶满时新请求被拒绝。不管请求到达的速度如何波动，处理速率始终恒定。
 
@@ -235,7 +241,7 @@ public class LeakyBucketRateLimiter {
 
 **缺点：** 无法利用突发处理能力，即使系统空闲也不会提速。
 
-### 四种算法对比
+#### 四种算法对比
 
 | 算法 | 突发流量 | 平滑度 | 实现复杂度 | 典型应用 |
 |------|---------|--------|-----------|---------|
@@ -244,7 +250,7 @@ public class LeakyBucketRateLimiter {
 | 令牌桶 | 允许突发 | 高 | 中等 | Guava RateLimiter、API Gateway |
 | 漏桶 | 严格匀速 | 最高 | 中等 | 流量整形、消息队列消费 |
 
-## 分布式限流（Redis 实现）
+### 分布式限流（Redis 实现）
 
 单机限流只能保护单个实例。在微服务场景下，通常需要**全局限流**，使用 Redis 作为中心化计数器。
 
@@ -295,15 +301,52 @@ public boolean isAllowed(String userId, int maxRequests, long windowMs) {
 
 > 使用 Lua 脚本的目的是保证**原子性** —— 读取计数和更新计数在同一次 Redis 操作中完成，避免并发竞争。
 
-## 熔断器模式 Circuit Breaker Pattern
+### 自适应限流（Adaptive Rate Limiting）
 
-当下游服务故障时，如果继续发送请求，会导致：
-1. 调用方线程被阻塞，资源耗尽
-2. 故障沿调用链向上传播，引发**级联故障（Cascading Failure）**
+**概念：** 根据系统当前负载（CPU 使用率、线程池利用率、响应时间）动态调整限流阈值，而非固定一个静态 QPS 上限。
 
-熔断器模式的核心思想：**快速失败，保护自身**。
+**为什么需要自适应限流？**
 
-### 三个状态
+静态限流的问题在于阈值难以精准设定：设太低浪费资源，设太高在系统压力大时仍然打垮服务。自适应限流让系统在健康时尽量多放流量，在压力升高时主动收缩。
+
+**Sentinel 系统自适应保护（System Rule）：**
+
+Sentinel 提供基于以下指标的系统级保护规则：
+
+| 指标 | 说明 |
+|------|------|
+| Load（仅 Linux） | 系统 load1 超过阈值时触发保护 |
+| CPU 使用率 | CPU 使用率超过阈值（如 80%）时限流 |
+| 平均 RT | 所有入口流量的平均响应时间 |
+| 并发线程数 | 当前处理请求的线程总数 |
+| 入口 QPS | 所有入口流量的总 QPS |
+
+```java
+// Sentinel 系统规则配置
+SystemRule rule = new SystemRule();
+rule.setHighestSystemLoad(3.0);   // load1 阈值
+rule.setHighestCpuUsage(0.8);     // CPU 使用率 80%
+rule.setAvgRt(200);               // 平均 RT 200ms
+rule.setMaxThread(200);           // 最大并发线程数
+rule.setQps(1000);                // 最大入口 QPS
+SystemRuleManager.loadRules(Collections.singletonList(rule));
+```
+
+**TCP BBR 启发的算法思路：**
+
+类似 TCP BBR 拥塞控制，自适应限流持续探测系统的"最大承载吞吐量"与"最小延迟"，在两者之间寻找最优工作点：
+- 当响应时间开始升高，说明系统接近饱和，主动降低发送速率
+- 当系统空闲（响应时间低），逐步提升允许通过的流量
+- 目标是让系统始终工作在高吞吐、低延迟的甜蜜点
+
+**适用场景：**
+- 流量模式不固定、峰谷明显的在线业务
+- 无法提前预估合理 QPS 阈值的场景
+- 与 Sentinel 系统规则配合，作为最后一道防线
+
+### 熔断器模式 Circuit Breaker Pattern
+
+#### 三个状态
 
 ```
                      失败率超过阈值
@@ -331,7 +374,7 @@ public boolean isAllowed(String userId, int maxRequests, long windowMs) {
 | **Open（打开）** | 熔断状态 | 所有请求直接失败，返回降级响应，不调用下游 |
 | **Half-Open（半开）** | 探测恢复 | 允许少量请求通过以探测下游是否恢复 |
 
-### Resilience4j 实现
+#### Resilience4j 实现
 
 ```java
 // 1. 配置熔断器
@@ -393,7 +436,7 @@ public class OrderService {
 }
 ```
 
-## 舱壁模式 Bulkhead Pattern
+### 舱壁模式 Bulkhead Pattern
 
 舱壁模式借鉴了船舶设计 —— 船体被隔舱板分为多个独立隔舱，一个隔舱进水不会导致整艘船沉没。
 
@@ -418,34 +461,108 @@ public class OrderService {
 - **线程池隔离（Thread Pool）：** 每个下游服务使用独立线程池，彼此互不影响。隔离性强但线程切换有开销。
 - **信号量隔离（Semaphore）：** 使用信号量控制并发数，无线程切换开销，但无法设置超时。
 
-## 常见误区
+## 技术选型与对比
 
-::: warning 易错点
-1. **令牌桶 vs 漏桶混淆：** 令牌桶允许突发流量（桶中有积攒的令牌可瞬间消耗），漏桶输出严格匀速。面试中务必区分清楚
-2. **固定窗口的临界突刺问题：** 窗口交界处可能瞬间通过 2 倍阈值的请求，生产环境建议使用滑动窗口或令牌桶
-3. **单机限流 ≠ 分布式限流：** 微服务多实例部署时，每台机器 100 QPS 限制意味着全局可能有 N×100 QPS，应使用 Redis 做全局限流
-4. **熔断器不是限流器：** 限流是主动限制请求速率；熔断是被动保护 —— 当下游故障达到阈值才会触发。两者互补，不能替代
-5. **熔断需要配合降级：** 熔断打开后必须返回合理的降级响应（默认值、缓存数据等），不能简单返回错误给用户
-:::
+| 维度 | Sentinel | Hystrix | Resilience4j |
+|------|----------|---------|--------------|
+| 维护状态 | 阿里活跃维护 | Netflix 停止维护 | 活跃维护 |
+| 限流 | 支持（QPS/线程数） | 不支持 | 支持（RateLimiter） |
+| 熔断 | 支持 | 支持 | 支持 |
+| 降级 | 支持 | 支持 | 支持 |
+| 热点参数限流 | 支持 | 不支持 | 不支持 |
+| 系统自适应限流 | 支持 | 不支持 | 不支持 |
+| 控制台 | 有（Sentinel Dashboard） | 有（Hystrix Dashboard） | 无（依赖 Actuator） |
+| 依赖 | 轻量 | 依赖 Archaius | 轻量，Java 8+ |
+| 推荐场景 | Spring Cloud Alibaba 项目 | 遗留项目维护 | Spring Boot / 新项目 |
 
-<div class="dig-questions">
-  <div class="dig-questions__header">
-    <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>1. 请比较令牌桶和漏桶算法的区别，分别适用于什么场景？</span>
-    <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>2. 如何在分布式系统中实现全局限流？</span>
-    <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. 熔断器的三个状态是什么？什么时候触发状态转换？</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-</div>
+**选型建议：**
+- 新建 Spring Cloud Alibaba 项目 → **Sentinel**（功能最全，有可视化控制台）
+- 新建 Spring Boot 项目、非阿里生态 → **Resilience4j**（轻量，符合 Spring 生态）
+- 维护历史 Hystrix 项目 → 暂时保留，规划迁移至 Resilience4j
+
+## 实战案例：API 网关多维度限流
+
+### 场景描述
+
+API 网关作为所有流量的入口，需要从多个维度同时进行限流，而非单一维度。
+
+### 限流维度与 Redis Key 设计
+
+| 维度 | Redis Key 格式 | 示例 | 说明 |
+|------|---------------|------|------|
+| 全局总量 | `rl:global:{endpoint}` | `rl:global:POST:/orders` | 保护整个接口不被打垮 |
+| 按接口 | `rl:endpoint:{method}:{path}` | `rl:endpoint:GET:/products` | 各接口独立限流 |
+| 按用户 | `rl:user:{userId}:{endpoint}` | `rl:user:1001:POST:/orders` | 防单用户滥用 |
+| 按 IP | `rl:ip:{ip}` | `rl:ip:192.168.1.1` | 防爬虫/DDoS |
+
+```java
+@Component
+public class MultiDimensionRateLimiter {
+
+    // 检查顺序：全局 → 按接口 → 按用户 → 按 IP
+    public RateLimitResult check(HttpRequest request, String userId) {
+        String endpoint = request.getMethod() + ":" + request.getPath();
+        String ip = request.getClientIp();
+
+        // 1. 全局限流（最高优先级，保护服务整体）
+        String globalKey = "rl:global:" + endpoint;
+        if (!isAllowed(globalKey, GLOBAL_LIMIT, WINDOW_MS)) {
+            return RateLimitResult.denied("全局限流");
+        }
+
+        // 2. 按接口限流
+        String endpointKey = "rl:endpoint:" + endpoint;
+        if (!isAllowed(endpointKey, ENDPOINT_LIMIT, WINDOW_MS)) {
+            return RateLimitResult.denied("接口限流");
+        }
+
+        // 3. 按用户限流（已登录用户）
+        if (userId != null) {
+            String userKey = "rl:user:" + userId + ":" + endpoint;
+            if (!isAllowed(userKey, USER_LIMIT, WINDOW_MS)) {
+                return RateLimitResult.denied("用户限流");
+            }
+        }
+
+        // 4. 按 IP 限流（最后一道防线，针对未登录/恶意请求）
+        String ipKey = "rl:ip:" + ip;
+        if (!isAllowed(ipKey, IP_LIMIT, WINDOW_MS)) {
+            return RateLimitResult.denied("IP 限流");
+        }
+
+        return RateLimitResult.allowed();
+    }
+}
+```
+
+### 优先级与组合策略
+
+```
+请求进入
+    │
+    ▼
+全局限流（10000 QPS）─── 超限 ──► 503 服务繁忙
+    │通过
+    ▼
+接口限流（如 /search 5000 QPS）─── 超限 ──► 429 Too Many Requests
+    │通过
+    ▼
+用户限流（100 次/分钟/用户）─── 超限 ──► 429 + Retry-After Header
+    │通过
+    ▼
+IP 限流（200 次/分钟/IP）─── 超限 ──► 429 + 封禁提示
+    │通过
+    ▼
+业务处理
+```
+
+**设计要点：**
+- 全局和接口维度用于整体保护，返回通用错误
+- 用户维度返回个性化限流提示，可附带 `Retry-After` 响应头
+- IP 维度异常时可触发告警，考虑加入临时黑名单
+- 各维度阈值独立配置，支持运行时热更新（结合 Sentinel Dashboard 或配置中心）
+
+## 面试常问 & 怎么答
 
 ### Q1: 令牌桶 vs 漏桶
 
@@ -459,7 +576,7 @@ public class OrderService {
 
 **回答要点：** 如果系统需要利用空闲时期积累的处理能力来应对短时突发，选令牌桶；如果需要严格控制输出速率保护下游，选漏桶。
 
-### Q2: 分布式全局限流
+### Q2: 如何在分布式系统中实现全局限流？
 
 **方案一：Redis + Lua 脚本（主流）**
 - 使用 Redis 的 Sorted Set 实现滑动窗口（按时间戳排序）
@@ -480,7 +597,7 @@ public class OrderService {
 - 高并发场景下 Redis 本身可能成为瓶颈，需评估 Redis 的 QPS 承载能力
 - 可以采用本地限流 + 全局限流两级策略，本地限流先拦截大部分超限请求，减轻 Redis 压力
 
-### Q3: 熔断器的三个状态
+### Q3: 熔断器的三个状态是什么？什么时候触发状态转换？
 
 **Closed（关闭/正常）→ Open（打开/熔断）→ Half-Open（半开/探测）**
 
@@ -494,6 +611,25 @@ public class OrderService {
 - 熔断通常配合**降级（Fallback）**使用，返回缓存数据、默认值或友好提示
 - 与**重试（Retry）**配合时要注意：熔断打开后不应重试，否则违背快速失败的目的
 - Resilience4j 中可以配置 `slowCallRateThreshold` 和 `slowCallDurationThreshold` 来处理响应时间过长的情况（慢调用熔断）
+
+### Q4: 常见误区
+
+1. **令牌桶 vs 漏桶混淆：** 令牌桶允许突发流量（桶中有积攒的令牌可瞬间消耗），漏桶输出严格匀速。面试中务必区分清楚
+2. **固定窗口的临界突刺问题：** 窗口交界处可能瞬间通过 2 倍阈值的请求，生产环境建议使用滑动窗口或令牌桶
+3. **单机限流 ≠ 分布式限流：** 微服务多实例部署时，每台机器 100 QPS 限制意味着全局可能有 N×100 QPS，应使用 Redis 做全局限流
+4. **熔断器不是限流器：** 限流是主动限制请求速率；熔断是被动保护 —— 当下游故障达到阈值才会触发。两者互补，不能替代
+5. **熔断需要配合降级：** 熔断打开后必须返回合理的降级响应（默认值、缓存数据等），不能简单返回错误给用户
+
+## 看到什么就先想到这类
+
+| 场景关键词 | 优先想到 |
+|-----------|---------|
+| 秒杀 / 突发流量 / 允许短时爆发 | 令牌桶（积攒令牌可瞬间消耗） |
+| 匀速消费 / 流量整形 / 保护下游 | 漏桶（严格恒定输出速率） |
+| 微服务间调用故障 / 下游超时 | 熔断器（Resilience4j CircuitBreaker） |
+| 分布式全局限流 / 多实例共享计数 | Redis + Lua 原子脚本 |
+| 系统 CPU 过高 / 自适应保护 | Sentinel 系统规则（自适应限流） |
+| 资源隔离 / 防止故障扩散 / 线程池 | 舱壁模式（Bulkhead） |
 
 ## 延伸阅读
 
