@@ -4,277 +4,235 @@ title: Docker 容器化
 
 # Docker 容器化
 
-<span class="dig-tag dig-tag--category">系统设计与工程实践</span>
-<span class="dig-tag dig-tag--medium">⭐⭐ 中级</span>
-<span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+<span class="dig-tag dig-tag--category">工程实践</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-Docker 通过 Linux 的 Namespace（隔离）和 Cgroups（资源限制）实现轻量级容器，相比虚拟机没有 Hypervisor 和 Guest OS 的开销。镜像采用分层存储（Union FS），多个容器共享只读层，极大节省存储空间。
+Docker 通过 Namespace（隔离）和 Cgroups（资源限制）实现轻量级容器。面试重点：容器 vs VM、镜像分层原理、Dockerfile 最佳实践、CMD vs ENTRYPOINT。
 :::
 
-## 容器 vs 虚拟机
+---
 
-Docker 容器和虚拟机（VM）都提供隔离环境，但实现原理截然不同：
+## 核心概念
+
+### 容器 vs 虚拟机
 
 ```
-虚拟机架构                        Docker 容器架构
-┌──────────────────────┐          ┌──────────────────────┐
-│  App A  │  App B     │          │  App A  │  App B     │
-├─────────┼────────────┤          ├─────────┼────────────┤
-│ Guest OS│ Guest OS   │          │  Libs   │  Libs      │
-├─────────┴────────────┤          ├──────────────────────┤
-│     Hypervisor       │          │    Docker Engine      │
-├──────────────────────┤          ├──────────────────────┤
-│       Host OS        │          │       Host OS        │
-├──────────────────────┤          ├──────────────────────┤
-│      Hardware        │          │      Hardware        │
-└──────────────────────┘          └──────────────────────┘
+虚拟机架构                              Docker 容器架构
+┌──────────────────────────┐           ┌──────────────────────────┐
+│  App A     │  App B      │           │  App A     │  App B      │
+├────────────┼─────────────┤           ├────────────┼─────────────┤
+│  Guest OS  │  Guest OS   │           │  Libs      │  Libs       │
+├────────────┴─────────────┤           ├─────────────────────────┤
+│        Hypervisor        │           │      Docker Engine       │
+├──────────────────────────┤           ├──────────────────────────┤
+│         Host OS          │           │         Host OS          │
+├──────────────────────────┤           ├──────────────────────────┤
+│         Hardware         │           │         Hardware         │
+└──────────────────────────┘           └──────────────────────────┘
 ```
 
 | 维度 | 虚拟机 (VM) | Docker 容器 |
 |------|------------|------------|
 | **隔离级别** | 硬件级（完整 OS 隔离） | 进程级（共享宿主机内核） |
-| **启动时间** | 分钟级 | 秒级 |
-| **镜像大小** | GB 级（含完整 OS） | MB 级 |
-| **性能开销** | 较大（Hypervisor 层） | 极小（接近原生） |
+| **启动速度** | 分钟级 | 秒级 |
+| **资源占用** | GB 级（含完整 Guest OS） | MB 级 |
+| **性能损耗** | 较大（Hypervisor 层开销） | 极小（接近原生） |
 | **安全性** | 更强（内核级隔离） | 相对较弱（共享内核） |
-| **资源密度** | 低（每个 VM 独占 OS） | 高（同一宿主机可跑数百容器） |
-| **适用场景** | 强隔离需求、不同 OS | 微服务、CI/CD、快速部署 |
 
-## 核心概念
+### Docker 核心概念三角：镜像 → 容器 → 仓库
 
-### 镜像（Image）
+- **镜像（Image）：** 只读模板，包含运行应用所需的代码、运行时、库和配置。通过 Dockerfile 构建，采用分层存储。
+- **容器（Container）：** 镜像的运行实例。在只读镜像层之上叠加一个可写层，所有运行时写操作都记录在该可写层。
+- **仓库（Registry）：** 存储和分发镜像的服务，类似代码托管平台。公共仓库如 Docker Hub，私有仓库如 Harbor、阿里云 ACR。
 
-镜像是容器的**只读模板**，包含运行应用所需的代码、运行时、库、配置文件等。
+### 镜像分层存储原理（Union FS）
 
-- 通过 Dockerfile 构建
-- 存储在镜像仓库（Docker Hub、阿里云 ACR、私有 Registry）
-- 采用**分层存储**（每条 Dockerfile 指令对应一层）
-
-### 容器（Container）
-
-容器是镜像的**运行实例**，相当于在只读镜像上加了一个可写层（Container Layer）：
+Docker 使用**联合文件系统（Union File System）** 将多个只读层叠加，在最上层添加可写层：
 
 ```
-┌──────────────────────────┐
-│   可写层 (Container Layer)│  ← 容器运行时的修改、日志等
-├──────────────────────────┤
-│   镜像层 N（只读）         │
-├──────────────────────────┤
-│   镜像层 N-1（只读）       │
-├──────────────────────────┤
-│   ...                    │
-├──────────────────────────┤
-│   Base 镜像层（只读）      │  ← 如 ubuntu, alpine 等
-└──────────────────────────┘
+┌────────────────────────────┐
+│  可写层（Container Layer）  │  ← 容器运行时的修改、日志等
+├────────────────────────────┤
+│  镜像层 N（只读）            │  ← COPY app.jar .
+├────────────────────────────┤
+│  镜像层 N-1（只读）          │  ← RUN mvn package
+├────────────────────────────┤
+│  ...                       │
+├────────────────────────────┤
+│  Base 镜像层（只读）         │  ← FROM eclipse-temurin:17-jre
+└────────────────────────────┘
 ```
 
-多个容器可以共享同一镜像的只读层，节省磁盘空间。
+多个容器可共享同一镜像的所有只读层，节省磁盘空间；构建时若某层上下文未变，直接复用缓存，加速构建。
 
-### Dockerfile
+### Namespace & Cgroups
 
-Dockerfile 是构建镜像的文本脚本，每条指令创建一个新的镜像层：
+| 技术 | 类型 | 作用 |
+|------|------|------|
+| **PID Namespace** | Namespace | 隔离进程 ID，容器内 PID=1 对应宿主机某个 PID |
+| **Network Namespace** | Namespace | 隔离网络接口、IP、路由表 |
+| **Mount Namespace** | Namespace | 隔离文件系统挂载点 |
+| **Cgroups CPU** | Cgroups | 限制容器可使用的 CPU 配额 |
+| **Cgroups Memory** | Cgroups | 限制容器可使用的内存上限 |
+| **Cgroups I/O** | Cgroups | 限制磁盘读写速率 |
+
+> **记忆口诀：** Namespace 负责"看不见"（隔离视图），Cgroups 负责"用不多"（资源配额）。
+
+### Dockerfile 核心指令
+
+| 指令 | 用途 | 注意事项 |
+|------|------|---------|
+| `FROM` | 指定基础镜像 | 尽量用 alpine 等轻量镜像 |
+| `RUN` | 执行命令并创建新层 | 多条命令用 `&&` 合并，末尾清理缓存 |
+| `COPY` | 复制本地文件到镜像 | 推荐用 COPY，比 ADD 更透明 |
+| `ADD` | 复制文件（支持 URL、自动解压 tar） | 仅在需要解压时使用 |
+| `CMD` | 容器默认启动命令 | 可被 `docker run` 末尾参数覆盖 |
+| `ENTRYPOINT` | 容器入口点 | 不可被普通参数覆盖，CMD 作为其参数追加 |
+| `EXPOSE` | 声明容器监听端口 | 仅为文档声明，不自动发布端口 |
+| `ENV` | 设置环境变量 | 在后续所有层均生效 |
+| `VOLUME` | 声明挂载点 | 持久化数据必须使用 Volume |
+
+---
+
+## 典型场景与最佳实践
+
+### 场景一：编写高效 Dockerfile（Java 多阶段构建）
+
+多阶段构建将构建环境与运行环境分离，最终镜像只包含运行时所需内容：
 
 ```dockerfile
-# 选择基础镜像
-FROM node:18-alpine
-
-# 设置工作目录
+# 阶段一：使用 Maven 编译打包
+FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn package -DskipTests
 
-# 先复制 package.json（利用 Docker 缓存层机制）
-COPY package*.json ./
-
-# 安装依赖（单独一层，依赖不变时可直接用缓存）
-RUN npm ci --only=production
-
-# 复制源代码（代码变动不会影响依赖层缓存）
-COPY . .
-
-# 构建
-RUN npm run build
-
-# 暴露端口（仅声明，不自动映射）
-EXPOSE 3000
-
-# 指定启动命令（推荐 ENTRYPOINT + CMD 组合）
-CMD ["node", "dist/main.js"]
+# 阶段二：使用轻量 JRE 运行
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-### Registry（镜像仓库）
-
-存储和分发镜像的服务，类似代码托管平台：
-
-- **公共仓库：** Docker Hub（`docker.io`）
-- **私有仓库：** 自建（Harbor）或云厂商（阿里云 ACR、AWS ECR）
-
-## 镜像分层原理（Union FS）
-
-Docker 使用**联合文件系统（Union File System）** 实现镜像分层，将多个只读层叠加，并在最上层添加一个可写层：
+配套的 `.dockerignore` 文件，避免不必要的文件进入构建上下文：
 
 ```
-# 构建过程中，每条指令创建一层
-FROM alpine             → Layer A: alpine 基础层 (5MB)
-RUN apk add curl        → Layer B: curl 安装层 (3MB)
-RUN apk add bash        → Layer C: bash 安装层 (1.5MB)
-COPY app.js .           → Layer D: 应用代码层 (0.1MB)
+target/
+.git/
+*.log
+.idea/
+*.iml
 ```
 
-**缓存复用的关键：** 若 Layer A、B、C 没有变化，Docker Build 时可以直接复用缓存，只重建 Layer D，极大加速构建速度。
+**效果：** 最终镜像不含 Maven、JDK 等构建工具，体积从 600MB+ 降至 ~100MB。
 
-### Dockerfile 最佳实践
+### 场景二：Docker Compose 多容器编排
+
+本地开发或测试环境中，用 Compose 同时启动 Web 应用、数据库和缓存：
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/mydb
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mydb
+    volumes:
+      - mysql-data:/var/lib/mysql
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+volumes:
+  mysql-data:
+```
+
+```bash
+# 启动所有服务（后台运行）
+docker compose up -d
+
+# 查看日志
+docker compose logs -f app
+
+# 停止并清理
+docker compose down
+```
+
+### 场景三：容器网络模型
+
+Docker 提供三种内置网络模式，根据场景选择：
+
+| 网络模式 | 隔离性 | 适用场景 |
+|---------|--------|---------|
+| **bridge**（默认） | 容器间通过虚拟网桥通信，与宿主机隔离 | 多容器应用、Compose 编排 |
+| **host** | 直接使用宿主机网络栈，无端口映射 | 追求极低延迟、高性能场景 |
+| **none** | 完全禁用网络 | 批处理任务、安全沙箱 |
+
+---
+
+## 面试常问 & 怎么答
+
+**Q：CMD vs ENTRYPOINT 的区别？**
+
+`CMD` 定义默认命令，可以被 `docker run` 末尾的参数**完全覆盖**。`ENTRYPOINT` 定义容器入口点，普通参数**不能覆盖**，而是作为追加参数传给 ENTRYPOINT。两者组合使用时，CMD 作为 ENTRYPOINT 的默认参数：
 
 ```dockerfile
-# 1. 使用多阶段构建（Multi-stage Build）减小最终镜像体积
-FROM node:18 AS builder
-WORKDIR /build
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:18-alpine AS runtime    # 最终镜像不含构建工具
-WORKDIR /app
-COPY --from=builder /build/dist ./dist
-COPY --from=builder /build/node_modules ./node_modules
-EXPOSE 3000
-CMD ["node", "dist/main.js"]
-
-# 2. 合并 RUN 指令，减少层数（但注意可读性 vs 缓存效率的权衡）
-# 错误：每个 apt install 一层，层数多
-RUN apt-get update
-RUN apt-get install -y curl
-RUN apt-get install -y git
-
-# 正确：合并为一层，且清理缓存
-RUN apt-get update && \
-    apt-get install -y curl git && \
-    rm -rf /var/lib/apt/lists/*
-
-# 3. 用 .dockerignore 排除不需要的文件
-# .dockerignore 文件内容：
-# node_modules
-# .git
-# *.log
-# dist
+ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["--spring.profiles.active=prod"]
+# 运行：java -jar app.jar --spring.profiles.active=prod
+# 覆盖：docker run myapp --spring.profiles.active=dev
 ```
 
-## 常用 Docker 命令
+---
 
-```bash
-# 镜像操作
-docker pull nginx:latest               # 拉取镜像
-docker images                          # 列出本地镜像
-docker build -t myapp:1.0 .            # 构建镜像
-docker push myregistry/myapp:1.0       # 推送镜像
-docker rmi myapp:1.0                   # 删除镜像
+**Q：COPY vs ADD 的区别？**
 
-# 容器操作
-docker run -d -p 8080:80 nginx         # 后台运行，端口映射
-docker run -it ubuntu bash             # 交互模式
-docker ps                              # 查看运行中容器
-docker ps -a                           # 查看所有容器（含已停止）
-docker stop <container_id>             # 停止容器
-docker rm <container_id>               # 删除容器
-docker logs -f <container_id>          # 实时查看日志
-docker exec -it <container_id> bash    # 进入运行中的容器
+`ADD` 功能更多（支持 URL 下载、自动解压 `.tar` 文件），但行为不透明，难以预测。`COPY` 语义清晰，只做文件复制。**推荐优先使用 COPY**，只有明确需要解压 tar 包时才用 ADD。
 
-# 数据卷
-docker run -v /host/path:/container/path nginx  # 挂载目录
-docker volume create mydata                      # 创建命名卷
-docker volume ls                                 # 列出卷
+---
 
-# 资源限制
-docker run -m 512m --cpus 1.5 nginx    # 限制内存 512MB，CPU 1.5 核
-```
+**Q：Docker 容器如何实现隔离？**
 
-## Docker 底层技术
+依赖两个 Linux 核心特性：**Namespace** 实现资源视图隔离（PID、Network、Mount 等六种命名空间，让容器"看不见"宿主机和其他容器的资源）；**Cgroups** 实现资源用量限制（CPU、内存、I/O 的配额上限）。两者结合，Namespace 管"隔离视图"，Cgroups 管"资源配额"。
 
-Docker 的容器隔离依赖两个 Linux 核心特性：
+---
 
-### Namespace（命名空间）- 隔离
+**Q：如何减小 Docker 镜像体积？**
 
-| Namespace | 隔离内容 |
-|-----------|---------|
-| **PID** | 进程 ID（容器内 PID=1 对应宿主机某个 PID） |
-| **Network** | 网络接口、IP、路由表 |
-| **Mount** | 文件系统挂载点 |
-| **UTS** | 主机名和域名 |
-| **IPC** | 进程间通信（共享内存、消息队列） |
-| **User** | 用户和组 ID 映射 |
+1. 选用 **alpine 等轻量基础镜像**（alpine 仅 ~5MB，远小于 ubuntu 的 ~72MB）
+2. **多阶段构建**，运行时镜像不含构建工具（如 Maven、JDK 换成 JRE）
+3. **合并 RUN 指令**，减少镜像层数，并在同一层内清理包管理器缓存
+4. 配置 **.dockerignore**，排除 `.git`、`node_modules`、日志等无用文件
 
-### Cgroups（控制组）- 资源限制
+---
 
-```bash
-# Cgroups 限制 CPU 使用量（50%）
-echo 50000 > /sys/fs/cgroup/cpu/docker/<container_id>/cpu.cfs_quota_us
+## 常见陷阱
 
-# Cgroups 限制内存使用量（256MB）
-echo 268435456 > /sys/fs/cgroup/memory/docker/<container_id>/memory.limit_in_bytes
-```
+| 错误做法 | 问题 | 正确做法 |
+|---------|------|---------|
+| 每条命令单独一个 `RUN` | 镜像层数过多，体积膨胀 | 合并 `RUN`，用 `&&` 连接并清理缓存 |
+| 使用 `latest` 标签 | 构建结果不可复现，镜像可能悄悄变化 | 固定版本号，如 `node:18.20-alpine` |
+| 以 `root` 用户运行容器 | 容器逃逸风险高，违反最小权限原则 | 用 `USER` 指令指定非 root 用户 |
+| 忘记 `.dockerignore` | 构建上下文包含 `node_modules`/`.git`，构建慢且镜像大 | 添加 `.dockerignore` 排除无关文件 |
 
-这就是为什么 Docker 速度快但隔离性不如 VM——所有容器共享同一个宿主机内核，Namespace 只是让容器"看起来"有独立的环境。
+---
 
-## 常见误区
+## 看到什么就先想到这类
 
-::: warning 易错点
-1. **EXPOSE 只是声明，不会自动发布端口**，真正发布端口需要在 `docker run` 时用 `-p <host>:<container>` 指定
-2. **容器内数据不持久**，容器删除后可写层随之消失。需要数据持久化必须使用 Volume（数据卷）或 Bind Mount
-3. **不要在容器内用 root 运行应用**，这是安全最佳实践，应在 Dockerfile 中用 `USER` 指令切换到非特权用户
-4. **多阶段构建**可以大幅缩小镜像体积，构建工具（compiler、test tools）不会出现在最终镜像中，生产镜像体积从 1GB+ 可瘦身到 100MB 以内
-:::
-
-<div class="dig-questions">
-  <div class="dig-questions__header">
-    <span>📝 面试真题</span>
-    <span style="font-size: 12px; opacity: 0.8;">3 道高频</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>1. Docker 容器和虚拟机有什么区别？各自的适用场景是什么？</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>2. Docker 镜像的分层原理是什么？为什么说镜像是只读的？</span>
-    <span class="dig-tag dig-tag--medium" style="margin: 0;">中等</span>
-  </div>
-  <div class="dig-questions__item">
-    <span>3. Docker 底层用了哪些 Linux 技术？如何实现资源隔离和限制？</span>
-    <span class="dig-tag dig-tag--hard" style="margin: 0;">困难</span>
-  </div>
-</div>
-
-### Q1: Docker vs 虚拟机
-
-**核心区别：** 虚拟机通过 Hypervisor 模拟完整硬件，包含完整的 Guest OS；Docker 容器直接运行在宿主机内核上，用 Namespace 和 Cgroups 实现隔离。
-
-**优势对比：**
-- Docker：启动快（秒级）、体积小（MB 级）、资源利用率高
-- VM：隔离性更强（内核级隔离）、支持不同操作系统
-
-**适用场景：**
-- Docker：微服务部署、CI/CD 环境、快速打包分发
-- VM：需要强隔离（安全合规要求）、需要不同操作系统内核
-
-### Q2: 镜像分层原理
-
-镜像是**只读的分层联合文件系统**，每条 Dockerfile 指令创建一个只读层（Layer）。
-
-运行容器时，Docker 在所有只读层上叠加一个**可写层**（Container Layer），容器内的所有写操作都记录在这个可写层，不影响原始镜像层。
-
-**分层的好处：**
-1. **共享（节省存储）：** 基础层（如 ubuntu）被多个镜像共享，磁盘只存一份
-2. **缓存（加速构建）：** 构建时如果某层的上下文未变，直接复用缓存层
-
-### Q3: 底层 Linux 技术
-
-Docker 依赖两个核心技术：
-1. **Namespace（命名空间）实现隔离：** PID、Network、Mount、UTS、IPC、User 六种命名空间，让每个容器"看起来"拥有独立的进程树、网络、文件系统等
-2. **Cgroups（Control Groups）实现资源限制：** 限制容器可使用的 CPU、内存、I/O、网络带宽等资源上限
-
-两者结合：Namespace 负责让容器看不到宿主机和其他容器的资源（隔离视图），Cgroups 负责限制容器能使用多少资源（资源配额）。
-
-## 延伸阅读
-
-- [Docker 官方文档](https://docs.docker.com/)
-- [Docker 从入门到实践](https://vuepress.mirror.docker-practice.com/) — 开源中文教程
-- [万字长文：彻底搞懂 Docker 网络模型](https://www.cnblogs.com/bakari/p/10601938.html)
+- **"容器化/打包部署"** → Docker
+- **"镜像/Dockerfile"** → Docker 镜像构建
+- **"多容器编排/本地开发环境"** → Docker Compose
+- **"进程隔离/资源限制"** → Namespace + Cgroups
