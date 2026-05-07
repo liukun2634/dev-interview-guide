@@ -108,6 +108,7 @@ export default withMermaid(defineConfig({
             { text: '拓扑排序', link: '/data-structures-and-algorithms/graph-search/topological-sort' },
             { text: '最短路', link: '/data-structures-and-algorithms/graph-search/shortest-path' },
             { text: '回溯', link: '/data-structures-and-algorithms/graph-search/backtracking' },
+            { text: '并查集', link: '/data-structures-and-algorithms/graph-search/union-find' },
           ],
         },
         {
@@ -121,6 +122,10 @@ export default withMermaid(defineConfig({
             { text: '区间与状态机 DP', link: '/data-structures-and-algorithms/dynamic-programming/interval-and-state-machine-dp' },
             { text: '树形 DP', link: '/data-structures-and-algorithms/dynamic-programming/tree-dp' },
             { text: '状压与计数 DP', link: '/data-structures-and-algorithms/dynamic-programming/advanced-dp' },
+            { text: '数位 DP', link: '/data-structures-and-algorithms/dynamic-programming/digit-dp' },
+            { text: '博弈 DP', link: '/data-structures-and-algorithms/dynamic-programming/game-dp' },
+            { text: '概率与期望 DP', link: '/data-structures-and-algorithms/dynamic-programming/probability-dp' },
+            { text: 'DP 优化技巧', link: '/data-structures-and-algorithms/dynamic-programming/dp-optimization' },
           ],
         },
         {
@@ -296,6 +301,14 @@ export default withMermaid(defineConfig({
           collapsed: false,
           items: [
             { text: 'Spring Cloud 速查', link: '/web-and-frameworks/spring-cloud-overview' },
+          ],
+        },
+        {
+          text: '前端框架',
+          collapsed: false,
+          items: [
+            { text: 'React', link: '/web-and-frameworks/react' },
+            { text: 'Angular', link: '/web-and-frameworks/angular' },
           ],
         },
       ],
