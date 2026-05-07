@@ -484,6 +484,282 @@ graph TD
 
 ---
 
+## Agent Skills（技能系统）
+
+Skills 是 Agent 架构中一个重要的设计模式——将**特定领域的能力封装为可复用的技能模块**，Agent 根据任务需求动态加载和调用。Skills 解决的核心问题是：如何让 Agent 在不膨胀 System Prompt 的情况下，具备越来越多的专业能力。
+
+### 为什么需要 Skills
+
+| 问题 | 没有 Skills | 有 Skills |
+|------|-----------|-----------|
+| **能力扩展** | 所有能力塞进一个巨大的 Prompt | 按需加载，保持 Prompt 精简 |
+| **复用性** | 每个 Agent 重复定义相同逻辑 | 一次编写，多个 Agent 共享 |
+| **可维护性** | 修改一个能力要改整个 Prompt | 独立更新单个 Skill 文件 |
+| **上下文窗口** | 容易超出 Token 限制 | 只加载当前需要的 Skill |
+
+### Skill 的核心结构
+
+一个 Skill 通常包含以下要素：
+
+```
+┌─────────────────────────────────────────┐
+│              Skill 定义                  │
+├─────────────────────────────────────────┤
+│  name: "code-review"                    │
+│  description: "审查代码质量与安全性"       │
+│  trigger: 用户请求或 Agent 自动匹配       │
+├─────────────────────────────────────────┤
+│  输入: 需要的上下文信息                    │
+│  指令: 具体的执行步骤和规范                │
+│  输出: 期望的结果格式                     │
+├─────────────────────────────────────────┤
+│  可用工具: 该 Skill 可以调用的工具子集      │
+│  约束: 安全边界、权限限制                  │
+└─────────────────────────────────────────┘
+```
+
+### 典型的 Skill 设计模式
+
+```python
+# 方式一：基于 Prompt 模板的 Skill
+class PromptSkill:
+    """最简单的 Skill——一段专业化的 Prompt 模板。"""
+
+    def __init__(self, name: str, instruction: str,
+                 tools: list[str] = None):
+        self.name = name
+        self.instruction = instruction
+        self.tools = tools or []
+
+    def activate(self, context: dict) -> str:
+        """将 Skill 指令注入到当前对话上下文中。"""
+        return self.instruction.format(**context)
+
+
+# 方式二：基于文件的 Skill（如 Claude Code 的 Skills 机制）
+# skills/
+#   code-review/
+#     skill.md          ← Skill 定义（name, description, 指令）
+#     checklist.md      ← 附属资源
+#   debugging/
+#     skill.md
+#     flowchart.md
+
+# 方式三：基于代码的 Skill（如 Agent SDK）
+class CodeReviewSkill:
+    """封装完整的代码审查逻辑。"""
+
+    name = "code-review"
+    description = "审查代码的质量、安全性和最佳实践"
+
+    async def execute(self, agent, code: str, language: str):
+        # 1. 静态分析
+        lint_result = await agent.call_tool("run_linter",
+                                            code=code, lang=language)
+        # 2. LLM 审查
+        review = await agent.think(
+            f"审查以下代码:\n{code}\n\nLint 结果:\n{lint_result}"
+        )
+        # 3. 生成报告
+        return {"lint": lint_result, "review": review}
+```
+
+### Skill 路由：Agent 如何选择 Skill
+
+Agent 需要一个**路由机制**来决定何时激活哪个 Skill：
+
+```
+用户输入
+  ↓
+Skill 路由器（Router）
+  ├── 关键词匹配: "审查代码" → code-review Skill
+  ├── 意图分类: LLM 判断意图 → 对应 Skill
+  ├── 用户显式指定: "/review" → code-review Skill
+  └── 无匹配 → 通用对话能力
+  ↓
+加载 Skill 指令 + 工具集
+  ↓
+Agent 执行
+```
+
+| 路由方式 | 优点 | 缺点 | 适用场景 |
+|---------|------|------|---------|
+| 关键词/正则匹配 | 快速、确定性高 | 不够灵活 | 命令式触发（如 `/commit`） |
+| LLM 意图分类 | 理解自然语言 | 有误判风险、消耗 Token | 自然对话中自动匹配 |
+| 用户显式选择 | 零误判 | 需要用户了解可用 Skill | 专业工具型 Agent |
+| 混合路由 | 兼顾准确和灵活 | 实现复杂 | 生产级 Agent |
+
+### Skills 与其他概念的关系
+
+| 概念 | 定位 | 与 Skills 的关系 |
+|------|------|-----------------|
+| **Tools** | 原子操作（搜索、计算、API 调用） | Skill 内部可以调用多个 Tools |
+| **Prompt 模板** | 单一的提示文本 | Skill 包含 Prompt 但还有工具集、约束等 |
+| **Workflow / Chain** | 预定义的固定流程 | Skill 更灵活，Agent 自主决定如何使用 |
+| **Plugin** | 第三方扩展 | Skill 通常是内置的领域能力 |
+| **MCP Server** | 标准化的工具服务 | Skill 可以调用 MCP Server 提供的工具 |
+
+### 实际案例：Claude Code 的 Skills 系统
+
+Claude Code 实现了一个基于文件的 Skills 机制，是 Skill 设计模式的典型应用：
+
+```
+用户: "/commit"
+  ↓
+Claude Code 识别 Skill 触发（斜杠命令）
+  ↓
+加载 skills/commit/skill.md
+  ├── 指令: 分析变更、生成 commit message、执行 git commit
+  ├── 工具: Bash (git), Read, Grep
+  └── 约束: 不 push、不 force push
+  ↓
+Agent 按 Skill 指令执行
+  ↓
+输出: 生成并执行 commit
+```
+
+**Skill 的分类**：
+- **刚性 Skill**（如 TDD、Debugging）：严格按步骤执行，不允许偏离
+- **柔性 Skill**（如代码风格、架构建议）：提供原则和指导，允许灵活应用
+
+### Skill 的生命周期管理
+
+在生产级 Agent 系统中，Skills 会持续增加和演化，需要系统化的管理策略：
+
+#### 1. Skill 注册与发现
+
+```python
+class SkillRegistry:
+    """集中管理所有可用 Skills。"""
+
+    def __init__(self):
+        self._skills: dict[str, Skill] = {}
+
+    def register(self, skill: Skill):
+        """注册新 Skill，检查命名冲突。"""
+        if skill.name in self._skills:
+            raise ValueError(f"Skill '{skill.name}' already registered")
+        self._skills[skill.name] = skill
+
+    def unregister(self, name: str):
+        """移除 Skill（热更新场景）。"""
+        self._skills.pop(name, None)
+
+    def discover(self, query: str) -> list[Skill]:
+        """根据用户意图，返回匹配的 Skills。"""
+        return [s for s in self._skills.values()
+                if s.matches(query)]
+
+    def list_all(self) -> list[dict]:
+        """返回所有 Skill 的摘要（供 LLM 路由决策）。"""
+        return [{"name": s.name, "description": s.description}
+                for s in self._skills.values()]
+```
+
+#### 2. 新增 Skill 的标准流程
+
+```
+1. 定义 Skill
+   ├── 明确触发条件（什么场景激活）
+   ├── 编写指令（具体执行步骤）
+   ├── 声明依赖的 Tools
+   └── 设定约束和边界
+
+2. 注册到路由器
+   ├── 添加关键词/意图映射
+   ├── 设定优先级（避免与现有 Skill 冲突）
+   └── 更新 Skill 列表摘要（供 LLM 路由参考）
+
+3. 测试验证
+   ├── 单元测试：Skill 指令是否正确执行
+   ├── 路由测试：是否在正确场景被激活
+   ├── 冲突测试：是否误触发其他 Skill
+   └── 集成测试：与现有 Skills 的协作
+
+4. 上线与监控
+   ├── 灰度发布（先对部分用户开放）
+   ├── 监控激活率和成功率
+   └── 收集反馈迭代优化
+```
+
+#### 3. 修改 Skill 的注意事项
+
+| 修改类型 | 风险 | 建议做法 |
+|---------|------|---------|
+| **指令调整**（改 Prompt 措辞） | 低 — 不影响接口 | 直接修改，回归测试 |
+| **工具集变更**（增删依赖的 Tools） | 中 — 可能影响执行能力 | 版本管理 + 兼容性测试 |
+| **触发条件变更** | 高 — 可能影响路由 | 同时检查其他 Skill 的触发条件是否冲突 |
+| **重命名** | 高 — 影响所有引用方 | 保留旧名称作为别名过渡 |
+
+#### 4. Skill 版本管理
+
+```
+skills/
+  code-review/
+    skill.md              ← 当前版本
+    CHANGELOG.md           ← 变更记录
+  commit/
+    skill.md
+    CHANGELOG.md
+
+# 或者用版本化目录
+skills/
+  code-review/
+    v1/skill.md
+    v2/skill.md            ← 当前生效版本
+    manifest.json          ← 指定 active_version: "v2"
+```
+
+**关键原则**：
+- **向后兼容**：修改 Skill 时不破坏已有的触发方式和输出格式
+- **变更日志**：记录每次修改的原因和内容，便于回溯
+- **渐进式发布**：重大修改先在小范围验证，再全量推广
+
+#### 5. 多 Skill 冲突处理
+
+当 Skill 数量增多时，最常见的问题是**路由冲突**——多个 Skill 都匹配同一输入：
+
+```python
+class SkillRouter:
+    """带优先级和冲突检测的 Skill 路由器。"""
+
+    def route(self, query: str) -> Skill | None:
+        matches = []
+        for skill in self.registry.list_all():
+            score = skill.match_score(query)
+            if score > self.threshold:
+                matches.append((skill, score))
+
+        if not matches:
+            return None
+
+        if len(matches) > 1:
+            # 策略一：按优先级排序
+            matches.sort(key=lambda x: (-x[0].priority, -x[1]))
+            # 策略二：让 LLM 从候选中选择
+            # return self.llm_disambiguate(query, matches)
+
+        return matches[0][0]
+```
+
+| 冲突场景 | 解决策略 |
+|---------|---------|
+| 两个 Skill 关键词重叠 | 用优先级（priority）区分，或合并为一个 Skill |
+| 新 Skill 抢占了旧 Skill 的流量 | 细化触发条件，缩小各自的匹配范围 |
+| 用户意图模糊，无法确定 Skill | LLM 二次分类，或反问用户确认 |
+
+### 面试怎么答
+
+**Q: Agent 的 Skill 机制是什么？**
+
+Skill 是 Agent 的能力封装模式，将特定领域的 Prompt 模板、工具集和执行约束打包为可复用的模块。Agent 通过路由机制（关键词匹配、意图分类或用户指定）选择合适的 Skill 加载执行。好处是保持 System Prompt 精简、能力可复用、易于维护和扩展。典型实现有基于 Prompt 文件的（如 Claude Code Skills）和基于代码的（如 Agent SDK 中的 Tool 组合）。
+
+**Q: Skill 数量增多后怎么管理？**
+
+三个关键机制：一是**集中注册**，用 SkillRegistry 统一管理，避免散落各处；二是**路由优先级**，每个 Skill 声明优先级和匹配条件，路由器按优先级排序并处理冲突；三是**版本管理**，修改 Skill 时保持向后兼容，记录变更日志，重大修改灰度发布。核心原则是新增 Skill 不破坏现有 Skill 的触发和行为。
+
+---
+
 ## 多 Agent 系统
 
 当单个 Agent 难以胜任复杂任务时，可以通过**多个 Agent 协作**来完成。
