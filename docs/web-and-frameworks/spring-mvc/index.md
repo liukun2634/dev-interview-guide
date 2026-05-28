@@ -69,6 +69,7 @@ HTTP 响应
 |------|-----------|---------|---------|
 | 请求处理流程 | DispatcherServlet 完整流程、拦截器链、参数绑定、@Valid 校验、全局异常处理 | 🔥🔥🔥 | [请求处理流程](./request-flow) |
 | RESTful API | REST 六大原则、HTTP 方法语义、状态码规范、版本管理、认证方式 | 🔥🔥🔥 | [RESTful API](./restful-api) |
+| Spring WebFlux | Mono/Flux、响应式编程、Event Loop、R2DBC、SSE/WebSocket、与 MVC 对比 | 🔥🔥 | [Spring WebFlux](./webflux) |
 
 ## 面试常问 & 怎么答
 

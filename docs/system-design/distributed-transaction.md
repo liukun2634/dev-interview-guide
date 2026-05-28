@@ -46,6 +46,33 @@ title: 分布式事务
   若任意参与者回复 No  → 协调者发送 Rollback
 ```
 
+```mermaid
+sequenceDiagram
+    participant C as 协调者
+    participant P1 as 参与者1
+    participant P2 as 参与者2
+    
+    rect rgb(200, 220, 255)
+    Note over C,P2: 阶段一：Prepare（准备）
+    C->>P1: Prepare 请求
+    C->>P2: Prepare 请求
+    P1->>P1: 执行操作，写 undo/redo 日志（不提交）
+    P2->>P2: 执行操作，写 undo/redo 日志（不提交）
+    P1-->>C: Yes（可以提交）
+    P2-->>C: Yes（可以提交）
+    end
+    
+    rect rgb(200, 255, 200)
+    Note over C,P2: 阶段二：Commit（提交）
+    C->>P1: Commit
+    C->>P2: Commit
+    P1->>P1: 提交事务，释放锁
+    P2->>P2: 提交事务，释放锁
+    P1-->>C: ACK
+    P2-->>C: ACK
+    end
+```
+
 **问题**：
 
 | 问题 | 说明 |
@@ -77,6 +104,43 @@ title: 分布式事务
 阶段三：DoCommit
   协调者发送 DoCommit，参与者提交事务
   参与者超时未收到 DoCommit → 默认提交（降低阻塞）
+```
+
+```mermaid
+sequenceDiagram
+    participant C as 协调者
+    participant P1 as 参与者1
+    participant P2 as 参与者2
+    
+    rect rgb(255, 245, 200)
+    Note over C,P2: 阶段一：CanCommit
+    C->>P1: CanCommit?
+    C->>P2: CanCommit?
+    Note right of P1: 不锁资源，仅检查
+    P1-->>C: Yes
+    P2-->>C: Yes
+    end
+    
+    rect rgb(200, 220, 255)
+    Note over C,P2: 阶段二：PreCommit
+    C->>P1: PreCommit
+    C->>P2: PreCommit
+    P1->>P1: 执行操作，写日志（不提交）
+    P2->>P2: 执行操作，写日志（不提交）
+    P1-->>C: ACK
+    P2-->>C: ACK
+    end
+    
+    rect rgb(200, 255, 200)
+    Note over C,P2: 阶段三：DoCommit
+    C->>P1: DoCommit
+    C->>P2: DoCommit
+    P1->>P1: 提交事务
+    P2->>P2: 提交事务
+    Note right of P2: 超时未收到 DoCommit → 默认提交
+    P1-->>C: ACK
+    P2-->>C: ACK
+    end
 ```
 
 **改进**：
@@ -112,6 +176,31 @@ TCC 是一种**业务层面的补偿机制**，不依赖数据库的事务支持
 **悬挂**：Try 因网络拥堵延迟，Cancel 先于 Try 到达并执行完毕，之后 Try 才到达，导致资源被错误预留。
 - 解决：Cancel 执行后记录状态，Try 执行前检查是否已被 Cancel，若是则拒绝执行。
 
+```mermaid
+sequenceDiagram
+    participant C as 协调者
+    participant S as 参与者
+    
+    rect rgb(255, 230, 230)
+    Note over C,S: 异常一：空回滚
+    C->>S: Try（网络丢失，未到达）
+    Note right of S: 未收到 Try
+    C->>S: Cancel（超时触发）
+    Note right of S: Cancel 时检查：无 Try 记录 → 直接返回成功
+    S-->>C: Cancel 成功
+    end
+    
+    rect rgb(230, 230, 255)
+    Note over C,S: 异常二：悬挂
+    C->>S: Try（网络拥堵，延迟到达）
+    C->>S: Cancel（先到达并执行）
+    Note right of S: Cancel 已执行，记录状态
+    S-->>C: Cancel 成功
+    Note right of S: Try 延迟到达
+    S->>S: 检查：已 Cancel → 拒绝 Try
+    end
+```
+
 **特点**：
 - 一致性较强（最终一致）
 - 侵入业务代码，开发成本高
@@ -144,6 +233,43 @@ Saga 将长事务拆分为一系列**本地事务**，每个本地事务有对�
 - 最终一致性，中间状态可见
 - 补偿操作需要业务上可行（不是所有操作都能补偿）
 - 适用于订单流程、物流、跨境支付等长业务流程
+
+```mermaid
+sequenceDiagram
+    participant O as Saga 编排器
+    participant 订单 as 订单服务
+    participant 库存 as 库存服务
+    participant 支付 as 支付服务
+    
+    rect rgb(200, 255, 200)
+    Note over O,支付: 正向流程
+    O->>订单: T1: 创建订单
+    订单-->>O: 成功
+    O->>库存: T2: 扣减库存
+    库存-->>O: 成功
+    O->>支付: T3: 扣款
+    支付-->>O: 失败 ✗
+    end
+    
+    rect rgb(255, 220, 220)
+    Note over O,支付: 补偿流程（逆序）
+    O->>库存: C2: 恢复库存
+    库存-->>O: 补偿成功
+    O->>订单: C1: 取消订单
+    订单-->>O: 补偿成功
+    end
+```
+
+```mermaid
+graph LR
+    subgraph 协同式 Saga（事件驱动）
+    A[订单服务<br/>创建订单] -->|OrderCreated| B[库存服务<br/>扣减库存]
+    B -->|InventoryDeducted| C[支付服务<br/>扣款]
+    C -->|PaymentFailed| B
+    B -->|InventoryRestored| A
+    A -->|OrderCancelled| D((结束))
+    end
+```
 
 ---
 
@@ -259,6 +385,20 @@ Seata 是阿里巴巴开源的分布式事务框架，提供 AT、TCC、Saga、X
 5. 提交本地事务（包含业务 SQL + undo_log）
 6. 全局提交 → 异步删除 undo_log
    全局回滚 → 根据 undo_log 生成反向 SQL 执行回滚
+```
+
+```mermaid
+graph TB
+    subgraph Seata AT 模式工作流程
+    A[解析业务 SQL] --> B[查询前镜像<br/>Before Image]
+    B --> C[执行业务 SQL]
+    C --> D[查询后镜像<br/>After Image]
+    D --> E[生成 undo_log<br/>前镜像 + 后镜像]
+    E --> F[提交本地事务<br/>业务 SQL + undo_log]
+    F --> G{全局事务结果}
+    G -->|全局提交| H[异步删除 undo_log]
+    G -->|全局回滚| I[根据 undo_log<br/>生成反向 SQL 回滚]
+    end
 ```
 
 **选型建议：**

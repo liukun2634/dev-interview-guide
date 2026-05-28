@@ -104,6 +104,36 @@ row_1 历史版本（事务 T1 开始前的版本，时间戳 = 80）── 时�
 
 每行数据含隐藏列：`DB_TRX_ID`（最后修改的事务 ID）、`DB_ROLL_PTR`（指向 undo log 的指针）。读操作根据事务的 ReadView 判断版本可见性，实现无锁一致性读。
 
+```mermaid
+graph LR
+    subgraph MVCC 版本链
+    direction LR
+    V3["当前版本<br/>DB_TRX_ID=150<br/>value=Charlie"] -->|DB_ROLL_PTR| V2["历史版本<br/>DB_TRX_ID=120<br/>value=Bob"]
+    V2 -->|DB_ROLL_PTR| V1["最早版本<br/>DB_TRX_ID=80<br/>value=Alice"]
+    end
+```
+
+```mermaid
+flowchart TD
+    A[事务 T1 读取 row_1<br/>ReadView: trx_id=100] --> B{当前版本<br/>DB_TRX_ID=150}
+    B -->|150 > 100<br/>不可见| C[沿 undo log 回溯]
+    C --> D{历史版本<br/>DB_TRX_ID=120}
+    D -->|120 > 100<br/>不可见| E[继续回溯]
+    E --> F{历史版本<br/>DB_TRX_ID=80}
+    F -->|80 ≤ 100<br/>可见 ✓| G[返回 value=Alice]
+    
+    style G fill:#90EE90
+```
+
+**ReadView 可见性判断规则（RR 级别）：**
+
+| 条件 | 结果 | 说明 |
+|------|------|------|
+| `trx_id < min_trx_id` | 可见 | 该版本在 ReadView 创建前已提交 |
+| `trx_id > max_trx_id` | 不可见 | 该版本在 ReadView 创建后才开始 |
+| `trx_id in active_trx_list` | 不可见 | 该版本的事务在 ReadView 创建时还未提交 |
+| `trx_id not in active_trx_list` | 可见 | 该版本的事务在 ReadView 创建前已提交 |
+
 ---
 
 ### 2. NoSQL
@@ -206,6 +236,22 @@ MemStore（内存）──满后刷盘──► HFile（磁盘，不可变）
 
 **常见踩坑：** 按时间分片导致新数据集中写入最新分片（热点写入）；按用户 ID 分片但不同用户数据量差异悬殊（头部用户数据倾斜）。
 
+```mermaid
+flowchart TD
+    A[选择分片键] --> B{核心查询<br/>都带该字段？}
+    B -->|否| C[❌ 不适合<br/>会导致大量跨分片查询]
+    B -->|是| D{数据分布<br/>均匀？}
+    D -->|否| E{可否组合字段？}
+    E -->|是| F[使用组合分片键<br/>如 userId + month]
+    E -->|否| C
+    D -->|是| G{是否有<br/>热点写入？}
+    G -->|否| H[✅ 适合作为分片键]
+    G -->|是| I[考虑加盐/随机后缀<br/>打散热点]
+    
+    style H fill:#90EE90
+    style C fill:#FFB6C1
+```
+
 #### 扩容：翻倍策略（4 → 8 分片）
 
 ```
@@ -218,6 +264,40 @@ MemStore（内存）──满后刷盘──► HFile（磁盘，不可变）
 ```
 
 翻倍策略的优势：每个旧分片只需向一个新分片迁移数据，迁移量最小，且迁移期间两套路由规则可共存（双读验证）。
+
+```mermaid
+graph TB
+    subgraph 翻倍扩容数据迁移
+    direction TB
+    
+    subgraph 扩容前（4分片）
+    S0[Shard 0<br/>uid%4=0<br/>uid: 0,4,8,12...]
+    S1[Shard 1<br/>uid%4=1<br/>uid: 1,5,9,13...]
+    S2[Shard 2<br/>uid%4=2<br/>uid: 2,6,10,14...]
+    S3[Shard 3<br/>uid%4=3<br/>uid: 3,7,11,15...]
+    end
+    
+    subgraph 扩容后（8分片）
+    N0[Shard 0<br/>uid%8=0<br/>uid: 0,8...]
+    N4[Shard 4<br/>uid%8=4<br/>uid: 4,12...]
+    N1[Shard 1<br/>uid%8=1<br/>uid: 1,9...]
+    N5[Shard 5<br/>uid%8=5<br/>uid: 5,13...]
+    end
+    
+    S0 -->|保留 uid%8=0| N0
+    S0 -->|迁移 uid%8=4| N4
+    S1 -->|保留 uid%8=1| N1
+    S1 -->|迁移 uid%8=5| N5
+    end
+```
+
+**翻倍扩容步骤：**
+1. 新建 4 个空分片（Shard 4-7）
+2. 开启双写：新写入按 `uid % 8` 路由，同时写入新旧分片
+3. 后台迁移：扫描旧分片数据，按新路由规则迁移到对应新分片
+4. 数据校验：对比新旧分片数据一致性
+5. 切换路由：读流量切换到新路由规则
+6. 清理：删除旧分片中已迁出的数据
 
 ---
 
@@ -296,6 +376,30 @@ MemStore（内存）──满后刷盘──► HFile（磁盘，不可变）
 | 海量写入 + 列式查询 | HBase |
 | ACID + 水平扩展 | TiDB / CockroachDB |
 | 时序数据 + 聚合查询 | InfluxDB / TimescaleDB |
+
+**面试中的选型思考框架**
+
+面试时被问到"用什么数据库"，可以用以下框架组织回答：
+
+```mermaid
+flowchart TD
+    A[存储选型决策] --> B{数据有强关系？<br/>需要 JOIN / 事务？}
+    B -->|是| C{数据量级？}
+    C -->|单机可承受<br/>< 千万行| D[MySQL / PostgreSQL]
+    C -->|需水平扩展| E[TiDB / CockroachDB]
+    B -->|否| F{核心访问模式？}
+    F -->|键值查询 / 缓存| G[Redis]
+    F -->|文档查询 / 灵活Schema| H[MongoDB]
+    F -->|时序写入 / 聚合| I[InfluxDB / TimescaleDB]
+    F -->|海量写入 / 列族扫描| J[HBase / Cassandra]
+    
+    style D fill:#E8F5E9
+    style E fill:#E8F5E9
+    style G fill:#E3F2FD
+    style H fill:#E3F2FD
+    style I fill:#FFF3E0
+    style J fill:#FFF3E0
+```
 
 ---
 

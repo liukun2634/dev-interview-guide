@@ -236,6 +236,10 @@ $$
 | **ORPO** | 合并 SFT 和对齐为一步，无需参考模型 | 2024 |
 | **KTO** | 只需"好/坏"二分标签而非成对偏好 | 2024 |
 | **SimPO** | 简化 DPO，使用序列平均对数概率作为隐式奖励 | 2024 |
+| **GRPO** | Group Relative Policy Optimization，DeepSeek 提出，无需价值模型，用组内相对奖励替代基线 | 2024-2025 |
+| **RLVR** | Reinforcement Learning with Verifiable Rewards，使用可验证奖励（如数学/代码正确性）替代人类标注 | 2025 |
+| **Online DPO** | 在线版 DPO，实时生成偏好对而非使用离线数据，效果优于标准 DPO | 2024-2025 |
+| **Self-Play / SPIN** | 模型与自身博弈生成偏好数据，减少对人类标注的依赖 | 2024 |
 
 ---
 
@@ -252,7 +256,7 @@ from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer
 
 # 1. 加载模型和分词器
-model_name = "Qwen/Qwen2.5-7B"
+model_name = "Qwen/Qwen2.5-7B"  # 或使用 Llama-3/4, DeepSeek-R1 等开源模型
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -339,7 +343,7 @@ merged_model.save_pretrained("./merged_model")
 
 1. 准备 100~500 条代表性测试样例
 2. 定义评估维度（准确性、格式遵循、安全性等）
-3. 使用强模型（如 GPT-4）自动评分或人工评审
+3. 使用强模型（如 GPT-4o、Claude Sonnet 4）自动评分或人工评审
 4. 对比微调前后的效果差异
 
 ---
@@ -415,7 +419,7 @@ $$
 
 **关键数学联系**：DPO 证明了在 KL 约束下，最优策略可以用参考模型和数据直接表示，无需显式奖励模型。
 
-2024 年后 **DPO 已成为主流**选择，因为其简洁性和稳定性在实践中优势明显。
+2024 年后 **DPO 及其变体（Online DPO、SimPO 等）已成为主流**选择，因为其简洁性和稳定性在实践中优势明显。2025 年 DeepSeek R1 推动的 GRPO 和 RLVR 进一步证明，结合可验证奖励的强化学习方法在推理任务上效果显著。
 
 ---
 
@@ -426,7 +430,7 @@ $$
 **数据收集**：
 1. 从真实业务场景中收集"问题-期望回答"对
 2. 让领域专家编写高质量的标准答案
-3. 利用强模型（GPT-4）辅助生成初稿，人工审核修正
+3. 利用强模型（GPT-4o、Claude Sonnet 4）辅助生成初稿，人工审核修正
 
 **数据质量控制**：
 - **准确性**：答案必须正确，由专家审核

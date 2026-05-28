@@ -39,6 +39,28 @@ CAP 由 Eric Brewer 于 2000 年提出，指出分布式系统无法同时满足
 | CP | ZooKeeper、etcd、HBase | 网络分区时拒绝写请求，保证数据一致 |
 | AP | Eureka、Cassandra、CouchDB | 网络分区时仍接受读写，允许数据短暂不一致 |
 
+```mermaid
+graph TB
+    subgraph CAP 定理
+    direction TB
+    
+    C((一致性<br/>Consistency))
+    A((可用性<br/>Availability))
+    P((分区容错<br/>Partition Tolerance))
+    
+    C --- A
+    A --- P
+    P --- C
+    end
+    
+    CP[CP 系统<br/>ZooKeeper / etcd / HBase<br/>分区时拒绝写，保一致] --> C
+    CP --> P
+    AP[AP 系统<br/>Eureka / Cassandra / DynamoDB<br/>分区时允许读写，保可用] --> A
+    AP --> P
+    CA[CA 系统<br/>单机 MySQL / PostgreSQL<br/>无分区，强一致+高可用] --> C
+    CA --> A
+```
+
 > ZooKeeper 选择 CP：Leader 选举期间集群不可用，但数据强一致，适合配置中心、分布式锁。
 >
 > Eureka 选择 AP：节点故障时不下线其他节点的注册信息，优先保证服务发现可用，适合微服务注册中心。
@@ -100,6 +122,36 @@ Paxos 是经典的分布式共识算法，由 Leslie Lamport 提出。
 1. Proposer 收到多数派响应后，选取编号最大的已接受值（若无则用自己的值），发送 `Accept(n, value)`
 2. Acceptor 若未承诺更高编号，则接受该提案并通知 Learner
 
+```mermaid
+sequenceDiagram
+    participant P as Proposer
+    participant A1 as Acceptor-1
+    participant A2 as Acceptor-2
+    participant A3 as Acceptor-3
+    
+    rect rgb(200, 220, 255)
+    Note over P,A3: 阶段一：Prepare
+    P->>A1: Prepare(n=1)
+    P->>A2: Prepare(n=1)
+    P->>A3: Prepare(n=1)
+    A1-->>P: Promise(无已接受提案)
+    A2-->>P: Promise(无已接受提案)
+    A3-->>P: Promise(无已接受提案)
+    Note over P: 收到多数派响应（3/3）
+    end
+    
+    rect rgb(200, 255, 200)
+    Note over P,A3: 阶段二：Accept
+    P->>A1: Accept(n=1, value=X)
+    P->>A2: Accept(n=1, value=X)
+    P->>A3: Accept(n=1, value=X)
+    A1-->>P: Accepted
+    A2-->>P: Accepted
+    A3-->>P: Accepted
+    Note over P: 多数派接受 → 提案 X 被选定
+    end
+```
+
 **Multi-Paxos**
 
 Basic Paxos 每次共识都需要两轮 RPC，开销较大。Multi-Paxos 优化：选出一个稳定的 Leader，后续日志直接跳过 Prepare 阶段，只执行 Accept，大幅减少通信轮次。
@@ -147,6 +199,37 @@ Raft 由 Diego Ongaro 和 John Ousterhout 于 2014 年提出，目标是比 Paxo
 2. Leader 将日志条目追加到本地日志，并并行发送 `AppendEntries` 给所有 Follower
 3. 多数派（Quorum）写入成功后，Leader 提交该条目并应用到状态机
 4. Leader 在下次心跳中通知 Follower 提交
+
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant L as Leader
+    participant F1 as Follower-1
+    participant F2 as Follower-2
+    
+    Client->>L: 写请求 SET x=5
+    L->>L: 追加日志条目 [term=1, index=3, SET x=5]
+    
+    par 并行复制
+    L->>F1: AppendEntries(term=1, entries=[SET x=5])
+    L->>F2: AppendEntries(term=1, entries=[SET x=5])
+    end
+    
+    F1->>F1: 追加到本地日志
+    F1-->>L: 成功
+    F2->>F2: 追加到本地日志
+    F2-->>L: 成功
+    
+    Note over L: 多数派（2/3）写入成功 → 提交
+    L->>L: 应用到状态机 x=5
+    L-->>Client: 写入成功
+    
+    Note over L,F2: 下次心跳通知 Follower 提交
+    L->>F1: AppendEntries(commitIndex=3)
+    L->>F2: AppendEntries(commitIndex=3)
+    F1->>F1: 应用到状态机
+    F2->>F2: 应用到状态机
+```
 
 **安全性保证**
 
@@ -245,6 +328,27 @@ ZAB（ZooKeeper Atomic Broadcast）是 ZooKeeper 专用的一致性协议，与 
 - DynamoDB、Riak 使用向量时钟进行冲突检测
 - 缺点：空间复杂度 $O(N)$，进程数增加时开销显著
 
+```mermaid
+sequenceDiagram
+    participant A as 进程 A
+    participant B as 进程 B
+    participant C as 进程 C
+    
+    Note over A: [1,0,0]
+    A->>B: 消息 m1 [1,0,0]
+    Note over B: max([0,0,0],[1,0,0])+1<br/>= [1,1,0]
+    
+    Note over B: [1,2,0]（本地事件）
+    B->>C: 消息 m2 [1,2,0]
+    Note over C: max([0,0,0],[1,2,0])+1<br/>= [1,2,1]
+    
+    Note over A: [2,0,0]（本地事件）
+    Note over C: [1,2,2]（本地事件）
+    
+    Note over A,C: A[2,0,0] 与 C[1,2,2] 无法比较 → 并发事件
+    Note over A,C: B[1,2,0] < C[1,2,1] → 因果关系：m2 先于 C 的本地事件
+```
+
 **HLC（Hybrid Logical Clock，混合逻辑时钟）**
 
 - 结合物理时间戳与逻辑计数器：物理时间提供粗粒度排序，逻辑计数器提供细粒度因果追踪
@@ -267,6 +371,14 @@ ZAB（ZooKeeper Atomic Broadcast）是 ZooKeeper 专用的一致性协议，与 
 **结论**：在异步系统中，即使只有一个进程可能发生故障，也不存在确定性的共识算法能保证在有限时间内终止。
 
 **工程含义**：所有实际的共识算法（Paxos、Raft）都依赖超时机制和随机化来取得进展。FLP 定理告诉我们异步共识的理论极限，但实践中纯异步系统极为罕见，超时机制让算法在大多数情况下能正常工作。
+
+**FLP 的实际意义**
+
+理解 FLP 不可能定理有助于在面试中展示对分布式系统理论边界的认知：
+
+- **为什么 Raft/Paxos 需要超时？** FLP 证明了在纯异步模型下共识不可解。引入超时（即部分同步假设）是工程上绕过 FLP 限制的标准做法。
+- **为什么选举有时会失败？** 多个 Candidate 同时发起选举可能导致投票分裂（split vote），没有节点获得多数票。Raft 通过随机化选举超时来降低冲突概率，但理论上无法保证有限步内一定选出 Leader——这正是 FLP 定理的体现。
+- **工程妥协**：实际系统通过引入**故障检测器（Failure Detector）** 和**随机化**来获得高概率的活性保证，虽然不是理论上的确定性终止，但在实践中足够可靠。
 
 ---
 

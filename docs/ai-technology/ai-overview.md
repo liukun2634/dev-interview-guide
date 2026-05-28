@@ -16,7 +16,7 @@ title: AI 概述与发展历程
 
 | 层次 | 定义 | 现状 |
 |------|------|------|
-| **弱 AI（Narrow AI）** | 针对特定任务的智能系统 | 当前所有 AI 系统，包括 GPT-4、Claude |
+| **弱 AI（Narrow AI）** | 针对特定任务的智能系统 | 当前所有 AI 系统，包括 GPT-4o、Claude 4、o3 |
 | **强 AI（AGI）** | 具备人类级别通用智能 | 尚未实现，是行业主要研究方向 |
 | **超级 AI（ASI）** | 全面超越人类智能 | 纯理论阶段 |
 
@@ -48,7 +48,8 @@ graph LR
 | 2020 | GPT-3（175B 参数） | 展示 In-Context Learning 涌现能力 |
 | 2022 | ChatGPT 发布 | LLM 进入大众视野，RLHF 对齐技术成熟 |
 | 2023 | GPT-4 / Claude 2 | 多模态能力、长上下文、推理能力大幅提升 |
-| 2024 | 开源模型爆发 | LLaMA 3、Qwen 2.5、DeepSeek V3 等缩小与闭源差距 |
+| 2024 | 模型全面进化 | Claude 3/3.5、GPT-4o、Gemini 1.5、LLaMA 3、o1 推理模型；开源模型缩小与闭源差距 |
+| 2025 | 推理模型与 Agent 爆发 | Claude 4、GPT-4.1、o3/o4-mini、Gemini 2.5、DeepSeek R1、LLaMA 4；AI Agent 进入生产 |
 
 ---
 
@@ -109,12 +110,14 @@ $$
 
 | 模型 | 开发者 | 架构 | 参数规模 | 开源 | 特点 |
 |------|--------|------|----------|------|------|
-| **GPT-4o** | OpenAI | Decoder-Only (MoE) | 未公开 | 否 | 多模态原生、推理能力强 |
-| **Claude 3.5/4** | Anthropic | Decoder-Only | 未公开 | 否 | 长上下文（200K）、安全对齐、代码能力 |
-| **Gemini 2.0** | Google | Decoder-Only | 未公开 | 否 | 多模态、搜索集成 |
-| **LLaMA 3** | Meta | Decoder-Only | 8B / 70B / 405B | 是 | 社区生态丰富、高质量开源 |
+| **GPT-4o / 4.1** | OpenAI | Decoder-Only (MoE) | 未公开 | 否 | 多模态原生；GPT-4.1（2025.4）强化指令遵循与长上下文 |
+| **o1 / o3 / o4-mini** | OpenAI | Decoder-Only | 未公开 | 否 | 推理模型系列，链式思考（CoT）推理能力突出 |
+| **Claude 3.5 Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 长上下文（200K）、代码能力强、安全对齐 |
+| **Claude 4 Opus/Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 2025 旗舰，代码与推理能力大幅提升，支持 Agent 场景 |
+| **Gemini 2.0/2.5** | Google | Decoder-Only | 未公开 | 否 | 原生多模态、长上下文（1M+）、搜索集成 |
+| **LLaMA 3 / 4** | Meta | Decoder-Only | 8B-405B / MoE | 是 | 社区生态丰富；LLaMA 4（2025）引入 MoE 架构 |
 | **Qwen 2.5** | 阿里云 | Decoder-Only | 0.5B ~ 72B | 是 | 中英文表现优异 |
-| **DeepSeek V3** | DeepSeek | Decoder-Only (MoE) | 671B (37B 激活) | 是 | MoE 架构、高性价比训练 |
+| **DeepSeek V3 / R1** | DeepSeek | Decoder-Only (MoE) | 671B (37B 激活) | 是 | V3 高性价比训练；R1（2025）推理能力对标 o1 |
 | **Mistral Large** | Mistral | Decoder-Only (MoE) | 未公开 | 部分 | 欧洲团队、高效架构 |
 
 ### MoE（Mixture of Experts）架构
@@ -134,7 +137,7 @@ graph TD
 ```
 
 - **优势**：总参数量大（知识容量高），但每次推理计算量与小模型相当
-- **代表**：GPT-4（传闻 8×220B）、DeepSeek V3（671B 总参/37B 激活）、Mixtral
+- **代表**：GPT-4（传闻 8×220B）、DeepSeek V3（671B 总参/37B 激活）、Mixtral、LLaMA 4 Scout/Maverick
 
 ---
 
@@ -144,7 +147,7 @@ graph TD
 
 | 模态 | 能力 | 代表模型 |
 |------|------|----------|
-| **文本 + 图像理解** | 看图说话、图表分析、OCR | GPT-4V、Claude 3.5 Sonnet |
+| **文本 + 图像理解** | 看图说话、图表分析、OCR | GPT-4o、Claude 4 Sonnet、Gemini 2.5 |
 | **图像生成** | 根据文本描述生成图像 | DALL-E 3、Midjourney、Stable Diffusion |
 | **语音** | 语音识别 + 语音合成 | Whisper、GPT-4o |
 | **视频** | 视频理解与生成 | Sora、Gemini |
@@ -191,7 +194,7 @@ AI Technology
 
 2. **认为参数量越大模型越好**：Scaling Laws 只说明性能随规模提升，但实际效果还取决于训练数据质量、对齐方法、架构设计等。小模型配合好的数据和微调，可能在特定任务上超过大模型。
 
-3. **混淆开源与闭源模型的使用场景**：闭源模型（GPT-4、Claude）通常更强但有 API 成本和数据隐私顾虑；开源模型（LLaMA、Qwen）可私有部署但需要自己管理基础设施。选择取决于具体需求。
+3. **混淆开源与闭源模型的使用场景**：闭源模型（GPT-4o、Claude 4）通常更强但有 API 成本和数据隐私顾虑；开源模型（LLaMA、Qwen、DeepSeek）可私有部署但需要自己管理基础设施。选择取决于具体需求。
 
 :::
 

@@ -170,7 +170,7 @@ class ModelRouter:
     def __init__(self):
         self.models = {
             "simple": "claude-haiku-4-5-20251001",    # 低成本
-            "complex": "claude-sonnet-4-20250514",     # 高能力
+            "complex": "claude-sonnet-4-6",     # 高能力
         }
 
     def route(self, query: str) -> str:
@@ -194,9 +194,12 @@ class ModelRouter:
 
 ### 成本估算参考
 
+> **注意**：模型定价变化频繁，以下仅为参考。请以各提供商官网最新定价为准。
+
 | 模型 | 输入价格（/1M Token） | 输出价格（/1M Token） |
 |------|----------------------|----------------------|
 | GPT-4o | $2.50 | $10.00 |
+| GPT-4.1 | $2.00 | $8.00 |
 | Claude Sonnet 4 | $3.00 | $15.00 |
 | Claude Haiku 3.5 | $0.80 | $4.00 |
 | Qwen 2.5（自部署） | 硬件成本 | 硬件成本 |
@@ -287,6 +290,17 @@ graph TD
 ---
 
 ## LLMOps
+
+### MCP（Model Context Protocol）
+
+MCP 是由 Anthropic 提出并逐步成为行业标准的**模型-工具集成协议**。它定义了 LLM 应用与外部工具、数据源之间的标准化通信方式：
+
+- **统一接口**：工具提供方只需实现一次 MCP Server，即可被所有支持 MCP 的客户端调用
+- **动态发现**：LLM 应用可以在运行时发现和连接可用的工具和数据源
+- **标准化交互**：定义了 Resources（数据读取）、Tools（操作执行）、Prompts（提示模板）三类能力
+- **生态兼容**：已被 Claude Code、Cursor、VS Code 等主流开发工具采用
+
+在架构设计中，MCP 正在替代传统的自定义 Function Calling 集成方式，成为 Agent 和工具调用场景的标准模式。
 
 将 DevOps 理念应用到 LLM 应用的全生命周期管理：
 

@@ -133,6 +133,8 @@ AI 面试题有三个层次：
 | A | B | 核心区别 |
 |---|---|---------|
 | RAG | 微调 | RAG 注入外部知识（不改模型），微调改变模型权重（不需要检索） |
+| RAG | Long Context | RAG 检索最相关片段（精准），Long Context 塞入全文（可能遗漏中间内容） |
+| 单模型调用 | Compound AI System | 单模型简单但不可靠，复合系统多组件协作更可靠但工程复杂 |
 | LoRA | 全量微调 | LoRA 只训练增量矩阵（省资源），全量微调更新所有参数（效果上限更高） |
 | RLHF | DPO | RLHF 需要单独训练奖励模型，DPO 直接从偏好数据优化（更简单） |
 | Dense Retrieval | Sparse Retrieval (BM25) | Dense 用向量语义匹配，Sparse 用关键词精确匹配；混合检索效果最好 |
@@ -188,16 +190,19 @@ AI 的核心机制都可以用架构图表达：
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
 | AI Agent 智能体 | ReAct、记忆系统、Tool Use、MCP、多 Agent、框架对比 | 🔥🔥🔥 | [AI Agent](./ai-agents) |
+| Agent Skills 编写指南 | Skill 定义形式、指令设计、工具权限、触发路由、测试验证 | 🔥🔥 | [Skills 编写指南](./ai-agent-skills) |
+| Harness Engineering | Prompt 分层架构、执行循环、上下文预算、安全控制、可观测性 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
 
 ### AI 工程实践
 
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
 | 模型微调与训练 | SFT、LoRA/QLoRA、RLHF/DPO、分布式训练 | 🔥🔥 | [模型训练](./model-training) |
-| 模型评估与对齐 | MMLU/HumanEval、LLM-as-Judge、RLHF vs DPO、安全对齐 | 🔥🔥 | [评估与对齐](./evaluation-and-alignment) |
+| 模型评估、对齐与 AI 安全 | Evals-Driven Development、RLHF/DPO/Constitutional AI、Red Teaming、Guardrails 架构 | 🔥🔥🔥 | [评估、对齐与安全](./evaluation-and-alignment) |
 | LLM 推理优化 | KV Cache、MQA/GQA、量化、推测解码、Continuous Batching | 🔥🔥🔥 | [推理优化](./inference-optimization) |
 | AI 应用架构设计 | 架构模式、模型服务、API 设计、成本优化、可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
 | AI 系统设计面试题 | 设计框架、智能客服/代码补全案例、权衡分析 | 🔥🔥 | [系统设计](./ai-system-design) |
+| AI 前沿趋势与新范式 | Compound AI Systems、Model Routing、GraphRAG、Evals-Driven、AI 可观测性 | 🔥🔥🔥 | [前沿趋势](./ai-trends) |
 
 ### AI 面试准备
 

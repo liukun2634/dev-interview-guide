@@ -37,9 +37,10 @@ Embedding 表示:
 | **2013** | Word2Vec（CBOW / Skip-gram） | 首次将词映射到稠密向量，发现向量算术（king - man + woman ≈ queen） |
 | **2014** | GloVe | 基于全局词共现统计训练词向量 |
 | **2018** | ELMo / BERT | 上下文相关的动态 Embedding，同一个词在不同语境中有不同向量 |
-| **2022+** | 专用 Embedding 模型 | 针对检索优化的 Embedding（对比学习训练），如 text-embedding-3、BGE |
+| **2022** | 专用 Embedding 模型 | 针对检索优化的 Embedding（对比学习训练），如 E5、BGE |
+| **2024-2025** | 多模态与任务自适应 Embedding | Matryoshka 表示学习（灵活维度）、任务特定 LoRA 适配器（Jina v3）、多模态 Embedding（Cohere embed-v4 支持图文混合）、开源模型在 MTEB 榜单上全面追平甚至超越闭源 API（NV-Embed-v2、BGE-en-icl） |
 
-在 Word2Vec 时代，每个词有一个**固定**的向量。现代 Embedding 模型基于 Transformer 编码器，生成的是**上下文相关**的句子/段落级 Embedding。
+在 Word2Vec 时代，每个词有一个**固定**的向量。现代 Embedding 模型基于 Transformer 编码器，生成的是**上下文相关**的句子/段落级 Embedding。2024 年以来，Embedding 领域的关键趋势包括：支持**灵活维度截断**（Matryoshka Representation Learning，OpenAI text-embedding-3 系列率先采用）、**任务自适应**（通过 LoRA 适配器针对检索/分类/聚类等不同任务优化）、以及**多模态嵌入**（将文本和图像映射到同一向量空间）。
 
 ---
 
@@ -126,20 +127,26 @@ $$
 
 | 模型 | 开发者 | 维度 | 最大长度 | 特点 |
 |------|--------|------|----------|------|
-| **text-embedding-3-large** | OpenAI | 3072 | 8191 Token | 英文综合性能优异 |
-| **text-embedding-3-small** | OpenAI | 1536 | 8191 Token | 性价比高 |
-| **BGE-M3** | BAAI（智源） | 1024 | 8192 Token | 多语言、多粒度、多功能 |
-| **GTE-Qwen2** | 阿里云 | 1536 | 32K Token | 长文本、中文表现优异 |
-| **Jina-embeddings-v3** | Jina AI | 1024 | 8192 Token | 多语言、任务适配 |
-| **Cohere embed-v3** | Cohere | 1024 | 512 Token | 支持压缩和搜索类型 |
+| **text-embedding-3-large** | OpenAI | 3072 | 8191 Token | 英文综合性能优异，支持 Matryoshka 维度截断 |
+| **text-embedding-3-small** | OpenAI | 1536 | 8191 Token | 性价比高，支持 Matryoshka 维度截断 |
+| **Cohere embed-v4** | Cohere | 1024 | 128K Token | 多模态（文本+图像），支持压缩和搜索类型 |
+| **Voyage-3** | Voyage AI | 1024 | 32K Token | 检索性能顶尖，代码与法律领域表现突出 |
+| **Voyage-3-lite** | Voyage AI | 512 | 32K Token | 轻量低延迟版本，适合对速度敏感的场景 |
+| **NV-Embed-v2** | NVIDIA | 4096 | 32K Token | MTEB 榜单领先的开源模型 |
+| **BGE-en-icl** | BAAI（智源） | 4096 | 32K Token | 支持 In-Context Learning 示例提升检索效果 |
+| **BGE-M3** | BAAI（智源） | 1024 | 8192 Token | 最佳开源多语言模型，同时支持稠密、稀疏和 ColBERT 多粒度检索 |
+| **GTE-Qwen2** | 阿里云 | 1536-8192 | 128K Token | 长文本、中文表现优异，可选多种维度 |
+| **Jina Embeddings v3** | Jina AI | 1024 | 8192 Token | 内置任务特定 LoRA 适配器，多语言支持 |
 
 ### 选择要点
 
-- **中文场景**：优先 BGE 系列或 GTE 系列，中文语义捕获更精准
-- **多语言场景**：BGE-M3 或 Jina 系列
-- **成本敏感**：text-embedding-3-small 性价比最高
-- **长文本**：GTE-Qwen2 支持 32K Token 上下文
-- **私有部署**：BGE 和 GTE 均为开源模型，可本地部署
+- **中文场景**：优先 BGE-M3 或 GTE-Qwen2，中文语义捕获更精准
+- **多语言场景**：BGE-M3（最佳开源多语言）或 Jina Embeddings v3
+- **英文检索**：Voyage-3 检索效果领先，BGE-en-icl / NV-Embed-v2 在 MTEB 榜单表现最优
+- **多模态（图文混合）**：Cohere embed-v4 支持文本与图像统一嵌入
+- **成本敏感**：text-embedding-3-small 性价比最高，支持 Matryoshka 灵活降维进一步节省成本
+- **长文本**：GTE-Qwen2 支持 128K Token 上下文
+- **私有部署**：BGE、GTE、NV-Embed 均为开源模型，可本地部署
 
 ---
 
@@ -322,7 +329,7 @@ results = client.search(
 | **Embedding 模型** | 开源 vs API 调用 | 小规模用 API（如 OpenAI），大规模或隐私敏感用开源（BGE） |
 | **向量数据库** | 嵌入式 vs 独立部署 vs 云托管 | 原型用 Chroma，生产用 Milvus/Qdrant/Pinecone |
 | **索引类型** | HNSW vs IVF vs PQ | 数据量小选 HNSW，数据量大选 IVF-PQ |
-| **维度选择** | 高维 vs 低维 | 效果:高维 > 低维，速度:低维 > 高维。平衡点在 768~1536 |
+| **维度选择** | 高维 vs 低维 | 效果:高维 > 低维，速度:低维 > 高维。平衡点在 768~1536。支持 Matryoshka 的模型可灵活截断维度 |
 
 ---
 
@@ -334,7 +341,7 @@ results = client.search(
 
 3. **混淆精确搜索和近似搜索**：ANN 算法返回的是**近似**最近邻，可能遗漏真正的最近邻。recall 参数的调优直接影响搜索质量。
 
-4. **盲目追求高维 Embedding**：更高维度不一定带来更好效果，但一定会增加存储和计算成本。实际应用中 768~1536 维通常足够。
+4. **盲目追求高维 Embedding**：更高维度不一定带来更好效果，但一定会增加存储和计算成本。实际应用中 768~1536 维通常足够。支持 Matryoshka 表示学习的模型（如 text-embedding-3 系列）允许灵活截断维度，可根据场景在效果和成本间取舍。
 
 :::
 

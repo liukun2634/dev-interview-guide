@@ -51,6 +51,32 @@ SLA（Service Level Agreement，服务等级协议）是服务提供方对可用
 - **异地多活**：数据中心分布在不同城市甚至不同地区，延迟较高（几十到几百毫秒），需要解决数据一致性难题。通常采用分区隔离策略（如按用户 ID 哈希），让同一用户始终路由到同一机房，避免跨机房写冲突。
 - **两地三中心**：同城双活 + 异地灾备，灾备中心通常不承载生产流量，仅做数据备份和应急切换。
 
+```mermaid
+graph TB
+    subgraph 异地多活架构
+    direction TB
+    
+    subgraph 北京机房
+    LB1[负载均衡] --> S1[服务集群]
+    S1 --> DB1[(主库)]
+    S1 --> C1[(Redis)]
+    end
+    
+    subgraph 上海机房
+    LB2[负载均衡] --> S2[服务集群]
+    S2 --> DB2[(主库)]
+    S2 --> C2[(Redis)]
+    end
+    
+    GSLB[GSLB 全局负载均衡] --> LB1
+    GSLB --> LB2
+    DB1 <-->|双向同步<br/>DRC/Canal| DB2
+    C1 <-->|跨机房同步| C2
+    end
+    
+    User[用户] --> GSLB
+```
+
 **异地多活的核心挑战：**
 
 **数据同步**：跨地域复制延迟（通常 30-100ms），在此期间两个机房可能读到不同版本的数据。
@@ -108,6 +134,37 @@ SLA（Service Level Agreement，服务等级协议）是服务提供方对可用
 - **Fencing（隔离）**：主动向旧主发送 STONITH（Shoot The Other Node In The Head）命令，强制关闭旧主或撤销其写权限，防止双写。
 - **Epoch/Term 机制**：每轮选举递增 epoch 编号，旧主收到更高 epoch 的消息后自动降级为从节点（Raft、ZooKeeper ZAB 均采用此策略）。
 
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant S1 as Sentinel-1
+    participant S2 as Sentinel-2
+    participant S3 as Sentinel-3
+    participant M as 主库（故障）
+    participant R1 as 从库1
+    participant R2 as 从库2
+    
+    Note over M: 主库宕机 ✗
+    S1->>M: 心跳检测超时
+    S1->>S1: 标记主观下线（SDOWN）
+    S1->>S2: 确认主库状态？
+    S1->>S3: 确认主库状态？
+    S2-->>S1: 确认超时
+    S3-->>S1: 确认超时
+    Note over S1,S3: 多数 Sentinel 同意 → 客观下线（ODOWN）
+    
+    S1->>S1: 发起 Leader 选举
+    S2-->>S1: 投票同意
+    S3-->>S1: 投票同意
+    Note over S1: S1 成为 Leader Sentinel
+    
+    S1->>R1: 选举为新主库（数据最新）
+    R1->>R1: SLAVEOF NO ONE
+    S1->>R2: SLAVEOF 新主库(R1)
+    S1->>C: 通知新主库地址
+    C->>R1: 后续请求发往新主库
+```
+
 ### 5. 容错机制
 
 在下游服务不稳定时，通过多种手段保护整个调用链的稳定性。
@@ -127,6 +184,19 @@ SLA（Service Level Agreement，服务等级协议）是服务提供方对可用
 
 - Hystrix / Resilience4j 采用**状态机**：`Closed`（正常）→ `Open`（熔断）→ `Half-Open`（探测恢复）→ `Closed`。
 - 关键参数：失败率阈值、滑动窗口大小、half-open 期间允许的探测请求数。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Open: 失败率超过阈值<br/>（如连续5次失败）
+    Open --> HalfOpen: 超时时间到<br/>（如60秒后）
+    HalfOpen --> Closed: 探测请求成功<br/>（允许部分流量通过）
+    HalfOpen --> Open: 探测请求失败<br/>（继续熔断）
+    
+    Closed: ✅ 正常状态<br/>请求正常转发<br/>统计失败率
+    Open: ❌ 熔断状态<br/>请求直接失败/降级<br/>不调用下游
+    HalfOpen: ⚠️ 半开状态<br/>放行少量探测请求<br/>判断下游是否恢复
+```
 
 **降级（Fallback / Degradation）**
 
@@ -209,6 +279,28 @@ SLA（Service Level Agreement，服务等级协议）是服务提供方对可用
 - **灰度发布（金丝雀发布）**：先将新版本发布到小比例实例（如 1%～5%），观察错误率、延迟等指标，确认无异常后逐步扩大流量比例，最终全量切换。
 - **蓝绿部署**：维护两套生产环境（蓝/绿），新版本部署到绿环境，测试通过后将流量整体切换，旧版本保留一段时间方便快速回滚。
 - **回滚策略**：部署系统应支持一键回滚，回滚时间纳入 RTO 计算范围。数据库变更（Schema migration）需提前准备反向脚本。
+
+```mermaid
+graph LR
+    subgraph 蓝绿部署
+    direction TB
+    LB[负载均衡] -->|100% 流量| Blue[蓝环境 v1.0<br/>当前生产]
+    LB -.->|0% 流量| Green[绿环境 v2.0<br/>新版本部署完成]
+    Green -->|验证通过| Switch[切换流量]
+    Switch -->|100% 流量| Green
+    end
+```
+
+```mermaid
+graph LR
+    subgraph 金丝雀发布
+    direction TB
+    LB2[负载均衡] -->|95% 流量| V1[v1.0 实例集群<br/>10 台]
+    LB2 -->|5% 流量| V2[v2.0 金丝雀实例<br/>1 台]
+    V2 -->|监控指标正常| Expand[逐步扩大<br/>5%→25%→50%→100%]
+    V2 -->|指标异常| Rollback[立即回滚]
+    end
+```
 
 ### 8. 故障演练与混沌工程
 

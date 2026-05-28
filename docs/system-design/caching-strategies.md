@@ -80,6 +80,23 @@ public User getUser(Long id) {
 
 > 布隆过滤器的误判率（false positive）可以调整，但没有漏判（false negative），即如果返回"不存在"则一定不存在。
 
+**Bloom Filter 误判率与空间 Trade-off**
+
+布隆过滤器的误判率 $p$ 与位数组大小 $m$、元素数量 $n$、哈希函数个数 $k$ 的关系：
+
+$$p = \left(1 - e^{-kn/m}\right)^k$$
+
+最优哈希函数个数：$k = \frac{m}{n} \ln 2$
+
+| 元素数量 $n$ | 误判率 $p$ | 位数组大小 $m$ | 每元素占用 | 哈希函数数 $k$ |
+|-------------|-----------|---------------|-----------|--------------|
+| 100 万 | 1% | 9.6 MB | ~10 bits | 7 |
+| 100 万 | 0.1% | 14.4 MB | ~15 bits | 10 |
+| 100 万 | 0.01% | 19.2 MB | ~20 bits | 13 |
+| 1 亿 | 1% | 960 MB | ~10 bits | 7 |
+
+**选型建议**：缓存穿透防护场景，误判率设为 0.1%（即万分之一的请求仍会穿透到 DB），100 万 key 仅需约 14 MB 内存，性价比极高。误判率设得太低（如 0.001%）会显著增加内存占用和哈希计算开销，通常没有必要。
+
 #### 缓存击穿 (Cache Breakdown / Hotspot Invalid)
 
 **问题：** 一个**热点 key** 在高并发时突然过期，大量请求同时穿透缓存直打数据库，导致数据库瞬间压力剧增。
@@ -250,6 +267,44 @@ slot = CRC16(key) % 16384
 |------|----------|------|-----------|
 | `MOVED` | Slot 已永久迁移到新节点 | 请求发错了节点 | 更新路由表，重发请求 |
 | `ASK` | Slot 正在迁移中 | 数据暂时在目标节点 | 仅本次重定向，不更新路由表 |
+
+**Slot 迁移流程**
+
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant Src as 源节点<br/>Master-1
+    participant Dst as 目标节点<br/>Master-2
+    
+    Note over Src,Dst: 开始迁移 Slot 100
+    Src->>Src: CLUSTER SETSLOT 100 MIGRATING dst
+    Dst->>Dst: CLUSTER SETSLOT 100 IMPORTING src
+    
+    loop 逐 key 迁移
+    Src->>Dst: MIGRATE key（原子迁移单个 key）
+    Dst-->>Src: OK
+    end
+    
+    Note over Client: 迁移期间的请求处理
+    Client->>Src: GET key_in_slot_100
+    alt key 仍在源节点
+    Src-->>Client: 返回数据
+    else key 已迁移到目标节点
+    Src-->>Client: ASK 重定向
+    Client->>Dst: ASKING + GET key_in_slot_100
+    Dst-->>Client: 返回数据
+    end
+    
+    Note over Src,Dst: 迁移完成
+    Src->>Src: CLUSTER SETSLOT 100 NODE dst
+    Dst->>Dst: CLUSTER SETSLOT 100 NODE dst
+    Note over Client: 后续请求收到 MOVED → 更新路由表
+```
+
+**迁移期间的关键保证：**
+- 每个 key 的迁移是**原子操作**，不会出现同一 key 在两个节点同时存在
+- 源节点先检查本地是否有该 key，有则直接响应，无则返回 `ASK` 让客户端去目标节点查
+- 迁移完成后广播 `MOVED`，所有客户端更新路由表
 
 ---
 

@@ -262,6 +262,7 @@ export default withMermaid(defineConfig({
             { text: '概念与处理', link: '/web-and-frameworks/spring-mvc/' },
             { text: '请求处理流程', link: '/web-and-frameworks/spring-mvc/request-flow' },
             { text: 'RESTful API', link: '/web-and-frameworks/spring-mvc/restful-api' },
+            { text: 'Spring WebFlux', link: '/web-and-frameworks/spring-mvc/webflux' },
           ],
         },
         {
@@ -335,6 +336,8 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
+            { text: 'Agent Skills 编写指南', link: '/ai-technology/ai-agent-skills' },
+            { text: 'Harness Engineering', link: '/ai-technology/harness-engineering' },
           ],
         },
         {
@@ -342,10 +345,11 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
-            { text: '模型评估与对齐', link: '/ai-technology/evaluation-and-alignment' },
+            { text: '模型评估、对齐与 AI 安全', link: '/ai-technology/evaluation-and-alignment' },
             { text: 'LLM 推理优化', link: '/ai-technology/inference-optimization' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },
             { text: 'AI 系统设计面试题', link: '/ai-technology/ai-system-design' },
+            { text: 'AI 前沿趋势与新范式', link: '/ai-technology/ai-trends' },
           ],
         },
         {
