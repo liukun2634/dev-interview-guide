@@ -379,6 +379,8 @@ SHOW ENGINE INNODB STATUS\G  -- 查看最近一次死锁详情
 
 ---
 
+## 深度图解
+
 ### MVCC 版本链可视化
 
 InnoDB 每行数据维护隐藏字段 `trx_id`（最后修改的事务ID）和 `roll_pointer`（指向 undo log 版本链）。
@@ -405,11 +407,13 @@ graph LR
 
 ```mermaid
 flowchart TD
-    A[读取版本的 trx_id] --> B{trx_id < min_trx_id?}
+    A[读取版本的 trx_id] --> Z{trx_id == creator_trx_id?}
+    Z -->|是| C[✅ 可见：自己的写入]
+    Z -->|否| B{"trx_id < min_trx_id?"}
     B -->|是| C[✅ 可见：事务已提交]
-    B -->|否| D{trx_id >= max_trx_id?}
+    B -->|否| D{"trx_id >= max_trx_id?"}
     D -->|是| E[❌ 不可见：事务开启较晚]
-    D -->|否| F{trx_id 在 m_ids 活跃列表中?}
+    D -->|否| F{"trx_id 在 m_ids 活跃列表中?"}
     F -->|在| G[❌ 不可见：事务尚未提交]
     F -->|不在| H[✅ 可见：事务已提交]
     C --> I[读取该版本数据]
@@ -418,12 +422,7 @@ flowchart TD
     G --> J
 ```
 
-**RC vs RR 的 ReadView 创建时机差异：**
-
-| 隔离级别 | ReadView 创建时机 | 效果 |
-|---------|-----------------|------|
-| RC（读已提交） | **每次 SELECT** 都创建新 ReadView | 可以读到其他事务最新提交的数据 |
-| RR（可重复读） | **事务第一次 SELECT** 时创建，整个事务复用 | 整个事务看到一致的快照 |
+> 详见上方 3.4 节 MVCC 快照读部分。
 
 ---
 
@@ -463,7 +462,8 @@ sequenceDiagram
 (-∞, 10]  (10, 20]  (20, 30]  (30, +∞)
   GAP+REC   GAP+REC   GAP+REC   GAP only
 
-查询 WHERE id = 20：锁 (10, 20]
+查询 WHERE id = 20（唯一索引）：退化为 Record Lock，只锁记录本身
+查询 WHERE id = 20（非唯一索引）：锁 (10, 20] + (20, 30)（防止重复值插入）
 查询 WHERE id > 15 AND id < 25：锁 (10, 20] + (20, 30]
 ```
 
