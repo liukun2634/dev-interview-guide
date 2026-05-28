@@ -376,3 +376,101 @@ SHOW ENGINE INNODB STATUS\G  -- 查看最近一次死锁详情
 | "ReadView / m_ids" | MVCC 快照读的可见性判断 |
 | "RC 每次都生成 ReadView" | 不可重复读的根源 |
 | "RR 只在第一次生成 ReadView" | 可重复读的实现原理 |
+
+---
+
+### MVCC 版本链可视化
+
+InnoDB 每行数据维护隐藏字段 `trx_id`（最后修改的事务ID）和 `roll_pointer`（指向 undo log 版本链）。
+
+```mermaid
+graph LR
+    style R fill:#dbeafe
+    style V3 fill:#fef9c3
+    style V2 fill:#fef9c3
+    style V1 fill:#fef9c3
+
+    R["当前行（最新值）<br/>trx_id=300<br/>name='赵六'"]
+    V3["undo log 版本3<br/>trx_id=200<br/>name='张三'"]
+    V2["undo log 版本2<br/>trx_id=100<br/>name='李四'"]
+    V1["undo log 版本1<br/>trx_id=50<br/>name='王五'"]
+
+    R -->|roll_pointer| V3
+    V3 -->|roll_pointer| V2
+    V2 -->|roll_pointer| V1
+    V1 -->|roll_pointer| NULL
+```
+
+**ReadView 可见性判断规则（RR 隔离级别）：**
+
+```mermaid
+flowchart TD
+    A[读取版本的 trx_id] --> B{trx_id < min_trx_id?}
+    B -->|是| C[✅ 可见：事务已提交]
+    B -->|否| D{trx_id >= max_trx_id?}
+    D -->|是| E[❌ 不可见：事务开启较晚]
+    D -->|否| F{trx_id 在 m_ids 活跃列表中?}
+    F -->|在| G[❌ 不可见：事务尚未提交]
+    F -->|不在| H[✅ 可见：事务已提交]
+    C --> I[读取该版本数据]
+    H --> I
+    E --> J[沿 roll_pointer 找下一个版本]
+    G --> J
+```
+
+**RC vs RR 的 ReadView 创建时机差异：**
+
+| 隔离级别 | ReadView 创建时机 | 效果 |
+|---------|-----------------|------|
+| RC（读已提交） | **每次 SELECT** 都创建新 ReadView | 可以读到其他事务最新提交的数据 |
+| RR（可重复读） | **事务第一次 SELECT** 时创建，整个事务复用 | 整个事务看到一致的快照 |
+
+---
+
+### 死锁场景与检测
+
+```mermaid
+sequenceDiagram
+    participant T1 as 事务T1
+    participant RA as 行 row_A
+    participant RB as 行 row_B
+    participant T2 as 事务T2
+
+    T1->>RA: 加锁（成功）
+    T2->>RB: 加锁（成功）
+    T1->>RB: 请求加锁 ⏳ 等待T2释放
+    T2->>RA: 请求加锁 ⏳ 等待T1释放
+    Note over T1,T2: InnoDB 死锁检测（wait-for graph）
+    Note over T2: 选代价小的事务回滚
+    T2-->>RB: 回滚，释放 row_B
+    T1->>RB: 加锁成功 ✅
+    T1->>T1: 继续执行并提交
+```
+
+**避免死锁的策略：**
+- **固定加锁顺序**：所有业务代码按相同顺序申请资源（A→B，不要A→B和B→A混用）
+- **缩短事务**：减少事务持有锁的时间，降低锁冲突概率
+- **超时设置**：`innodb_lock_wait_timeout`（默认50s）到期后自动回滚
+- **死锁检测**：`innodb_deadlock_detect=ON`（默认开启），检测到后立即回滚代价最小的事务
+
+---
+
+### Next-Key Lock 区间示意
+
+假设索引列有值 10, 20, 30，InnoDB 在 RR 级别会对查询范围加 Next-Key Lock：
+
+```
+(-∞, 10]  (10, 20]  (20, 30]  (30, +∞)
+  GAP+REC   GAP+REC   GAP+REC   GAP only
+
+查询 WHERE id = 20：锁 (10, 20]
+查询 WHERE id > 15 AND id < 25：锁 (10, 20] + (20, 30]
+```
+
+| 锁类型 | 含义 | 防止 |
+|--------|------|------|
+| Record Lock | 锁定索引记录本身 | 其他事务修改该行 |
+| Gap Lock | 锁定索引记录之间的间隙 | 其他事务在间隙内 INSERT |
+| Next-Key Lock | Gap Lock + Record Lock | 幻读 |
+
+> InnoDB 在 RR 级别默认使用 Next-Key Lock。如果查询使用唯一索引等值查询，退化为 Record Lock（无 Gap）。
