@@ -416,6 +416,126 @@ CompletableFuture<String> future = CompletableFuture
 
 ---
 
+## 深度图解
+
+### AQS 核心流程
+
+```mermaid
+flowchart TD
+    A["线程调用 lock / acquire"] --> B{"tryAcquire\n尝试获取锁"}
+    B -->|"state=0，CAS 成功"| C["🔒 获取锁成功\n设置 exclusiveOwnerThread"]
+    B -->|失败| D["addWaiter\n创建 Node 加入 CLH 队列"]
+    D --> E{"前驱节点是 head?"}
+    E -->|是| F["再次 tryAcquire"]
+    F -->|成功| C
+    F -->|失败| G["shouldParkAfterFailedAcquire\n设置前驱 SIGNAL 状态"]
+    G --> H["LockSupport.park\n阻塞当前线程"]
+    E -->|否| G
+    H -->|"unpark 唤醒"| E
+
+    C --> I["执行临界区代码"]
+    I --> J["release / unlock"]
+    J --> K["unparkSuccessor\n唤醒队列头部节点"]
+    K --> H
+```
+
+**CLH 队列节点 waitStatus 含义：**
+
+| 状态值 | 名称 | 含义 |
+|--------|------|------|
+| 0 | 初始 | 节点刚入队 |
+| 1 | CANCELLED | 因超时或中断取消，需从队列移除 |
+| -1 | SIGNAL | 后继节点需要被唤醒 |
+| -2 | CONDITION | 节点在条件队列中等待 |
+| -3 | PROPAGATE | 共享模式下需传播唤醒 |
+
+---
+
+### 线程池任务执行完整流程
+
+```mermaid
+flowchart TD
+    A["提交任务\nsubmit / execute"] --> B{"线程数 < corePoolSize?"}
+    B -->|是| C["创建核心线程执行"]
+    B -->|否| D{"workQueue 未满?"}
+    D -->|是| E["任务加入等待队列"]
+    D -->|否| F{"线程数 < maximumPoolSize?"}
+    F -->|是| G["创建非核心线程执行"]
+    F -->|否| H["触发拒绝策略"]
+
+    H --> H1["AbortPolicy\n抛出异常（默认）"]
+    H --> H2["CallerRunsPolicy\n调用者线程执行"]
+    H --> H3["DiscardPolicy\n静默丢弃"]
+    H --> H4["DiscardOldestPolicy\n丢弃队列最旧任务"]
+
+    C --> I["任务完成"]
+    G --> I
+    E --> I
+    I --> J{"队列有剩余任务?"}
+    J -->|是| K["继续取任务执行"]
+    J -->|否| L{"空闲超过 keepAliveTime\n且是非核心线程?"}
+    L -->|是| M["回收线程"]
+    L -->|否| N["继续等待"]
+```
+
+---
+
+### CAS 与 ABA 问题
+
+```mermaid
+sequenceDiagram
+    participant T1 as 线程T1（慢）
+    participant T2 as 线程T2（快）
+    participant V as 共享变量 value
+
+    Note over V: 初始 value = A
+    T1->>V: 读取旧值 A（准备 CAS A→C）
+    T2->>V: CAS A→B（成功）
+    T2->>V: CAS B→A（成功，改回 A）
+    Note over V: value = A，但已经历 A→B→A
+    T1->>V: CAS A→C（成功❓ — T1 误判没有变化）
+```
+
+**解决方案：AtomicStampedReference（版本戳）**
+
+```java
+AtomicStampedReference<String> ref = new AtomicStampedReference<>("A", 0);
+
+// 线程T1读取值和版本
+String oldVal = ref.getReference();  // "A"
+int oldStamp = ref.getStamp();       // 0
+
+// 线程T2执行 A→B→A，版本变为 2
+// T1 再次 CAS，值相同但版本已变，失败
+boolean ok = ref.compareAndSet("A", "C", 0, 1); // false，stamp 已是 2
+```
+
+---
+
+### ThreadLocal 内存泄漏原理
+
+```mermaid
+graph TD
+    Thread["Thread 对象"]
+    TLM["ThreadLocalMap"]
+    TL["ThreadLocal 对象"]
+    Val["Value（业务数据）"]
+    NULL["null（已被 GC）"]
+
+    Thread -->|"强引用"| TLM
+    TLM -->|"Entry key 弱引用"| TL
+    TLM -->|"Entry value 强引用"| Val
+    GCRoot["GC Root"] -.->|"无强引用"| TL
+    TL -->|"弱引用被 GC 回收"| NULL
+
+    Leak["⚠️ 内存泄漏\nkey=null，但 value 仍被强引用\n无法被 GC 回收"]
+    Val --> Leak
+```
+
+**规避规则：** 使用完 ThreadLocal 后必须调用 `remove()`，尤其在线程池场景（线程复用，ThreadLocalMap 长期存活）。
+
+---
+
 ## 看到什么就先想到这类
 
 | 见到这个关键词 | 先想到 |
