@@ -293,3 +293,92 @@ fail-fast 是非并发集合迭代器的一种保护机制：迭代器记录集�
 | 键值映射、高并发 | ConcurrentHashMap |
 | 并发安全列表、读多写少 | CopyOnWriteArrayList |
 | 优先级队列 / Top-K | PriorityQueue |
+
+---
+
+## 深度图解与高频面试题
+
+### HashMap 扩容与红黑树转换流程
+
+```mermaid
+flowchart TD
+    A["put(key, value)"] --> B{"table为null\n或长度为0?"}
+    B -->|是| C["resize()初始化\n默认容量16，负载因子0.75"]
+    B -->|否| D{"(n-1)&hash位置\n是否为空?"}
+    D -->|空| E["直接插入节点"]
+    D -->|非空| F{"是否TreeNode\n红黑树节点?"}
+    F -->|是| G["红黑树插入"]
+    F -->|否| H["链表遍历，尾插\n计数binCount"]
+    H --> I{"binCount >= 7\n链表长度达到8?"}
+    I -->|是| J{"table.length >= 64?"}
+    J -->|否| K["优先扩容 resize()"]
+    J -->|是| L["treeifyBin()\n链表转红黑树"]
+    E --> M{"size > threshold\ncapacity × 0.75?"}
+    H --> M
+    G --> M
+    M -->|是| N["resize()扩容为2倍"]
+```
+
+**关键设计问题：**
+
+| 问题 | 解答 |
+|------|------|
+| 为何链表长度8才转红黑树？ | 泊松分布下碰撞8次概率约0.00000006，正常情况极少转换；红黑树节点占用是链表2倍，轻易转换得不偿失 |
+| 为何扩容是2倍？ | 容量始终为2的幂，使 `hash % n` 等价于 `hash & (n-1)` 位运算，效率更高；扩容时节点只需判断高位bit决定去留 |
+| 为何JDK8改尾插法？ | JDK7头插法在并发扩容时会形成环形链表导致死循环；尾插法保持链表顺序，不形成环 |
+
+---
+
+### ConcurrentHashMap JDK7 vs JDK8
+
+```mermaid
+graph TB
+    subgraph JDK7["JDK7 — 分段锁 Segment"]
+        S1["Segment继承ReentrantLock\n锁粒度：一段（默认16个桶）"]
+        B1["HashEntry数组+链表"]
+        S1 --> B1
+    end
+
+    subgraph JDK8["JDK8 — CAS + synchronized"]
+        T1["Node数组"]
+        T2["桶为空时：CAS插入头节点\n（无锁）"]
+        T3["桶非空时：synchronized锁头节点\n（锁粒度：单个桶）"]
+        T1 --> T2
+        T1 --> T3
+    end
+```
+
+| 维度 | JDK7 分段锁 | JDK8 CAS+synchronized |
+|------|-----------|----------------------|
+| 锁粒度 | Segment（一组桶） | 单个桶Node |
+| 最大并发度 | Segment数量（默认16） | 桶数量（更高） |
+| 数据结构 | 数组+链表 | 数组+链表+红黑树 |
+| 内存占用 | 多（Segment对象开销） | 少 |
+
+---
+
+### 高频面试Q&A
+
+**Q: HashMap JDK8 相比 JDK7 有哪些重要改进？**
+
+A: 三点：① **链表→红黑树**——链表长度>8且数组长度≥64时转为红黑树，查找从O(n)优化到O(log n)；② **尾插法代替头插法**——JDK7头插法并发扩容时会形成环形链表导致死循环，JDK8改尾插法解决此问题（但HashMap本身仍非线程安全）；③ **扩容优化**——不再重新计算hash，只判断高位bit决定节点去留，效率更高。
+
+**Q: HashMap并发下的死循环是怎么回事？**
+
+A: JDK7中多线程同时触发扩容，头插法会导致链表逆序。假设链表A→B：线程A执行到中途（已读取节点但未移动），线程B完成扩容将链表反转为B→A，线程A恢复后继续操作，会让A和B互相指向形成环形链表。之后任何 `get()` 遍历到该位置就会死循环。**JDK8改用尾插法**，扩容时保持链表原有顺序，彻底解决此问题。但HashMap本身仍不线程安全，并发put可能导致数据丢失，生产环境应使用ConcurrentHashMap。
+
+**Q: LinkedHashMap能用来实现LRU缓存吗？**
+
+A: 可以。LinkedHashMap在HashMap基础上额外维护一条双向链表，通过构造函数第三个参数 `accessOrder=true` 开启访问顺序模式（每次get/put都将该节点移到链表尾部，链表头部是最久未访问的节点）。重写 `removeEldestEntry()` 方法，当 `size > maxCapacity` 时返回true，自动删除链表头部（最久未访问）元素：
+```java
+new LinkedHashMap<>(capacity, 0.75f, true) {
+    protected boolean removeEldestEntry(Map.Entry eldest) {
+        return size() > maxCapacity;
+    }
+};
+```
+时间复杂度O(1)，是面试中实现LRU的标准方案。
+
+**Q: HashMap和HashTable的区别？为什么不推荐用HashTable？**
+
+A: 三点区别：① **线程安全**——HashTable所有方法加synchronized，HashMap非线程安全；② **null支持**——HashMap允许一个null key和多个null value，HashTable不允许null；③ **性能**——HashTable全局锁，并发性能差；HashMap不加锁，单线程快。不推荐HashTable的原因：其全局锁设计并发性能极差，现代代码应使用ConcurrentHashMap（分桶锁，并发性能远优于HashTable）。
