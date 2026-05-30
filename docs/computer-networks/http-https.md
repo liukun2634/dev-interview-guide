@@ -182,6 +182,126 @@ HTTP/2 三大改进：1) 多路复用（一个 TCP 连接并行处理多个请�
 
 队头阻塞（Head-of-Line Blocking）是指前面的请求/包阻塞了后面的。HTTP/1.1 的请求必须排队；HTTP/2 用多路复用解决了 HTTP 层的队头阻塞，但 TCP 丢包仍会阻塞所有流；HTTP/3 用 QUIC（基于 UDP），每个流独立，彻底解决。
 
+## 深度图解
+
+### TLS 1.2 握手详细时序
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant S as 服务器
+
+    rect rgb(219, 234, 254)
+        Note over C,S: 第一个 RTT（明文协商）
+        C->>S: ① ClientHello（TLS版本 + 随机数C + 支持的密码套件列表）
+        S->>C: ② ServerHello（选定密码套件 + 随机数S）
+        S->>C: ③ Certificate（服务器证书）
+        S->>C: ④ ServerHelloDone
+    end
+
+    rect rgb(220, 252, 231)
+        Note over C,S: 第二个 RTT（密钥交换）
+        C->>C: 验证证书链（CA签名→根证书）
+        C->>S: ⑤ ClientKeyExchange（Pre-Master Secret，用服务器公钥加密）
+        C->>S: ⑥ ChangeCipherSpec（后续使用对称加密）
+        C->>S: ⑦ Finished（加密，含握手摘要 MAC）
+        S->>C: ⑧ ChangeCipherSpec
+        S->>C: ⑨ Finished（加密，含握手摘要 MAC）
+    end
+
+    Note over C,S: 握手完成（共 2-RTT），双方使用协商的对称密钥加密通信
+
+    C->>S: ⑩ HTTP 请求（加密）
+    S->>C: ⑪ HTTP 响应（加密）
+```
+
+> **TLS 1.3 优化为 1-RTT：** 将 KeyExchange（ECDHE）移至第一个 RTT，省去第二次往返，显著降低握手延迟。
+
+---
+
+### 证书链验证流程
+
+```mermaid
+graph TD
+    Root["🏛️ 根证书 Root CA\n（浏览器/OS 预置，自签名）"]
+    Inter["📜 中间证书 Intermediate CA\n（由 Root CA 签发）"]
+    End["🔖 服务器证书 End Entity\n（由中间 CA 签发，包含域名）"]
+
+    Root -->|"签发并签名"| Inter
+    Inter -->|"签发并签名"| End
+
+    V1["① 浏览器收到服务器证书"]
+    V2["② 找签发者（中间 CA）\n用中间 CA 公钥验证签名"]
+    V3["③ 找中间 CA 的签发者（根 CA）\n用根 CA 公钥验证签名"]
+    V4["④ 根 CA 在本地信任库中？\n→ 验证通过 ✅"]
+
+    V1 --> V2 --> V3 --> V4
+
+    style Root fill:#fef08a,stroke:#ca8a04
+    style Inter fill:#d1fae5,stroke:#16a34a
+    style End fill:#dbeafe,stroke:#2563eb
+```
+
+**证书包含的关键字段：** 域名（Subject）、公钥、有效期、签发者（Issuer）、签名算法、CA 数字签名。
+
+---
+
+### HTTP 缓存决策树
+
+```mermaid
+flowchart TD
+    A["浏览器发起请求"] --> B{"本地有缓存副本?"}
+    B -->|无| Z["直接请求服务器，返回 200"]
+    B -->|有| C{"强缓存是否有效?"}
+
+    C -->|"Cache-Control: max-age 未过期\n或 Expires 未过期"| D["✅ 强缓存命中\n直接使用缓存，状态码 200（from cache）"]
+    C -->|已过期| E{"有协商缓存标识?"}
+
+    E -->|"有 ETag"| F["发送 If-None-Match: ETag值"]
+    E -->|"有 Last-Modified"| G["发送 If-Modified-Since: 时间"]
+    E -->|都没有| Z
+
+    F --> H{"服务器比对资源是否变化"}
+    G --> H
+
+    H -->|"未变化"| I["✅ 协商缓存命中\n304 Not Modified，浏览器用缓存"]
+    H -->|"已变化"| J["❌ 返回新资源\n200 + 新缓存响应头"]
+
+    style D fill:#dcfce7,stroke:#16a34a
+    style I fill:#dcfce7,stroke:#16a34a
+    style J fill:#fee2e2,stroke:#dc2626
+```
+
+| 缓存头 | 类型 | 优先级 | 说明 |
+|--------|------|--------|------|
+| `Cache-Control: max-age=N` | 强缓存 | 最高 | HTTP/1.1，相对时间（秒），推荐 |
+| `Expires: <日期>` | 强缓存 | 次之 | HTTP/1.0，绝对时间，受客户端时钟影响 |
+| `ETag: "hash"` | 协商缓存 | 高 | 基于内容哈希，精确，有计算开销 |
+| `Last-Modified: <日期>` | 协商缓存 | 低 | 基于修改时间，精度只到秒级 |
+
+---
+
+### HTTP/1.1 vs 2 vs 3 队头阻塞对比
+
+```mermaid
+graph TD
+    subgraph HTTP11["HTTP/1.1 — 请求级别队头阻塞"]
+        R1["请求1 → 等待响应1 → 请求2 → 等待响应2\n（管线化未普及，实际串行）"]
+    end
+
+    subgraph HTTP2["HTTP/2 — HTTP 层无阻塞，TCP 层仍有"]
+        R2["帧1(流A) 帧2(流B) 帧3(流A)…\n多路复用，但一个 TCP 包丢失\n→ 整条连接上的所有流都被阻塞"]
+    end
+
+    subgraph HTTP3["HTTP/3 — 彻底解决队头阻塞"]
+        R3["基于 QUIC（UDP）\n每个流独立处理丢包重传\n流A丢包不影响流B"]
+    end
+```
+
+**根本原因：** TCP 保证字节有序到达，一个包丢失会阻塞该连接所有后续数据。HTTP/3 改用 QUIC，在 UDP 上实现可靠传输，但每个流的可靠性是独立的。
+
+---
+
 ## 看到什么就先想到这类
 
 - 出现 HTTP 版本对比、HTTP/2、HTTP/3。
