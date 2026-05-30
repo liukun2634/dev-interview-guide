@@ -236,3 +236,69 @@ Buffer Pool 是 InnoDB 在内存中维护的数据页缓存，本质上是一块
 | "count(*) 慢" | InnoDB 无行数缓存，需全表或索引扫描；考虑用 Redis 计数 |
 | "内存命中率低" | Buffer Pool 大小配置（`innodb_buffer_pool_size`），LRU 策略 |
 | "表空间碎片" | InnoDB 区（Extent）连续分配，`OPTIMIZE TABLE` 可整理 |
+
+---
+
+## 深度图解
+
+### redo log 与 binlog 两阶段提交
+
+InnoDB 使用"两阶段提交"协议保证 redo log 和 binlog 的一致性，防止主从数据不一致：
+
+```mermaid
+sequenceDiagram
+    participant App as 应用层
+    participant SE as InnoDB 引擎
+    participant RL as redo log
+    participant BL as binlog
+
+    App->>SE: 执行 UPDATE 语句
+    SE->>SE: 修改 Buffer Pool（内存）
+    SE->>RL: 写 redo log（prepare 阶段）
+    SE->>BL: 写 binlog
+    SE->>RL: 写 redo log commit 标记
+    SE->>App: 返回执行成功
+
+    Note over RL,BL: 崩溃恢复逻辑
+    Note over RL: redo log 只有 prepare，无 commit → 检查 binlog
+    Note over BL: binlog 完整 → 补提交；binlog 不完整 → 回滚
+```
+
+**为什么需要两阶段提交？**
+若不使用两阶段提交，binlog 和 redo log 可能不一致：主库用 redo log 崩溃恢复，从库用 binlog 重放，导致主从数据不一致。两阶段提交确保两者原子性地同步。
+
+---
+
+### Buffer Pool 改进版 LRU
+
+InnoDB 将 LRU 链表分为**热区（63%）**和**冷区（37%）**，防止全表扫描等一次性操作污染热数据：
+
+```mermaid
+flowchart LR
+    A["新读入的页"] -->|首次进入| B["冷区头部"]
+    B -->|在冷区停留超过 1s 后再次访问| C["晋升热区头部"]
+    B -->|全表扫描等一次性访问，无再次访问| D["冷区尾部 → 淘汰"]
+    C -->|长时间未访问| E["逐渐移向热区尾部 → 冷区 → 淘汰"]
+```
+
+> **为什么要分冷热区？** `SHOW FULL TABLES` 等语句会触发大量页面读入，若直接插入 LRU 头部会将热数据全部挤出。冷区机制保证只有"真正多次访问的页"才晋升热区。
+
+---
+
+## 延伸思考
+
+**Q: SELECT * 和指定列查询有什么区别？**
+
+A: 性能上，`SELECT *` 无法利用覆盖索引（必须回表读完整行），而指定列查询可以通过覆盖索引避免回表，减少 I/O。维护上，`SELECT *` 会随表结构变化返回更多数据，增加网络传输开销，且可能导致应用层反序列化出错，生产环境应避免使用。
+
+**Q: MySQL 8.0 为什么删除查询缓存？**
+
+A: 查询缓存问题很多：① 只要对表有任何写操作，该表所有缓存立即全部失效，高并发写场景命中率极低；② 缓存 key 是完整 SQL 字符串（含空格大小写），稍有不同就无法命中；③ 维护缓存需要全局锁，多线程并发下反而成为瓶颈。整体收益不如维护成本，MySQL 8.0 彻底移除。
+
+**Q: `innodb_flush_log_at_trx_commit` 三个值的区别？**
+
+A: 控制 redo log 刷盘策略：`0` = 每秒刷一次（可能丢 1 秒数据，性能最好）；`1` = 每次提交都刷盘（默认，数据最安全）；`2` = 每次提交写 OS 缓冲区，每秒刷盘（OS 崩溃才丢数据，折中方案）。
+
+**Q: change buffer 的作用是什么？**
+
+A: change buffer 是 Buffer Pool 的一部分，缓存对**普通索引**（非唯一索引）的写操作。当目标数据页不在内存中时，不直接写磁盘，而是记入 change buffer，等下次该页被读入内存时再合并（merge）。这样将多次随机 I/O 合并为一次，提升写性能。唯一索引不能使用 change buffer，因为写入前必须读页验证唯一性。
