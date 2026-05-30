@@ -637,3 +637,71 @@ IP 限流（200 次/分钟/IP）─── 超限 ──► 429 + 封禁提示
 - [Sentinel Wiki - 流量控制](https://github.com/alibaba/Sentinel/wiki/%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6)
 - [Google Guava RateLimiter 源码分析](https://github.com/google/guava/blob/master/guava/src/com/google/common/util/concurrent/RateLimiter.java)
 - 《微服务设计模式》第 3 章：进程间通信
+
+## 深度补充
+
+### 令牌桶 vs 漏桶对比
+
+```mermaid
+graph TB
+    subgraph 令牌桶["令牌桶 Token Bucket（允许突发）"]
+        T1["定速产生令牌\n如100个/秒"]
+        T2["桶有容量上限\n如200个（可积累）"]
+        T3["请求来了取令牌\n有令牌则通过，无则拒绝/等待"]
+        T1 --> T2 --> T3
+    end
+
+    subgraph 漏桶["漏桶 Leaky Bucket（恒定速率）"]
+        L1["请求以任意速率流入桶"]
+        L2["桶以恒定速率流出\n如100个/秒"]
+        L3["桶满则溢出丢弃"]
+        L1 --> L2 --> L3
+    end
+```
+
+| 维度 | 令牌桶 | 漏桶 |
+|------|--------|------|
+| 突发流量 | ✅ 允许（桶内积累令牌） | ❌ 不允许（恒定流出） |
+| 速率控制 | 平均速率受控 | 严格恒定速率 |
+| 适用场景 | API限流（允许短时突发） | 流量整形（保护下游服务） |
+| 代表实现 | Guava RateLimiter、Redis Lua | Nginx limit_req |
+
+**Guava RateLimiter 使用示例：**
+```java
+// 创建令牌桶，每秒产生100个令牌
+RateLimiter limiter = RateLimiter.create(100.0);
+
+// 阻塞等待获取1个令牌（会等到有令牌为止）
+limiter.acquire();
+
+// 非阻塞：超时50ms未获取则返回false
+boolean acquired = limiter.tryAcquire(50, TimeUnit.MILLISECONDS);
+if (!acquired) {
+    return ResponseEntity.status(429).body("请求过于频繁");
+}
+```
+
+---
+
+**Q: Sentinel 和 Hystrix 有什么区别？**
+
+A: 两个维度对比：
+
+| 维度 | Sentinel（阿里开源） | Hystrix（Netflix，已停更） |
+|------|--------------------|-----------------------|
+| 熔断策略 | 异常比例/RT/异常数三种 | 仅异常比例 |
+| 限流 | ✅ QPS限流/并发线程数限流 | ❌ 仅并发线程数/信号量 |
+| 流量整形 | ✅ 匀速排队、冷启动预热 | ❌ 不支持 |
+| 规则持久化 | ✅ Nacos/ZK/文件 | ❌ 不支持 |
+| 实时监控 | ✅ 控制台Dashboard | ✅ Hystrix Dashboard |
+| 线程隔离 | 基于信号量（低开销） | 线程池隔离（高开销） |
+
+**结论：** 国内生产推荐 Sentinel，功能更完善，与 Spring Cloud Alibaba 生态集成好，且持续维护更新。
+
+**Q: 分布式环境下如何实现全局限流？**
+
+A: 三种方案：① **网关集中限流**（推荐）——在 Spring Cloud Gateway / Nginx / Kong 统一限流，所有流量经过同一入口，天然全局，无需各服务协调；② **Redis分布式限流**——各服务实例通过Redis共享计数器（Lua脚本保证原子性），滑动窗口精确，但有Redis访问延迟；③ **近似限流**——各实例本地限流（Sentinel），定期同步到中心节点，允许短暂超限但延迟低，适合对精度要求不高的场景。选择：对精确性要求高用Redis方案，对性能要求高用网关+本地限流结合。
+
+**Q: 如何设计一个高可用的限流系统？**
+
+A: 四个关键点：① **降级策略**——限流组件自身故障时，自动降级为不限流（fail open），避免误伤正常流量；② **规则动态下发**——限流规则通过配置中心（Nacos）实时推送，无需重启服务；③ **多维度限流**——同时支持全局/用户/IP/API多个维度精细化控制；④ **监控告警**——实时监控通过率和拒绝率，超过阈值自动告警，保留限流日志便于审计分析。
