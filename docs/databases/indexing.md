@@ -231,3 +231,81 @@ WHERE phone = '13812345678'
 - [MySQL 官方文档 - Optimization and Indexes](https://dev.mysql.com/doc/refman/8.0/en/optimization-indexes.html)
 - [Use The Index, Luke](https://use-the-index-luke.com/) — 数据库索引专项学习网站
 - 《高性能 MySQL》第 5 章：索引优化
+
+## 深度图解
+
+### B+ 树索引查询路径
+
+```mermaid
+flowchart TD
+    A["根节点<br/>P1: id&lt;20 | P2: 20≤id&lt;40 | P3: id≥40"]
+    B["内部节点<br/>P1: id&lt;10 | P2: 10≤id&lt;15 | P3: 15≤id&lt;20"]
+    C["内部节点<br/>P1: 20≤id&lt;25 | P2: 25≤id&lt;30"]
+    D["叶子节点<br/>id=10,11,12… → 主键/行指针"]
+    E["叶子节点<br/>id=20,21,22… → 主键/行指针"]
+    F["← 叶子节点双向链表（支持范围扫描）→"]
+
+    A -->|"id=22，走P2"| C
+    C -->|"22在P1范围"| E
+    A -->|"id=11，走P1"| B
+    B -->|"11在P2范围"| D
+    D <-.->|双向链表| E
+    E <-.->|双向链表| F
+```
+
+**查询 `WHERE id = 22` 的路径：** 根节点 → 内部节点（20≤id＜40 分支）→ 叶子节点 → 找到数据指针，共 3 次 I/O（树高决定）。
+
+**为什么 B+ 树叶子节点用双向链表连接？** 支持范围查询（`WHERE id BETWEEN 10 AND 30`）：找到起始叶子后，直接沿链表向右扫描，无需回到根节点。
+
+---
+
+### 回表 vs 覆盖索引
+
+```mermaid
+flowchart LR
+    subgraph 回表查询["回表查询（2次 B+ 树查找）"]
+        Q1["SELECT name FROM t<br/>WHERE age = 25"]
+        I1["① 二级索引 (age)<br/>找到主键 id=100"]
+        I2["② 主键索引 (id)<br/>读取完整行，取 name"]
+        Q1 --> I1 --> I2
+    end
+
+    subgraph 覆盖索引["覆盖索引（1次 B+ 树查找）"]
+        Q2["SELECT id, age FROM t<br/>WHERE age = 25"]
+        I3["联合索引 (age, id)<br/>直接获取 id 和 age，无需回表"]
+        Q2 --> I3
+    end
+```
+
+> **优化技巧：** 将 SELECT 的列加入联合索引（如 `INDEX(age, name)`），即可避免回表，减少约 50% I/O。
+
+---
+
+### 索引失效 6 种典型场景
+
+```sql
+-- ❌ 1. 对索引列使用函数
+SELECT * FROM t WHERE YEAR(create_time) = 2024;
+-- ✅ 改写：WHERE create_time BETWEEN '2024-01-01' AND '2024-12-31'
+
+-- ❌ 2. 隐式类型转换（phone 是 VARCHAR，传入整数）
+SELECT * FROM t WHERE phone = 13812345678;
+-- ✅ 改写：WHERE phone = '13812345678'
+
+-- ❌ 3. LIKE 前缀通配（索引无法定位起始点）
+SELECT * FROM t WHERE name LIKE '%张';
+-- ✅ 改写：WHERE name LIKE '张%'（前缀匹配可走索引）
+
+-- ❌ 4. 违反最左前缀（联合索引 INDEX(a, b, c)，跳过 a）
+SELECT * FROM t WHERE b = 1 AND c = 2;
+-- ✅ 改写：WHERE a = ? AND b = 1 AND c = 2
+
+-- ❌ 5. 范围查询右侧列失效（INDEX(a, b, c)）
+SELECT * FROM t WHERE a = 1 AND b > 5 AND c = 2;
+-- c 上的索引失效；b 范围查询之后的列无法走索引
+
+-- ❌ 6. OR 连接非索引列
+SELECT * FROM t WHERE id = 1 OR name = '张三';
+-- name 无索引时，整个查询走全表扫描
+-- ✅ 改写：拆为两个查询 UNION ALL，或给 name 加索引
+```
