@@ -614,3 +614,34 @@ Kafka 的高吞吐量来自多个层面的设计：
 - [RocketMQ 设计理念](https://rocketmq.apache.org/docs/)
 - 《Kafka 权威指南》第 4 章：Kafka 消费者
 - 《企业集成模式》（Enterprise Integration Patterns）
+
+## 思考题
+
+**Q: 如何保证消息不丢失（三端保证）？**
+
+A: 消息全链路分三段，每段都要保证：
+
+```mermaid
+flowchart LR
+    P["生产者"] -->|"① Confirm/acks机制\n失败则重试"| MQ["消息队列Broker"]
+    MQ -->|"② 持久化到磁盘\n多副本复制"| DISK["持久化存储"]
+    MQ -->|"③ 手动ACK确认\n消费成功再提交offset"| C["消费者"]
+```
+
+① **生产者**：Kafka开启 `acks=all`（等待所有副本确认）+ `enable.idempotence=true`（幂等发送）；RabbitMQ开启Confirm机制，失败触发重试；② **Broker**：Kafka设 `replication.factor>=3` + `min.insync.replicas=2`，消息持久化+多副本；③ **消费者**：手动提交offset（Kafka）或手动ACK（RabbitMQ），消费成功后再确认，失败进死信队列（DLQ）重试。
+
+**Q: 如何保证消息的顺序性？**
+
+A: 两个层面：① **全局顺序**——同一Topic只用一个分区/队列（Kafka单Partition），牺牲并发，极少使用；② **局部顺序**（推荐）——同一业务key的消息路由到同一分区（Kafka按key hash，RocketMQ通过MessageQueueSelector），同一分区内单线程消费。消费端不能并发消费同一分区，否则顺序仍无法保证。实践中绝大多数业务只需局部顺序（如同一订单的状态变更有序即可）。
+
+**Q: 如何保证消息幂等（不重复消费）？**
+
+A: Broker无法保证不重复投递（网络重试可能导致重复），消费端必须自己保证幂等：① **唯一消息ID + 幂等表**——消费时将message_id插入数据库唯一索引表，重复消息触发唯一键冲突被忽略；② **Redis去重**——`SETNX message_id 1 EX 86400`，已处理返回0直接跳过；③ **业务层幂等**——如UPDATE加版本号（`WHERE version = 1 AND status = 'PENDING'`），重复执行影响0行则幂等；④ **数据库唯一索引兜底**——关键业务（如创建订单）依赖唯一索引防重复写入。
+
+**Q: 什么是事务消息？RocketMQ如何实现？**
+
+A: 事务消息解决**本地事务与消息发送的原子性**问题（防止本地事务成功但消息未发，或消息发出但事务回滚）。RocketMQ半消息机制：① 发送**半消息**（half message）到Broker，对消费者不可见；② 执行**本地事务**（如扣减库存）；③ 成功→发送Commit，消息对消费者可见；失败→发送Rollback，删除半消息；④ 若Broker未收到Commit/Rollback，**定时回查**本地事务状态（默认最多15次），根据回查结果决定提交或回滚。
+
+**Q: 消息积压如何处理？**
+
+A: 分紧急处理和预防两个维度。**紧急处理**：① 新建Topic并扩大分区数，将积压消息迁移到新Topic，同时扩容消费者实例；② 对非关键消息临时降级（跳过或丢弃），保证关键消息优先处理；③ 暂时关闭耗时的业务逻辑（如发短信），让消费者快速消费。**预防**：根据峰值流量设计分区数和消费者数（1个分区对应1个消费者线程上限）；监控consumer lag，设置告警阈值；生产者做背压控制，避免无限堆积。
