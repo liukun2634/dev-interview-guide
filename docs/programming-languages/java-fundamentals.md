@@ -291,3 +291,91 @@ ReentrantLock 是 JDK 层实现（基于 AQS），具有以下 synchronized 没�
 - [Java 8 HashMap 源码分析](https://tech.meituan.com/2016/06/24/java-hashmap.html) — 美团技术博客
 - [深入理解 JVM（第 3 版）](https://book.douban.com/subject/34907497/) — 周志明
 - [JEP 333: ZGC 介绍](https://openjdk.org/jeps/333)
+
+---
+
+## 深度图解与高频面试题
+
+### String 常量池与不可变性
+
+```mermaid
+flowchart TD
+    A["String s1 = \"hello\""] --> B{"字符串常量池\n是否存在 hello?"}
+    B -->|存在| C["s1 直接指向常量池中的对象"]
+    B -->|不存在| D["常量池创建 hello\ns1 指向它"]
+
+    E["String s2 = new String(\"hello\")"] --> F["堆中创建新对象\n内容同常量池中的 hello"]
+
+    G["s1 == s2 → false（引用不同）\ns1.equals(s2) → true（内容相同）"]
+```
+
+**intern() 陷阱（JDK7+）：**
+```java
+String s1 = "ab";
+String s2 = new String("a") + new String("b"); // 堆上新对象
+s2.intern(); // JDK7+: 若常量池无"ab"，将堆对象引用放入常量池
+String s3 = "ab";
+System.out.println(s2 == s3); // JDK7+: true（s3复用了s2的引用）
+System.out.println(s1 == s3); // true（s1和s3都指向常量池同一对象）
+```
+
+---
+
+### equals 与 hashCode 契约
+
+**核心约定：** `equals()` 返回 true 的两个对象，`hashCode()` 必须相同。
+
+若只重写 `equals` 不重写 `hashCode`，相同内容的对象hashCode不同，HashMap/HashSet无法正常工作：
+```java
+class Student {
+    String name;
+    // 只重写了equals，未重写hashCode
+    @Override
+    public boolean equals(Object o) {
+        return this.name.equals(((Student)o).name);
+    }
+}
+
+Map<Student, String> map = new HashMap<>();
+Student s1 = new Student("张三");
+map.put(s1, "数学");
+
+Student s2 = new Student("张三");
+System.out.println(s1.equals(s2)); // true（内容相同）
+System.out.println(map.get(s2));   // null！hashCode不同，定位到错误的桶
+```
+
+**正确实现：** 使用 `Objects.hash(name)` 或 IDE自动生成，确保equals相等的对象hashCode也相等。
+
+---
+
+### 高频面试Q&A
+
+**Q: String、StringBuilder、StringBuffer 如何选择？**
+
+A: 三者区别：① **String**：不可变，每次拼接创建新对象。适合字符串不变或极少拼接的场景；② **StringBuilder**：可变，**非线程安全**，无锁，性能最高。单线程大量字符串拼接首选（Java编译器会把循环外的 `+` 自动优化为StringBuilder）；③ **StringBuffer**：可变，**线程安全**（方法加synchronized），性能略低于StringBuilder。多线程共享构建字符串时使用（实际较少见）。面试结论：单线程用StringBuilder，多线程用StringBuffer，字符串常量用String。
+
+**Q: Integer 的 == 比较有什么陷阱？**
+
+A: Integer 缓存了 **-128 到 127** 的对象实例（`IntegerCache`），该范围内 `==` 比较返回true；超出范围则每次 `new Integer(n)` 创建新对象，`==` 比较引用返回false：
+```java
+Integer a = 127, b = 127;
+System.out.println(a == b);  // true（常量池同一对象）
+
+Integer c = 128, d = 128;
+System.out.println(c == d);  // false（超出缓存，不同对象）
+System.out.println(c.equals(d)); // true
+```
+**结论：** Integer比较一律用 `equals()` 或先拆箱为 int，不要用 `==`。
+
+**Q: final 关键字有哪些用途？**
+
+A: 三种：① **final 类**——不能被继承（如String、Integer），保证不可变性和安全性；② **final 方法**——不能被子类重写（override），防止行为被篡改；③ **final 变量**——引用不可变（基本类型则值不可变）。注意：`final` 修饰引用类型时，只保证引用地址不变，对象内部状态仍可修改（如 `final List<String> list` 仍可 `list.add()`）。匿名内部类访问外部变量时，该变量必须是 `final` 或 effectively final（JDK8+）。
+
+**Q: 接口和抽象类的区别？JDK8后有什么变化？**
+
+A: 传统区别：接口只能有抽象方法+常量，类只能单继承但可实现多接口；抽象类可以有实现方法和成员变量。JDK8新增：① **default方法**——接口可以有带实现的默认方法，解决接口升级时不破坏现有实现类的问题；② **static方法**——接口可以有静态工具方法。JDK9新增：③ **private方法**——接口的private方法供default方法内部复用逻辑。选择建议：IS-A关系（猫是动物）用抽象类；CAN-DO能力（可飞行、可游泳）用接口。
+
+**Q: 说说Java中的四种引用类型？**
+
+A: 从强到弱：① **强引用**（Strong）——普通引用 `Object obj = new Object()`，GC绝不回收；② **软引用**（SoftReference）——内存不足时才被回收，适合缓存（如图片缓存）；③ **弱引用**（WeakReference）——下次GC就会被回收，ThreadLocalMap的key就是弱引用（这也是内存泄漏的根源）；④ **虚引用**（PhantomReference）——无法通过引用获取对象，仅用于对象被GC后接收通知（配合ReferenceQueue）。实际使用最多的是软引用（缓存）和弱引用（防止内存泄漏）。
