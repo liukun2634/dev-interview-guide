@@ -373,6 +373,114 @@ PhantomReference<Object> ref = new PhantomReference<>(new Object(), queue);
 
 ---
 
+## 深度图解
+
+### GC 算法演进与选型
+
+```mermaid
+graph LR
+    A["Serial GC\n单线程 STW\nClient 模式"] -->|多线程版| B["Parallel GC\n多线程 STW\nJDK8 默认，吞吐优先"]
+    B -->|低停顿需求| C["CMS\n并发标记清除\n停顿短，产生碎片"]
+    C -->|G1 替代| D["G1 GC\nRegion 化，可预测停顿\nJDK9+ 默认"]
+    D -->|超低停顿| E["ZGC / Shenandoah\n停顿 < 1ms\nJDK15+ 可用"]
+```
+
+| GC 算法 | 停顿时间 | 吞吐量 | 适用场景 | JDK 默认 |
+|---------|---------|--------|---------|---------|
+| Serial | 高（单线程 STW） | 低 | 单核 Client | — |
+| Parallel | 中（多线程 STW） | 高 | 批处理，吞吐优先 | JDK 8 |
+| CMS | 低（并发标记） | 中 | 响应时间优先 | 已废弃 |
+| G1 | 可预测（默认 200ms） | 中 | 大堆（>4GB），通用 | JDK 9+ |
+| ZGC | < 1ms | 中 | 超大堆，延迟敏感 | JDK 21 可选 |
+
+---
+
+### G1 Region 内存布局
+
+```mermaid
+graph TD
+    subgraph JVM堆["JVM 堆（G1 将堆切分为等大小 Region，约 2000 个）"]
+        E1["Region\nEden"]
+        E2["Region\nEden"]
+        S1["Region\nSurvivor"]
+        O1["Region\nOld"]
+        O2["Region\nOld"]
+        H1["Region\nHumongous\n大对象 ≥ Region 50%"]
+        FREE["Region\n空闲"]
+    end
+
+    style E1 fill:#bbf7d0,stroke:#16a34a
+    style E2 fill:#bbf7d0,stroke:#16a34a
+    style S1 fill:#fef08a,stroke:#ca8a04
+    style O1 fill:#fca5a5,stroke:#dc2626
+    style O2 fill:#fca5a5,stroke:#dc2626
+    style H1 fill:#c4b5fd,stroke:#7c3aed
+    style FREE fill:#f3f4f6,stroke:#9ca3af
+```
+
+**G1 的核心优势：** 每次 GC 优先回收垃圾最多的 Region（Garbage First），通过控制回收 Region 数量来满足停顿时间目标（`-XX:MaxGCPauseMillis=200`，默认 200ms）。
+
+---
+
+### OOM 三种类型诊断
+
+```mermaid
+flowchart TD
+    A["OutOfMemoryError 发生"] --> B{"OOM 消息类型?"}
+
+    B --> C["Java heap space\n堆内存溢出"]
+    B --> D["Metaspace\n方法区溢出"]
+    B --> E["unable to create native thread\n线程/栈溢出"]
+
+    C --> C1["jmap -dump:format=b,file=heap.hprof pid\n用 MAT / VisualVM 分析大对象引用链"]
+    C1 --> C2{"内存泄漏\n还是堆太小?"}
+    C2 -->|泄漏| C3["修复：找 GC Root 引用链，清理无用对象"]
+    C2 -->|堆太小| C4["调大 -Xmx，或优化对象生命周期"]
+
+    D --> D1["原因：动态类加载过多\n（CGLib、JSP热部署、OSGI）"]
+    D1 --> D2["调大 -XX:MaxMetaspaceSize\n检查 ClassLoader 是否未被回收"]
+
+    E --> E1["原因：线程池无上限，或 -Xss 设置过大"]
+    E1 --> E2["限制线程数，或调小 -Xss（默认 512k~1M）"]
+```
+
+| OOM 类型 | 常见原因 | 诊断工具 |
+|----------|---------|---------|
+| heap space | 内存泄漏 / 大对象 / 堆太小 | jmap + MAT |
+| Metaspace | 动态类生成 / ClassLoader 泄漏 | jstat -gcmetacapacity |
+| native thread | 线程数过多 / Xss 过大 | jstack + `ulimit -u` |
+| Direct buffer | NIO DirectBuffer 未释放 | jcmd pid VM.native_memory |
+
+---
+
+### JIT 编译与逃逸分析
+
+逃逸分析（Escape Analysis）判断对象是否会"逃出"方法或线程范围，若不逃逸则做以下优化：
+
+```java
+// ✅ 不逃逸 → 可栈上分配 / 标量替换
+public int compute() {
+    Point p = new Point(1, 2); // 只在方法内使用
+    return p.x + p.y;
+    // JIT: 直接把 p.x, p.y 用寄存器存储，不分配堆对象
+}
+
+// ❌ 逃逸 → 必须堆分配
+public Point getPoint() {
+    return new Point(1, 2); // 返回给调用者，对象逃逸出方法
+}
+```
+
+| 优化类型 | 触发条件 | 效果 |
+|---------|---------|------|
+| 栈上分配 | 对象不逃逸出方法 | 减少堆分配，降低 GC 压力 |
+| 标量替换 | 对象不逃逸 | 拆解为基本类型，直接放寄存器 |
+| 同步消除 | 锁对象不逃逸出线程 | 消除无竞争的 synchronized 锁 |
+
+**查看逃逸分析结果：** `-XX:+PrintEscapeAnalysis`（JDK 8 以上，需配合 `-XX:+UnlockDiagnosticVMOptions`）
+
+---
+
 ## 看到什么就先想到这类
 
 | 看到/听到 | 联想到 |
