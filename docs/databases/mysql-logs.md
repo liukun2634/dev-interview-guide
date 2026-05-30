@@ -271,3 +271,85 @@ MySQL 重启时，会扫描 redo log 中处于 **prepare** 状态的记录，并
 | "数据恢复到某个时间点" | mysqlbinlog + 全量备份 |
 | "为什么 InnoDB 比 MyISAM 可靠" | redo log + undo log（MyISAM 没有） |
 | "写性能优化" | innodb_flush_log_at_trx_commit=2、组提交（group commit） |
+
+---
+
+## 深度图解与高频面试题
+
+### binlog 三种格式对比
+
+```mermaid
+graph TD
+    A["binlog 格式选择"]
+    A --> B["STATEMENT\n记录SQL语句本身\n文件小，但不确定性函数不安全\n（NOW/UUID导致主从不一致）"]
+    A --> C["ROW\n记录行数据变更（before/after镜像）\n文件大，但精确\n主从一致性最好"]
+    A --> D["MIXED\n自动判断：\n普通SQL用STATEMENT\n不确定函数/特殊情况自动切换ROW"]
+
+    style C fill:#dcfce7,stroke:#16a34a
+```
+
+| 格式 | 文件大小 | 主从一致性 | 可读性 | 推荐 |
+|------|---------|-----------|--------|------|
+| STATEMENT | 小 | ❌（UUID/NOW()不安全） | 好 | 调试用 |
+| ROW | 大 | ✅ 精确 | 差（需工具解析） | **生产推荐** |
+| MIXED | 中 | 基本可靠 | 中 | 兼容旧系统 |
+
+> MySQL 5.7.7+ 默认 ROW 格式。ROW 格式下每行变更都记录前后镜像，数据恢复和主从复制最可靠。
+
+---
+
+### redo log vs binlog 核心区别
+
+| 维度 | redo log | binlog |
+|------|---------|--------|
+| 所属层次 | InnoDB 引擎层 | MySQL Server 层（所有引擎共享） |
+| 内容 | 物理日志（数据页的变化） | 逻辑日志（SQL语句或行变化） |
+| 写入方式 | 循环写（固定大小，会覆盖旧日志） | 追加写（不断生成新文件，不覆盖） |
+| 主要用途 | **崩溃恢复**（crash recovery） | **主从同步**、数据恢复、审计 |
+| 幂等性 | 幂等（重放同一条安全） | STATEMENT格式不一定幂等 |
+
+---
+
+### 主从复制延迟分析
+
+```mermaid
+sequenceDiagram
+    participant M as 主库 Master
+    participant IO as 从库 IO线程
+    participant RL as relay log
+    participant SQL as 从库 SQL线程
+    participant S as 从库数据
+
+    M->>IO: 传输 binlog event
+    IO->>RL: 写入 relay log（中继日志）
+    RL->>SQL: SQL线程读取 relay log
+    SQL->>S: 重放SQL（默认单线程）
+
+    Note over SQL,S: 延迟瓶颈：SQL线程默认单线程重放
+```
+
+**主从延迟原因与解决方案：**
+
+| 原因 | 解决方案 |
+|------|---------|
+| SQL线程单线程重放 | 开启**并行复制**（`slave_parallel_workers > 0`，MySQL 5.7+） |
+| 主库大事务（批量DELETE） | 拆分大事务为多个小事务 |
+| 从库机器性能差 | 升级从库硬件，使用SSD |
+| 网络延迟 | 就近部署，专线连接 |
+| 从库承担大量读流量 | 增加从库数量，专库专用 |
+
+---
+
+### 高频面试Q&A
+
+**Q: 什么是GTID？有什么优势？**
+
+A: GTID（Global Transaction Identifier）是每个已提交事务的全局唯一标识，格式为 `source_id:transaction_id`。优势：① **简化主从切换**——新主库无需指定binlog文件名和位置（`CHANGE MASTER TO MASTER_AUTO_POSITION=1`），自动找到复制断点；② **自动跳过重复事务**——GTID已执行过的事务不会再次执行，避免数据重复；③ **便于追踪**——可精确追踪每个事务在哪个库上执行。
+
+**Q: undo log 有什么作用？**
+
+A: undo log（回滚日志）有两个核心作用：① **事务回滚**——记录数据修改前的值，事务失败时按 undo log 逆向还原数据；② **MVCC快照读**——为 ReadView 提供历史版本数据，实现非锁定一致性读（每行通过 `roll_pointer` 串联成版本链，读取时按 ReadView 规则找到对应历史版本）。undo log 存储在 ibdata 文件或独立的 undo tablespace（MySQL 5.6+）。
+
+**Q: MySQL如何保证崩溃恢复后数据不丢失？**
+
+A: 通过 redo log 的 WAL（Write-Ahead Logging）机制：事务提交前必须先将 redo log 刷到磁盘（`innodb_flush_log_at_trx_commit=1`），即使数据页还在 Buffer Pool 中。崩溃恢复步骤：① 读取 redo log，前滚重放未落盘的已提交事务；② 通过 undo log 回滚未提交的事务。配合两阶段提交（redo log prepare → 写binlog → redo log commit），确保 redo log 和 binlog 最终一致。
