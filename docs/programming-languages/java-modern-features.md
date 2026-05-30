@@ -454,3 +454,57 @@ return Optional.ofNullable(repo.findByName(name))
 | `instanceof X x` | 模式匹配，无需强转 |
 | `switch` 匹配类型 + `when` | Java 21 switch 模式匹配，注意配合 sealed class 无需 default |
 | `parallelStream` | 并行流，确认操作无副作用，数据量要够大 |
+
+## 思考题
+
+**Q: Record 类在什么场景下使用？有什么限制？**
+
+A: Record（JDK16+）是**不可变数据类**的语法糖，编译器自动生成构造函数、equals/hashCode/toString、accessor方法。适用场景：DTO传输对象、值对象（Value Object）、本地数据聚合。
+```java
+// 定义（编译器自动生成所有样板代码）
+record Point(int x, int y) {}
+
+// 等价于：final类，全参构造，x()和y()访问器，equals/hashCode/toString
+Point p = new Point(1, 2);
+System.out.println(p.x()); // 1（注意是方法调用，不是字段访问）
+System.out.println(p);     // Point[x=1, y=2]
+```
+**限制：** ① 所有字段默认final，Record是不可变的；② 不能继承其他类（隐式extends Record）；③ 不能声明实例字段（只能有Record组件）。不适合需要可变状态或复杂继承的场景。
+
+**Q: Sealed Class 解决了什么问题？什么时候用？**
+
+A: Sealed Class（JDK17）**限制类的继承范围**，使类型体系封闭且可穷举，配合 Pattern Matching 的 `switch` 表达式实现安全的类型分发：
+```java
+// 只有这三个类可以继承 Shape
+sealed interface Shape permits Circle, Rectangle, Triangle {}
+
+// Pattern Matching switch：编译器知道所有子类，检查穷举性
+double area = switch (shape) {
+    case Circle c    -> Math.PI * c.radius() * c.radius();
+    case Rectangle r -> r.width() * r.height();
+    case Triangle t  -> t.base() * t.height() / 2;
+    // 无需 default，编译器确认已穷举所有情况
+};
+```
+与枚举的区别：Sealed Class的子类可以持有不同数量/类型的数据（Circle有radius，Rectangle有width+height），枚举实例共享同一类型。适合领域模型中有限但结构不同的变体（如支付结果：Success/Failure/Pending，每种持有不同字段）。
+
+**Q: Virtual Threads（JDK21）和传统线程池有什么核心区别？**
+
+A: 核心区别在**阻塞代价**：传统平台线程1:1对应OS线程，阻塞时占用OS线程（约1MB栈内存）；Virtual Thread（虚拟线程）由JVM调度，阻塞时**自动卸载（unmount）**平台线程，只保留极小的堆内存（KB级），平台线程可立即执行其他虚拟线程。
+```java
+// 传统线程池：受OS线程数限制（通常几百到几千）
+ExecutorService pool = Executors.newFixedThreadPool(200);
+
+// 虚拟线程：每任务一个虚拟线程，无需复用，可轻松创建百万级
+ExecutorService vPool = Executors.newVirtualThreadPerTaskExecutor();
+try (var executor = vPool) {
+    for (int i = 0; i < 1_000_000; i++) {
+        executor.submit(() -> someIoOperation());
+    }
+}
+```
+**适合**：IO密集型（数据库查询、HTTP调用、文件读写），阻塞等待时不占OS线程，吞吐极大提升。**不适合**：CPU密集型（虚拟线程不解决计算瓶颈，应用ForkJoinPool）；避免在虚拟线程中使用synchronized（会pin住平台线程），改用ReentrantLock。
+
+**Q: Stream API 的 parallel() 什么时候有收益，什么时候反而变慢？**
+
+A: `parallelStream()` 底层使用 ForkJoinPool（共享线程池），有收益的条件：① **数据量大**（建议10万+元素）；② **每个元素计算耗时**（CPU密集型）；③ **操作无共享状态**（无状态、线程安全）。反而变慢的场景：① **数据量小**——线程拆分和合并开销大于收益；② **含IO操作**——共享ForkJoinPool线程，IO阻塞导致线程饥饿；③ **有状态操作**——如collect到共享List需同步，消除并发收益；④ **含短路操作**（limit/findFirst）——并行化可能多做无用工。建议：不确定时先测 benchmark，不要盲目加 parallel()。
