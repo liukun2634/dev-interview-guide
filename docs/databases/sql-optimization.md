@@ -334,3 +334,78 @@ SELECT COUNT(remark) FROM orders;  -- remark 为 NULL 的行不计入
 | 大表 JOIN 无索引 | Block Nested Loop 或 Hash Join 降级，务必给关联字段加索引 |
 | `NOT IN` + 子查询 | 改写为 LEFT JOIN IS NULL，避免 NULL 陷阱 |
 | `COUNT(column)` 结果异常 | 检查列是否含 NULL，考虑改用 `COUNT(*)` |
+
+---
+
+## 深度图解与高频面试题
+
+### EXPLAIN 输出字段全解析
+
+执行 `EXPLAIN SELECT ...` 后重点关注以下字段：
+
+| 字段 | 含义 | 好 → 差 |
+|------|------|---------|
+| **type** | 访问类型（最重要） | system > const > eq_ref > **ref** > range > index > **ALL（需优化）** |
+| **key** | 实际使用的索引 | 有值（命中索引）> NULL（未命中，需检查） |
+| **rows** | 估算扫描行数 | 越小越好，与实际差距大时考虑 ANALYZE TABLE |
+| **Extra** | 额外执行信息 | `Using index`（覆盖索引✅）> `Using where` > `Using filesort`（❌）> `Using temporary`（❌最差） |
+
+**type 字段含义速查：**
+
+| type值 | 含义 | 触发示例 |
+|--------|------|---------|
+| const | 主键/唯一索引等值查询，最多1行 | `WHERE id = 1` |
+| eq_ref | 联表时主键/唯一索引匹配 | `JOIN ON 主键` |
+| ref | 非唯一索引等值查询 | `WHERE status = 1`（有索引） |
+| range | 索引范围扫描 | `WHERE id BETWEEN 1 AND 100` |
+| index | 全索引扫描（比ALL少IO） | 覆盖索引但需全扫 |
+| ALL | 全表扫描 | 无可用索引，必须优化 |
+
+**Extra 关键值解读：**
+- `Using index`：覆盖索引，无需回表，最优
+- `Using filesort`：无法用索引排序，需额外排序步骤，考虑加索引
+- `Using temporary`：用临时表（常见于GROUP BY、DISTINCT），性能较差
+- `Using join buffer`：JOIN时被驱动表无索引，用缓冲区，考虑加索引
+
+---
+
+### 大表分页深翻页优化
+
+```sql
+-- ❌ 原始写法：MySQL扫描100020行后丢弃前100000行
+SELECT id, title, created_at FROM articles
+ORDER BY created_at DESC LIMIT 100000, 20;
+
+-- ✅ 方案1：游标法（前端传上次最后一条记录的时间）
+SELECT id, title, created_at FROM articles
+WHERE created_at < '2024-01-01 12:00:00'
+ORDER BY created_at DESC LIMIT 20;
+
+-- ✅ 方案2：覆盖索引子查询（先用索引定位ID，再回表取数据）
+SELECT a.* FROM articles a
+INNER JOIN (
+    SELECT id FROM articles
+    ORDER BY created_at DESC LIMIT 100000, 20
+) t ON a.id = t.id;
+-- 子查询只走覆盖索引(created_at, id)，大幅减少回表IO
+```
+
+---
+
+### 高频面试Q&A
+
+**Q: count(\*)、count(1)、count(主键)、count(列名) 有什么区别？**
+
+A: 从快到慢：`count(*)` ≈ `count(1)` > `count(主键)` > `count(列名)`。具体：`count(*)` 是SQL标准，MySQL 8.0已优化，InnoDB会走最小的二级索引统计，不取具体列值；`count(1)` 与之等价；`count(主键)` 需取主键值判断非NULL，略慢；`count(列名)` 只统计该列非NULL的行数，语义不同，且无法走部分优化。建议统一使用 `count(*)`。
+
+**Q: 如何定位慢SQL并优化？**
+
+A: 三步走：① **开启慢查询日志**——`slow_query_log=ON, long_query_time=1`，记录超过阈值的SQL，用 `mysqldumpslow` 分析Top慢查询；② **EXPLAIN 分析执行计划**——重点看 type（是否ALL）、key（是否命中索引）、Extra（是否有filesort/temporary）；③ **针对性优化**——type=ALL则加索引，filesort则给ORDER BY列加索引，大结果集则考虑分页或分表。常见优化方向：消除全表扫描、避免函数操作索引列、使用覆盖索引、拆分大事务。
+
+**Q: 为什么不建议使用 `SELECT *`？**
+
+A: 四个原因：① **无法使用覆盖索引**——`SELECT *` 总需要回表读完整行，而指定列查询可能命中覆盖索引避免回表；② **网络传输浪费**——返回不必要的列增加带宽和序列化开销；③ **binlog膨胀**——ROW格式下UPDATE的前后镜像包含所有字段，binlog文件更大影响主从同步；④ **维护风险**——表结构增加字段后，应用层反序列化可能出错。
+
+**Q: 一条SQL执行很慢有哪些可能原因？**
+
+A: 分两种情况：**偶发性慢**——① 等锁（`SHOW PROCESSLIST` 看 Waiting for lock）；② InnoDB刷脏页（buffer pool脏页比例过高触发强制刷盘）。**持续性慢**——① 未命中索引（EXPLAIN type=ALL）；② 索引失效（函数操作/隐式类型转换/like前缀通配）；③ 数据量太大（需分表）；④ 返回数据量太大（需分页）；⑤ JOIN顺序不当（应让小结果集驱动大表）；⑥ 锁等待（高并发下行锁冲突）。
