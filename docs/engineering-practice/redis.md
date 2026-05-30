@@ -143,3 +143,97 @@ String luaScript =
 - **"计数器/限流"** → Redis `INCR`
 - **"去重/共同好友"** → Redis Set
 - **"缓存穿透/击穿/雪崩"** → 布隆过滤器 / 互斥锁 / TTL 随机
+
+---
+
+## 深度补充
+
+### Redis 限流实现
+
+**滑动窗口限流（Lua脚本保证原子性）：**
+
+```lua
+-- KEYS[1]: 限流key（如 "rate:user:123"）
+-- ARGV[1]: 窗口内最大请求数
+-- ARGV[2]: 时间窗口（毫秒）
+-- ARGV[3]: 当前时间戳（毫秒）
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+
+-- 移除窗口外的旧请求（score < now - window）
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+-- 统计当前窗口内请求数
+local count = redis.call('ZCARD', key)
+
+if count < limit then
+    -- 未超限：将本次请求加入有序集合
+    redis.call('ZADD', key, now, now .. '-' .. math.random())
+    redis.call('PEXPIRE', key, window)
+    return 1  -- 允许通过
+else
+    return 0  -- 限流拒绝
+end
+```
+
+| 限流算法 | Redis实现 | 优点 | 缺点 |
+|---------|---------|------|------|
+| 固定窗口 | INCR + EXPIRE | 简单 | 窗口边界突刺问题 |
+| 滑动窗口 | ZSet + ZREMRANGEBYSCORE | 精确，无突刺 | 内存随请求量增长 |
+| 令牌桶 | Lua脚本模拟 | 允许突发流量 | 实现相对复杂 |
+
+---
+
+### Redis Stream 消息队列
+
+Redis 5.0 新增 Stream 类型，支持持久化、消费者组、消息ACK：
+
+```bash
+# 生产者：添加消息（* 表示自动生成ID）
+XADD orders * user_id 123 amount 99.9
+
+# 创建消费者组（从头开始消费：0，从现在开始：$）
+XGROUP CREATE orders order-group 0 MKSTREAM
+
+# 消费者读取（> 表示读取未投递给该组的新消息）
+XREADGROUP GROUP order-group consumer1 COUNT 1 STREAMS orders >
+
+# 确认消息已处理
+XACK orders order-group <message-id>
+
+# 查看未确认（pending）消息
+XPENDING orders order-group - + 10
+```
+
+**与其他方案对比：**
+
+| 方案 | 持久化 | 消费组 | ACK确认 | 推荐场景 |
+|------|--------|--------|---------|---------|
+| List + BLPOP | ✅（RDB/AOF） | ❌ | ❌ | 简单任务队列 |
+| Pub/Sub | ❌ | ❌ | ❌ | 实时广播通知 |
+| **Stream** | ✅ | ✅ | ✅ | **可靠消息队列** |
+
+---
+
+### 高频面试Q&A
+
+**Q: 如何用Redis实现一个可靠的分布式锁？**
+
+A: **基础实现**：`SET key value NX EX timeout`（原子操作：不存在时设置+同时设置超时）。释放时必须用Lua脚本保证原子判断+删除（防止误删他人的锁）：
+```lua
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+else
+    return 0
+end
+```
+**生产推荐Redisson**：自动实现看门狗续期（默认每10秒续30秒），支持可重入锁、公平锁、读写锁。**RedLock争议**：Martin Kleppmann指出在时钟漂移场景下不安全，大多数场景单Redis实例+Redisson已足够。
+
+**Q: Redis的过期键删除策略是什么？**
+
+A: **两种策略结合**：① **惰性删除**——访问key时检查是否过期，过期则删除返回nil。优点：CPU友好；缺点：已过期但未访问的key持续占用内存；② **定期删除**——每100ms随机抽取设了过期时间的key（默认每次20个），删除其中已过期的。若超过25%已过期，继续扫描直到低于25%。两种结合兼顾CPU和内存，配合内存淘汰策略（allkeys-lru等），在内存不足时主动淘汰最合适的key。
+
+**Q: Redis为什么单线程还这么快？**
+
+A: 四个原因：① **纯内存操作**——内存访问约100ns，磁盘约10ms，快10万倍；② **单线程无锁**——无需互斥锁和上下文切换，CPU利用率高；③ **I/O多路复用**——epoll模型，单线程处理大量并发连接，非阻塞；④ **简单高效的数据结构**——大多数命令O(1)。注意：Redis 6.0+引入多线程处理**网络I/O**（解析请求和返回响应），但**命令执行仍是单线程**，保证数据安全。
