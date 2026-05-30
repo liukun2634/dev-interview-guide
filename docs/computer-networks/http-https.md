@@ -225,10 +225,10 @@ sequenceDiagram
 graph TD
     Root["🏛️ 根证书 Root CA\n（浏览器/OS 预置，自签名）"]
     Inter["📜 中间证书 Intermediate CA\n（由 Root CA 签发）"]
-    End["🔖 服务器证书 End Entity\n（由中间 CA 签发，包含域名）"]
+    EndEntity["🔖 服务器证书 End Entity\n（由中间 CA 签发，包含域名）"]
 
     Root -->|"签发并签名"| Inter
-    Inter -->|"签发并签名"| End
+    Inter -->|"签发并签名"| EndEntity
 
     V1["① 浏览器收到服务器证书"]
     V2["② 找签发者（中间 CA）\n用中间 CA 公钥验证签名"]
@@ -239,7 +239,7 @@ graph TD
 
     style Root fill:#fef08a,stroke:#ca8a04
     style Inter fill:#d1fae5,stroke:#16a34a
-    style End fill:#dbeafe,stroke:#2563eb
+    style EndEntity fill:#dbeafe,stroke:#2563eb
 ```
 
 **证书包含的关键字段：** 域名（Subject）、公钥、有效期、签发者（Issuer）、签名算法、CA 数字签名。
