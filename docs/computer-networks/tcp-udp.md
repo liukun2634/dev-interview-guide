@@ -226,3 +226,97 @@ TCP 通过五个机制保证可靠性：
 - [RFC 793 - TCP 规范](https://www.rfc-editor.org/rfc/rfc793)
 - [TCP 的那些事儿（上）- CoolShell](https://coolshell.cn/articles/11564.html)
 - [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/)
+
+## 深度图解
+
+### TCP 完整连接状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> CLOSED
+
+    CLOSED --> LISTEN : 服务端 passive open
+    CLOSED --> SYN_SENT : 客户端 active open / SYN
+
+    LISTEN --> SYN_RCVD : 收到 SYN / 发送 SYN+ACK
+    SYN_SENT --> ESTABLISHED : 收到 SYN+ACK / 发送 ACK
+    SYN_SENT --> SYN_RCVD : 同时打开（simultaneous open）
+    SYN_RCVD --> ESTABLISHED : 收到 ACK
+
+    ESTABLISHED --> FIN_WAIT_1 : 主动关闭 / 发送 FIN
+    ESTABLISHED --> CLOSE_WAIT : 被动关闭，收到 FIN / 发送 ACK
+
+    FIN_WAIT_1 --> FIN_WAIT_2 : 收到 ACK
+    FIN_WAIT_1 --> CLOSING : 同时关闭，收到 FIN / 发送 ACK
+    FIN_WAIT_2 --> TIME_WAIT : 收到 FIN / 发送 ACK
+
+    CLOSE_WAIT --> LAST_ACK : 发送 FIN
+    LAST_ACK --> CLOSED : 收到 ACK
+
+    CLOSING --> TIME_WAIT : 收到 ACK
+    TIME_WAIT --> CLOSED : 2MSL 超时
+```
+
+**TIME_WAIT 存在的两个原因：**
+1. **保证最后一个 ACK 能达到对端：** 若最后的 ACK 丢失，对端会重发 FIN，此时 TIME_WAIT 状态的一方能够重新发送 ACK。
+2. **让旧连接的报文在网络中消散：** 等待 2MSL（约 60 秒），确保该连接产生的所有报文段从网络中消失，防止被新连接误收。
+
+---
+
+### 滑动窗口原理
+
+```mermaid
+graph LR
+    subgraph 发送方缓冲区
+        A1["已发送\n已确认"]
+        A2["已发送\n未确认"]
+        A3["可以发送\n（窗口内）"]
+        A4["暂不可发送\n（窗口外）"]
+    end
+
+    style A1 fill:#d1fae5,stroke:#16a34a
+    style A2 fill:#fef9c3,stroke:#ca8a04
+    style A3 fill:#dbeafe,stroke:#2563eb
+    style A4 fill:#f3f4f6,stroke:#9ca3af
+
+    A1 --> A2 --> A3 --> A4
+```
+
+- **收到 ACK** → 窗口左沿右移，A2 部分转为 A1
+- **接收方通告 rwnd** → 控制窗口右沿，实现**流量控制**
+- **发送窗口 = min(cwnd, rwnd)**：cwnd 是拥塞窗口，rwnd 是接收窗口
+
+---
+
+### 拥塞控制四阶段
+
+```mermaid
+flowchart TD
+    A["🚀 慢启动 Slow Start\ncwnd = 1 MSS\n每收到 ACK：cwnd × 2（指数增长）"]
+    B["📈 拥塞避免 Congestion Avoidance\ncwnd ≥ ssthresh\n每个 RTT：cwnd + 1 MSS（线性增长）"]
+    C["⚡ 快速重传 Fast Retransmit\n收到 3 个重复 ACK\n立即重传丢失的报文段"]
+    D["🔄 快速恢复 Fast Recovery\nssthresh = cwnd / 2\ncwnd = ssthresh + 3\n继续拥塞避免"]
+    E["❌ 超时重传\nssthresh = cwnd / 2\ncwnd = 1 MSS\n重新慢启动"]
+
+    A -->|"cwnd 达到 ssthresh"| B
+    B -->|"收到 3 个重复 ACK"| C
+    C --> D
+    D --> B
+    B -->|超时| E
+    A -->|超时| E
+    E --> A
+
+    style A fill:#dbeafe,stroke:#2563eb
+    style B fill:#dcfce7,stroke:#16a34a
+    style C fill:#fef9c3,stroke:#ca8a04
+    style D fill:#fce7f3,stroke:#db2777
+    style E fill:#fee2e2,stroke:#dc2626
+```
+
+| 事件 | ssthresh 变化 | cwnd 变化 |
+|------|-------------|---------|
+| 初始 | 系统默认（如 64KB） | 1 MSS |
+| cwnd < ssthresh | 不变 | 每收到 ACK ×2 |
+| cwnd ≥ ssthresh | 不变 | 每 RTT +1 MSS |
+| 收到 3 重复 ACK | cwnd / 2 | ssthresh + 3 |
+| 超时 | cwnd / 2 | 1 MSS，重慢启动 |
