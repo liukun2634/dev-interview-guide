@@ -418,6 +418,38 @@ u_001   | v_456    | skip     | 0.08      | 1716800030 | {...}
 u_001   | v_789    | like     | 1.0       | 1716800090 | {...}
 ```
 
+### Embedding 训练与更新流程
+
+推荐系统中「召回用的向量」来自离线训练的双塔模型（Two-Tower Model），不是凭空产生的。
+
+```mermaid
+flowchart LR
+    A[用户行为日志\n曝光/点击/完播] --> B[Spark 特征工程\n负采样 1:100]
+    B --> C[双塔模型训练\nUser Tower + Item Tower]
+    C --> D[导出 Embedding\n用户塔 128维 / 视频塔 128维]
+    D --> E[更新向量索引\nFaiss 全量重建 / 增量更新]
+    E --> F[在线召回服务\n实时 ANN 检索]
+```
+
+**双塔模型架构：**
+- User Tower：输入用户画像（年龄/地域/设备）+ 行为序列（最近 50 个点击视频 ID）→ 输出 128 维 user embedding
+- Item Tower：输入视频元数据（标签/作者/封面文本）→ 输出 128 维 video embedding
+- 训练目标：正样本（用户点击）内积 > 负样本（随机抽取）内积，in-batch 负采样
+
+**Embedding 更新频率：**
+| 场景 | 更新策略 | 延迟 |
+|------|---------|------|
+| 视频 embedding | 每日离线重训全量 | T+1（约 24h） |
+| 用户 embedding | 实时流式更新（Flink） | < 5min |
+| 新视频冷启动 | 上传即生成（文本/封面 embedding，无点击数据） | < 1min |
+
+**索引更新策略（避免停服重建）：**
+1. 新建 shadow 索引（并行加载新 embedding）
+2. 流量灰度切换到 shadow 索引（1% → 10% → 100%）
+3. 旧索引下线
+
+**新视频从上传到进入召回的延迟约 1-2 分钟**（封面/标题 embedding）；基于用户行为的 embedding 需等到足够点击数据积累（通常 1 小时内获得初始效果）。
+
 ## 踩过的坑 / 生产经验
 
 ### 坑1：信息茧房——越推越窄
@@ -515,6 +547,9 @@ class UserWatchedBloom:
 - 召回层：无状态服务，水平扩展
 - Feature Store：Redis Cluster（Partition by user_id），读 QPS 约 8M × 10特征读取 = 80M/s（Redis Cluster 可支撑）
 - 精排 GPU 集群：按 QPS 弹性扩缩容（K8s + GPU 节点池）
+
+- **"推荐 Embedding 是怎么训练的？"** → 双塔模型（Two-Tower），用户塔和视频塔各自独立编码，in-batch 负采样训练，离线每日全量重训 + 用户侧 Flink 实时增量更新
+- **"新上传的视频多久能被推荐到？"** → 基于内容 embedding（文本/封面）约 1 分钟进入召回池；基于行为 embedding 需积累点击数据，冷启动期靠内容 embedding + 热门兜底召回
 
 ### 边界 Case
 
