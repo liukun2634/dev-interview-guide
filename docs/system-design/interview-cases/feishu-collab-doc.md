@@ -723,6 +723,17 @@ v5.0：离线编辑 + 移动端优化
 v6.0：AI 协同（AI 建议实时插入，基于 OT 机制）
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `ot_transform_latency_ms` | Histogram | P99 > 200ms 触发告警 | OT 操作变换耗时，超时导致编辑延迟 |
+| `op_queue_length_per_doc` | Gauge | > 100 触发告警 | 单文档待处理操作队列长度，积压说明处理能力不足 |
+| `sync_conflict_rate` | Counter | > 0.1% 触发告警 | OT 冲突解决触发率，高于阈值检查 transform 函数正确性 |
+| `websocket_reconnect_rate` | Counter | > 5% 触发告警 | WebSocket 重连率，高于阈值检查网络质量或服务稳定性 |
+| `snapshot_creation_latency_ms` | Histogram | P99 > 5000ms 触发告警 | 文档快照创建耗时，影响历史版本和增量恢复速度 |
+| `offline_op_merge_failure_rate` | Counter | > 0.01% 触发告警 | 离线编辑重连合并失败率，失败导致用户编辑内容丢失 |
+
 ## 面试评分维度
 
 | 维度 | 基础分（60分） | 加分项（80+分） | 满分项（100分） |

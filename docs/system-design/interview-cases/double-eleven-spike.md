@@ -121,6 +121,7 @@ graph LR
     end
     subgraph SH["上海（同城灾备）"]
         SH1["单元 SH-1<br/>镜像部署"]
+        SH2["单元 SH-2<br/>镜像部署"]
     end
     subgraph SZ["深圳（异地灾备）"]
         SZ1["单元 SZ-1<br/>镜像部署"]
@@ -130,8 +131,10 @@ graph LR
     GEO_DNS -->|"华东用户"| HZ2
     GEO_DNS -->|"华南用户"| SZ1
     HZ1 <-->|"单元间同步"| SH1
-    HZ2 <-->|"单元间同步"| SH1
+    HZ2 <-->|"单元间同步"| SH2
+    SH1 <-->|"同城同步"| SH2
     SH1 <-->|"跨域同步"| SZ1
+    SH2 <-->|"跨域同步"| SZ1
 ```
 
 ---
@@ -530,6 +533,8 @@ return redis.call("GET", key)
 4. **如果某个 SKU 超卖了 1 件怎么办？**  
    答：订单进入待审核状态，由客服系统自动处理（发消息通知用户，提供优惠券补偿）；建立超卖监控，触发告警后人工介入。
 
+**优惠券并发扣减（高频追问）**：双十一优惠券与库存面临相同的并发抢占问题。解决方案与分桶库存一致：Redis DECR 预扣（原子操作）+ 异步 MySQL 确认 + 幂等防重。不同点是优惠券有「每人限用一次」约束，需额外用 Redis Set（`coupon:used:{coupon_id}`，SADD 返回 0 表示已用）做幂等校验，同样封装进 Lua 脚本保证原子性。
+
 ### 边界 Case
 
 - **库存补货场景：** 大促中途追加库存，需同步更新 Redis 所有分桶（批量 INCRBY）
@@ -549,6 +554,27 @@ Phase 4：异地多活 + 单元化部署
     ↓ 运维复杂度
 Phase 5：全链路压测平台 + 混沌工程常态化
 ```
+
+### Redis 不可用时的降级方案
+
+| Redis 角色 | 宕机影响 | 降级策略 |
+|-----------|---------|---------|
+| 库存 Redis 主节点 | 无法扣减库存，下单失败 | Sentinel 切换（10-30s），期间返回「系统繁忙」；同时开启 MySQL 直扣兜底（QPS 限制在 5000） |
+| 商品详情缓存 Redis | 大量回源 MySQL | L1 本地缓存（Guava，TTL 5min）撑住大部分流量；MySQL 读副本承接剩余 |
+| 限流 Redis | 限流失效，流量直打后端 | Nginx 层 `limit_req` 兜底；各服务线程池隔离防止雪崩 |
+
+大促前强制演练 Redis 主从切换（混沌工程），确保 Sentinel 选举时间 < 30s。
+
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `sentinel_reject_qps` | Counter | > 10万/s 触发告警 | Sentinel 限流拒绝量，说明流量超过预期 |
+| `redis_inventory_memory_usage` | Gauge | > 80% 触发扩容 | 库存 Redis 内存，接近上限触发分桶扩容 |
+| `kafka_inventory_consumer_lag` | Gauge | > 10万 触发告警 | 库存扣减消费堆积 |
+| `order_create_success_rate` | Counter | < 95% 触发告警 | 下单成功率（含库存不足的正常拒绝应排除） |
+| `mysql_slow_query_rate` | Counter | > 1% 触发告警 | 慢查询（>100ms）比例，大促期间指标基线升高 |
+| `l1_cache_hit_rate` | Counter | < 90% 触发告警 | JVM 本地缓存命中率，低于阈值说明缓存未预热 |
 
 ---
 

@@ -823,6 +823,17 @@ Phase 4（下一步）：
   - 去中心化身份（DID）探索
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `login_success_rate` | Counter | < 99.5% 触发告警 | 登录成功率，低于阈值排查 Token 服务 |
+| `token_validation_latency_ms` | Histogram | P99 > 50ms 触发告警 | Token 校验耗时，影响所有接口 |
+| `online_status_heartbeat_lag_ms` | Histogram | P99 > 10000ms 触发告警 | 状态上报延迟，超过心跳窗口导致误判离线 |
+| `session_store_redis_hit_rate` | Counter | < 99% 触发告警 | Session Redis 命中率，低于阈值说明缓存异常 |
+| `forced_logout_count` | Counter | 突增 3x 触发告警 | 主动踢下线次数，异常激增可能是账号被盗批量操作 |
+| `connserver_reconnect_storm_rate` | Gauge | > 10万次/分钟 触发告警 | 重连风暴检测，服务重启后指数退避是否生效 |
+
 ---
 
 ## 面试评分维度

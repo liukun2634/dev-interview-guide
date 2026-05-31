@@ -558,6 +558,17 @@ Phase 5：向量语义召回 + Wide&Deep（深度个性化）
 Phase 6：在线学习（流式更新模型，捕捉当日热点）
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `search_p99_latency_ms` | Histogram | P99 > 200ms 触发告警 | 搜索端到端延迟（含 Query 理解 + ES + 排序） |
+| `es_cluster_shard_health` | Gauge | 非 Green 触发告警 | ES 集群分片状态，Yellow/Red 影响搜索质量 |
+| `canal_event_lag_ms` | Gauge | > 5000ms 触发告警 | 商品增量索引延迟，超 5s 则搜索结果落后上架状态 |
+| `hot_word_cache_hit_rate` | Counter | < 95% 触发告警 | 热词缓存命中率，低于阈值说明缓存失效或热词变化 |
+| `ranking_model_inference_p99_ms` | Histogram | P99 > 50ms 触发告警 | 精排模型推理耗时，超时触发降级（返回粗排结果） |
+| `search_zero_result_rate` | Counter | > 3% 触发告警 | 零结果率，说明 Query 理解或索引出现问题 |
+
 ---
 
 ## 面试评分维度

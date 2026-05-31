@@ -21,7 +21,7 @@ title: 微信红包系统设计
 
 - 2023 年春节：发出红包总数 52 亿个
 - 2015 年除夕峰值：8.1 亿次摇一摇/分钟（约 1350 万次/秒）
-- 2016 年除夕抢红包峰值：**2.5 万亿个/次（抢红包 QPS 约 250 万次/秒）**
+- 2016 年除夕抢红包峰值：**抢红包 QPS 约 250 万次/秒**
 - 单个群红包最大人数：500 人群，20 个红包，并发抢夺
 - 资金安全：严格不超发（绝对不能多分钱）、不少发（最终金额和等于红包总金额）
 - 幂等性：同一用户对同一红包只能抢一次
@@ -274,6 +274,42 @@ def grab_with_counter(red_packet_id, user_uid):
     
     return SUCCESS, int(amount)
 ```
+
+**原子化 Lua 脚本（推荐方案）：** 将以上流程合并为单一 Lua 脚本，确保幂等检查、库存扣减、金额弹出三步不可分割：
+
+```lua
+-- 原子化抢红包：幂等检查 + 库存扣减 + 金额弹出
+local idem_key  = KEYS[1]   -- rp:grabbed:{red_packet_id}:{uid}
+local count_key = KEYS[2]   -- rp:count:{red_packet_id}
+local list_key  = KEYS[3]   -- rp:amounts:{red_packet_id}
+
+-- 幂等检查
+if redis.call('EXISTS', idem_key) == 1 then
+    return {-1, 0}  -- 已抢过
+end
+
+-- 原子扣减库存
+local remaining = redis.call('DECR', count_key)
+if remaining < 0 then
+    redis.call('INCR', count_key)  -- 回滚
+    return {-2, 0}  -- 已抢完
+end
+
+-- 弹出金额
+local amount = redis.call('RPOP', list_key)
+if not amount then
+    redis.call('INCR', count_key)  -- 回滚（理论上不应发生）
+    return {-2, 0}
+end
+
+-- 标记已抢（设置幂等 key，TTL 24h）
+redis.call('SETEX', idem_key, 86400, amount)
+return {0, tonumber(amount)}
+```
+
+将 EXISTS + DECR + RPOP + SETEX 放入同一 Lua 脚本，确保原子性。所有 key 使用 `{red_packet_id}` 作为 hash tag，保证在 Redis Cluster 中路由到同一 slot。
+
+> **注意**：`rp:count:{id}` 计数器是快速失败的优化屏障，RPOP 返回 nil 才是「红包抢完」的权威信号。count 因并发 DECR 可能短暂出现负值（已由 Lua 脚本中的 INCR 回滚处理），两者通过 Lua 原子脚本保持最终一致。
 
 ### 决策四：异步入账与幂等保证
 
@@ -664,6 +700,27 @@ Phase 4（下一步探索）：
   - 基于内存数据库（如 Redis Enterprise）实现强一致性
   - 引入 CRDT 数据结构，支持多活写入
 ```
+
+### Redis 不可用时的降级方案
+
+| 场景 | 降级策略 |
+|------|---------|
+| Redis 主节点宕机 | Sentinel 自动切换（10-30s），期间返回「系统繁忙，请稍后」，客户端展示重试按钮 |
+| Redis Cluster 分区 | 请求路由到可用分片，不可用 slot 的红包暂停参与，活动结束后补偿发放 |
+| Redis 写入超时 | 返回失败，客户端重试；幂等 key 防止重复到账 |
+
+大促期间 Redis 集群做主从切换需提前演练，Sentinel quorum 选举时间建议配置 `down-after-milliseconds 3000`，减少切换窗口。
+
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `redis_rpop_success_rate` | Counter | < 99% 触发告警 | 弹出金额成功率，直接反映红包可达性 |
+| `kafka_consumer_lag{topic="grab"}` | Gauge | > 5万 触发告警 | 入账消费堆积，延迟入账影响用户体验 |
+| `redis_list_length{key="rp:amounts:*"}` | Gauge | 监控热点红包剩余量 | 实时剩余金额包数 |
+| `refund_job_success_rate` | Counter | < 99.9% 触发告警 | 24h 过期退款任务成功率 |
+| `grab_p99_latency_ms` | Histogram | P99 > 200ms 触发告警 | 抢红包端到端延迟 |
+| `hot_key_redirect_rate` | Counter | > 10% 触发告警 | 热点分片本地缓存命中率下降说明热点未被分散 |
 
 ---
 

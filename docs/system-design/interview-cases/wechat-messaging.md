@@ -159,15 +159,17 @@ graph TB
 
 具体实现：
 - 为每个会话（单聊 conversation_id = min(uid_a, uid_b) + ":" + max(uid_a, uid_b)）在 MySQL 中维护一个 `max_seq` 计数器
-- 每次发消息时，通过 `UPDATE seq_table SET seq=seq+1 WHERE conv_id=? RETURNING seq` 原子获取下一个序列号
+- 每次发消息时，先执行 `UPDATE conversation_seq SET max_seq = max_seq + 1 WHERE conversation_id = ?`，再 `SELECT max_seq` 取回新序列号（MySQL 不支持 RETURNING，需分两步执行）
 - 群聊同理，每个群维护独立序列号
 
 ```sql
--- Sequence 服务核心 SQL（乐观锁）
+-- Sequence 服务核心 SQL（MySQL 不支持 RETURNING，分两步执行）
 UPDATE conversation_seq 
 SET max_seq = max_seq + 1 
-WHERE conversation_id = 'conv:uid1:uid2'
-RETURNING max_seq;
+WHERE conversation_id = 'conv:uid1:uid2';
+
+SELECT max_seq FROM conversation_seq 
+WHERE conversation_id = 'conv:uid1:uid2';
 ```
 
 **为什么不用 Redis INCR？**
@@ -324,6 +326,8 @@ CREATE TABLE conversation_seq (
     max_seq         BIGINT NOT NULL DEFAULT 0,
     updated_at      BIGINT NOT NULL
 );
+-- 分片说明：conversation_seq 表按 conversation_id 哈希分表，与消息存储表使用相同的 sharding key，
+-- 保证同一会话的 seq 和消息落在同一分片，避免跨分片事务。
 
 -- 收件箱索引表（按 uid 分片，MySQL/TiDB）
 CREATE TABLE user_inbox (
@@ -534,6 +538,21 @@ Phase 4（超大规模，微信现状）：
   - 全球多活 + 区域就近接入
   - 适合 10 亿 DAU
 ```
+
+### 背压控制说明
+
+**背压控制**：当消息队列堆积超过阈值时，ConnServer 停止从 MsgRouter 拉取新消息，并向客户端返回 503，触发客户端指数退避重连。
+
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `connserver_active_connections` | Gauge | > 50万/实例触发扩容 | 长连接数，超限触发水平扩容 |
+| `message_delivery_success_rate` | Counter | < 99.9% 触发告警 | 消息投递成功率，低于阈值排查 MsgRouter |
+| `kafka_consumer_lag{topic="msg-ack"}` | Gauge | > 10万 触发告警 | 消费堆积，说明入库服务跟不上 |
+| `sequence_db_lock_wait_time_ms` | Histogram | P99 > 50ms 触发告警 | Seq 服务锁等待，影响消息时序 |
+| `message_e2e_latency_ms` | Histogram | P99 > 500ms 触发告警 | 端到端投递延迟（发送方→接收方） |
+| `offline_push_failure_rate` | Counter | > 5% 触发告警 | APNs/FCM 推送失败率 |
 
 ---
 

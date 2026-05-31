@@ -428,6 +428,24 @@ v3.0：全局优化（批量周期性重调度）
 v4.0：强化学习调度（以完成率/超时率为 reward，端到端优化）
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `order_assignment_latency_ms` | Histogram | P99 > 5000ms 触发告警 | 订单从创建到分配骑手的延迟 |
+| `unassigned_order_count` | Gauge | > 500 触发告警 | 当前待分配订单积压量，说明骑手不足或调度算法超时 |
+| `rider_gps_update_lag_ms` | Histogram | P99 > 8000ms 触发告警 | 骑手位置更新延迟，超过两个心跳周期（5s×2）说明上报异常 |
+| `eta_accuracy_rate` | Counter | < 85% 触发告警 | ETA 误差在 ±5min 内的比例，低于阈值需重新校准模型 |
+| `dispatch_algorithm_timeout_rate` | Counter | > 1% 触发告警 | 调度算法超时触发降级（贪心算法）的比例 |
+| `rider_reject_rate` | Counter | > 5% 触发告警 | 骑手拒单率，高于阈值触发运营介入或激励调整 |
+
+### Redis 不可用时的降级方案
+
+骑手位置 Redis GEO 不可用时：
+- **Sentinel 切换期间（< 30s）**：新订单暂缓分配，已在途订单不受影响（骑手 App 有本地缓存）
+- **Redis 完全不可用**：降级为基于上次已知位置的静态分配，超过 60s 无更新的骑手标记为「位置未知」，暂停接单
+- **监控**：`redis_geo_operation_success_rate` < 99% 立即触发降级流程
+
 ## 面试评分维度
 
 | 维度 | 基础分（60分） | 加分项（80+分） | 满分项（100分） |

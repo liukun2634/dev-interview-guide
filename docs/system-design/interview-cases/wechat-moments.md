@@ -562,6 +562,17 @@ Phase 4（当前）：
   - 流量录制 + 回放压测
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `fanout_queue_lag` | Gauge | > 5万 触发告警 | 写扩散队列堆积，影响好友看到朋友圈的延迟 |
+| `feed_cache_hit_rate` | Counter | < 85% 触发告警 | Timeline 缓存命中率，低于阈值回源压力大 |
+| `post_visibility_filter_latency_ms` | Histogram | P99 > 100ms 触发告警 | 隐私过滤耗时，影响 Feed 接口响应时间 |
+| `cdn_image_origin_pull_rate` | Counter | > 10% 触发告警 | CDN 回源率，说明热门图片缓存失效 |
+| `comment_notification_delay_ms` | Histogram | P99 > 3000ms 触发告警 | 评论通知延迟，影响互动体验 |
+| `new_post_index_delay_ms` | Histogram | P99 > 2000ms 触发告警 | 新发帖到可被好友看到的延迟 |
+
 ---
 
 ## 面试评分维度

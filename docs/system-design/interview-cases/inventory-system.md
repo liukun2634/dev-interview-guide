@@ -687,6 +687,27 @@ Phase 5：Redis + MQ + MySQL 三层 + 全链路对账
     现状：阿里当前生产方案
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `inventory_redis_decr_success_rate` | Counter | < 99.9% 触发告警 | Redis 扣减成功率，失败说明 Redis 异常 |
+| `oversell_detected_count` | Counter | > 0 立即告警 | MySQL 最终校验发现超卖，需立即人工介入 |
+| `local_cache_soldout_hit_rate` | Counter | > 60% 正常 | 本地缓存售罄标记命中率，说明拦截有效 |
+| `compensation_job_pending_count` | Gauge | > 1000 触发告警 | 超时补偿任务积压量，说明补偿服务处理能力不足 |
+| `bucket_skew_ratio` | Gauge | > 3x 触发告警 | 各分桶剩余库存偏斜比，偏斜过大说明路由不均匀 |
+| `kafka_inventory_consumer_lag` | Gauge | > 5万 触发告警 | MySQL 异步写入消费堆积，延迟确认影响最终一致性 |
+
+### Redis 不可用时的降级方案
+
+| 场景 | 策略 |
+|------|------|
+| Redis 主节点故障（Sentinel 切换中） | 本地 JVM 缓存售罄标记继续拦截已知售罄商品；新请求暂存内存队列（最多 10s），切换完成后批量处理 |
+| Redis 完全不可用 | 降级为数据库直扣（`UPDATE inventory SET available = available - 1 WHERE sku_id = ? AND available > 0`），限流到 5000 QPS，关闭分桶优化 |
+| Redis DECR 结果丢失（主从切换期间写丢失） | MySQL 层 `available >= 0` 约束作为最终防超卖保障；对账任务每小时比对 Redis 与 MySQL 库存数 |
+
+核心原则：Redis 是加速层，MySQL 是防超卖的最终保障线。任何 Redis 异常都不应导致超卖。
+
 ---
 
 ## 面试评分维度

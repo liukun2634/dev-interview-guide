@@ -293,7 +293,23 @@ def on_merchant_update(event):
     # 3. 失效受影响的 GeoHash 缓存（周边9个格子）
     geohashes = get_nearby_geohashes(lat, lng)
     for gh in geohashes:
-        redis.delete(f"search:{gh}:*")  # 模糊删除（实际用 SCAN 实现）
+        invalidate_geohash_cache(redis, gh)
+
+# 正确做法：用 SCAN 迭代删除，或维护 key 集合
+# 方式1：SCAN 迭代（生产环境推荐用 pipeline 批量删除）
+def invalidate_geohash_cache(redis_client, geohash: str):
+    cursor = 0
+    pattern = f"search:{geohash}:*"
+    while True:
+        cursor, keys = redis_client.scan(cursor, match=pattern, count=100)
+        if keys:
+            redis_client.delete(*keys)
+        if cursor == 0:
+            break
+
+# 方式2：维护 secondary set（推荐，O(1) 删除）
+# 写入缓存时：SADD cache_keys:{geohash} "search:{geohash}:{filters_hash}"
+# 失效时：SMEMBERS cache_keys:{geohash} 取出所有 key 批量删除
 ```
 
 ### 决策5：动态半径扩展
@@ -524,6 +540,24 @@ v4.0：个性化排序（CTR 模型）+ 实时特征
   ↓ 大规模扩展
 v5.0：分布式 GeoHash + 多级缓存 + 预计算
 ```
+
+### Redis GEO 不可用时的降级方案
+
+Redis GEO 集群节点故障时：
+- **Sentinel 切换期间**：请求降级到 Elasticsearch `geo_distance` 查询（延迟从 10ms 升至 80-150ms，但功能完整）
+- **ES 降级配置**：在代码中维护 feature flag，Redis 连续失败 3 次自动切换到 ES 地理查询
+- **完全降级**：返回缓存的城市热门商家列表（静态 Top 100，TTL 10min），保证页面不空白
+
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `nearby_search_p99_latency_ms` | Histogram | P99 > 100ms 触发告警 | 附近搜索端到端延迟 |
+| `redis_geo_hit_rate` | Counter | < 99% 触发告警 | Redis GEO 操作成功率，失败触发 ES 降级 |
+| `geohash_cache_hit_rate` | Counter | < 70% 触发告警 | GeoHash 结果缓存命中率 |
+| `canal_merchant_sync_lag_ms` | Gauge | > 60000ms 触发告警 | 商家信息变更同步到 Redis 的延迟 |
+| `zero_result_rate` | Counter | > 2% 触发告警 | 无结果搜索比例，高于阈值检查 GeoHash 覆盖或商家上下线状态 |
+| `es_fallback_rate` | Counter | > 0.5% 触发告警 | ES 降级触发率，说明 Redis GEO 不稳定 |
 
 ## 面试评分维度
 

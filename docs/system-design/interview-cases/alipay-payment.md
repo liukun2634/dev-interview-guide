@@ -601,6 +601,27 @@ Phase 5：T+1 自动对账 + 差错处理工单系统
 Phase 6：异地多活 + 单元化 + 实时对账（秒级）
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `payment_success_rate` | Counter | < 99.9% 触发告警 | 支付成功率，低于阈值立即排查 TCC 状态 |
+| `tcc_confirm_latency_ms` | Histogram | P99 > 1000ms 触发告警 | TCC Confirm 阶段耗时，超时影响资金到账 |
+| `bank_api_circuit_breaker_open` | Gauge | 开路触发告警 | 熔断器状态，开路说明银行接口不可用 |
+| `reconciliation_diff_count` | Gauge | > 0 立即告警 | 对账差异笔数，任何差异都需人工介入 |
+| `idempotency_duplicate_rate` | Counter | > 0.1% 触发告警 | 重复请求比例，高于阈值说明上游重试过于激进 |
+| `frozen_amount_unreleased_count` | Gauge | > 1000笔 触发告警 | TCC Try 后 Confirm/Cancel 超时未执行的冻结金额笔数 |
+
+### Redis 不可用时的降级方案
+
+支付系统的幂等 Redis 挂掉时，**不能简单降级为「允许通过」**（会导致资金重复扣款）：
+
+- **主从切换期间（10-30s）**：新请求排队等待，超过 30s 返回「支付处理中」，让用户查询订单状态
+- **Redis 完全不可用**：降级为数据库幂等（在 DB 层用 `trade_no` 唯一索引防重复插入），性能下降约 10x，但资金安全
+- **双写保障**：幂等 key 同时写 Redis 和 DB，Redis 仅作加速层；Redis miss 时降级查 DB
+
+核心原则：**宁可拒绝服务，不可重复扣款**。
+
 ---
 
 ## 面试评分维度

@@ -553,6 +553,17 @@ v4.0：防刷体系（设备指纹 + 异常检测）
 v5.0：个性化评价排序（根据用户偏好展示更相关的评价）
 ```
 
+### 监控与告警指标
+
+| 指标 | 类型 | 告警阈值 | 说明 |
+|------|------|---------|------|
+| `review_audit_queue_lag` | Gauge | > 1万 触发告警 | 待审核评价积压量，说明 ML 审核服务处理能力不足 |
+| `spam_detection_rate` | Counter | 突增 5x 触发告警 | 刷评检测触发率，异常激增说明新型刷评攻击 |
+| `score_aggregation_delay_ms` | Histogram | P99 > 3600000ms 触发告警 | 评分聚合延迟（允许 1 小时批次），超时说明批处理任务失败 |
+| `review_publish_latency_ms` | Histogram | P99 > 5000ms 触发告警 | 评价提交到可见的延迟（同步内容审核路径） |
+| `image_moderation_failure_rate` | Counter | > 1% 触发告警 | 图片审核失败率（含超时），超时图片默认隐藏等待重试 |
+| `appeal_pending_count` | Gauge | > 500 触发告警 | 商家申诉积压量，影响商家体验 |
+
 ## 面试评分维度
 
 | 维度 | 基础分（60分） | 加分项（80+分） | 满分项（100分） |
