@@ -273,6 +273,21 @@ class StatusService:
 | 状态精度 | 最大延迟 = 上报周期（5s）+ TTL 缓冲（30s）≈ 1~2分钟 |
 | 内存占用（Redis） | 10亿 × 64字节 = 64GB（Redis Cluster 分片承受） |
 
+**在线状态上报量推导（Delta 更新）：**
+
+ConnServer 向 Status Service 上报的是**状态变化量（delta）**，而非全量在线用户列表：
+
+| 参数 | 计算 | 结果 |
+|------|------|------|
+| 全量在线用户 | 峰值 | 10 亿 |
+| 每 5s 窗口内状态变化用户比例 | 上下线 + 网络切换 | ~0.01%（经验值） |
+| 每 5s delta 上报量 | 10亿 × 0.01% | **约 10 万条 delta** |
+| Status Service 处理 QPS | 10万 ÷ 5s | **约 2 万 QPS** |
+
+若上报全量：10亿 ÷ 5s = 2 亿 QPS → Status Service 不可能承受。**Delta 上报将写入压力降低了约 10,000 倍**。
+
+ConnServer 本地维护 `prev_online_set`，每 5s 对比当前连接集合，只上报新增（上线）和消失（下线）的 uid。
+
 ### 决策三：好友在线状态查询（防广播风暴）
 
 **错误方案：订阅推送**
@@ -371,6 +386,25 @@ def login(uid, platform, device_id, password):
     
     return access_token, refresh_token
 ```
+
+**设备级 Refresh Token 管理：**
+
+Refresh Token 与设备绑定，支持单设备登出（不影响其他设备）：
+
+```
+Redis Key: session:{user_id}:{device_id}
+Value: {
+  "refresh_token_hash": "sha256(token)",
+  "device_type": "iOS",
+  "created_at": 1704067200,
+  "last_active_at": 1704067200
+}
+TTL: 30天（每次刷新 Access Token 时续期）
+```
+
+- **本设备登出**：DELETE `session:{user_id}:{device_id}`，该设备 Refresh Token 立即失效
+- **全部设备登出**：SCAN `session:{user_id}:*` 批量删除所有设备 session
+- **查看登录设备**：KEYS `session:{user_id}:*` 返回所有在线设备列表（安全中心功能）
 
 ### 决策五：OAuth 2.0 微信扫码登录（第三方应用）
 

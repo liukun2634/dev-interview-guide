@@ -37,6 +37,8 @@ title: 美团外卖调度系统设计
 | 配送轨迹存储 | 9M 单 × 100 轨迹点 × 50B | ~45 GB/天（InfluxDB） |
 | ETA 模型推理 QPS | 每单分配 + 实时更新 | ~500 次/秒 |
 
+> **调度服务 Redis QPS 推导**：578 订单/s × 50 候选骑手/订单 = **28,900 次 GEORADIUS/s**；骑手位置更新（5s 一次，700K 骑手）= 700,000 ÷ 5 = **14 万 GEOADD/s**。合计 Redis 地理位置服务 QPS 约 **17 万/s**，需 Redis Cluster 3-4 个主节点（每节点上限 5 万 QPS）。
+
 ## 高层架构
 
 ```mermaid
@@ -126,6 +128,55 @@ Phase 2（周期重优化，每30秒）：
   in_transit_orders = get_orders(status=IN_DELIVERY)
   batch_optimize(in_transit_orders)  # 局部最优化，考虑路径重组
 ```
+
+**贪心分配算法伪代码：**
+
+```python
+def dispatch_cycle(unassigned_orders: List[Order], available_riders: List[Rider]):
+    """
+    每 30 秒执行一次分配循环
+    复杂度：O(orders × riders_per_area)
+    """
+    # 按订单创建时间排序（先来先服务，避免饿死）
+    unassigned_orders.sort(key=lambda o: o.created_at)
+    
+    assignments = {}
+    for order in unassigned_orders:
+        # 查询 2km 内的可用骑手（Redis GEORADIUS，O(N) N=候选骑手数）
+        candidates = redis.georadius(
+            "riders:online",
+            order.restaurant_lng, order.restaurant_lat,
+            radius=2000,  # 2km
+            unit="m",
+            withcoord=True
+        )
+        if not candidates:
+            continue
+        
+        # 选择预计取餐时间最短的骑手
+        best_rider = min(
+            candidates,
+            key=lambda r: estimate_pickup_time(r, order)
+        )
+        assignments[order.order_id] = best_rider.rider_id
+        # 从候选池移除已分配骑手（防止一个骑手被分配多个订单）
+        available_riders.remove(best_rider)
+    
+    return assignments
+```
+
+**复杂度与规模分析：**
+
+| 参数 | 数值 | 说明 |
+|------|------|------|
+| 峰值 TPS | ~578 订单/s | 9M 订单/天 ÷ 86400s × 5（午高峰系数） |
+| 30s 调度窗口内积累订单数 | 578 × 30 = **17,340 个** | 每次调度循环处理量 |
+| 每订单候选骑手数 | ~50 个 | 2km 内平均骑手数 |
+| 总距离计算次数 | 17,340 × 50 = **867,000 次** | 单次调度循环 |
+| 每次 GEORADIUS 耗时 | ~1ms | Redis 空间索引 |
+| 调度循环总耗时 | ~20s（并行化后） | 17,340 个并发 GEORADIUS |
+
+实际生产中按地理区域（城市 × 商圈）并行化，每个区域独立调度线程，互不阻塞。
 
 **并单（多订单合并）算法：**
 

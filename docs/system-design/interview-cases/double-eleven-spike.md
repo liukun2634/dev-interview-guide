@@ -279,6 +279,20 @@ public void preloadInventory(Long skuId, int totalStock, int bucketCount) {
 }
 ```
 
+**库存预加载时间估算：**
+
+| 参数 | 数值 |
+|------|------|
+| 热门 SKU 数量 | 100 万 |
+| 分桶数 N | 100 |
+| 总 Redis Key 数 | 100万 × 100 = **1 亿个 key** |
+| 单 Redis 节点 Pipeline 写入速度 | ~50 万 SET/s |
+| 最少预加载时间 | 1亿 ÷ 50万 = **200 秒** |
+| 预加载窗口（T-5min = 300s） | 300s > 200s，**刚好满足** |
+| 实际部署 | 多节点并行预加载（10 节点）→ 20s 完成 |
+
+预加载在活动开始前 5 分钟由定时任务触发，逐批 Pipeline 写入，写入完成后设置 `preload_done` flag，流量切换脚本检查此 flag 后才开放零点入口。
+
 ---
 
 ### 决策四：多级缓存架构
@@ -534,6 +548,38 @@ return redis.call("GET", key)
    答：订单进入待审核状态，由客服系统自动处理（发消息通知用户，提供优惠券补偿）；建立超卖监控，触发告警后人工介入。
 
 **优惠券并发扣减（高频追问）**：双十一优惠券与库存面临相同的并发抢占问题。解决方案与分桶库存一致：Redis DECR 预扣（原子操作）+ 异步 MySQL 确认 + 幂等防重。不同点是优惠券有「每人限用一次」约束，需额外用 Redis Set（`coupon:used:{coupon_id}`，SADD 返回 0 表示已用）做幂等校验，同样封装进 Lua 脚本保证原子性。
+
+### 高频追问：Kafka 消费堆积时系统会超卖吗？
+
+这是双十一洪峰系统设计中**最难的 Gotcha 题**，必须准备好答案：
+
+**问题场景：**
+1. Kafka 消费堆积，MySQL `available` 列比 Redis 落后 5 分钟
+2. 商品详情页从 MySQL **读副本**读取 `available=1`，展示"还剩 1 件"
+3. 实际 Redis 库存已为 0（商品已售完）
+4. 用户看到有货，点击下单 → Redis DECR 返回 -1 → 拒绝下单
+5. 用户体验差：看到有货却买不到
+
+**根本原因：** 商品详情页读 MySQL（有延迟），实际库存状态在 Redis（实时）
+
+**解决方案：商品详情页库存状态读 Redis，不读 MySQL**
+
+```python
+def get_product_inventory_status(sku_id: str) -> dict:
+    # 优先读 Redis 的售罄标记（O(1)，实时）
+    soldout_flag = redis.get(f"soldout:{sku_id}")
+    if soldout_flag:
+        return {"available": 0, "status": "SOLDOUT"}
+    
+    # 聚合各桶剩余库存（粗略展示，不保证精确）
+    total = sum(
+        max(0, int(redis.get(f"inv:{sku_id}:{i}") or 0))
+        for i in range(BUCKET_COUNT)
+    )
+    return {"available": total, "status": "ON_SALE" if total > 0 else "SOLDOUT"}
+```
+
+MySQL 的 `available` 列仅用于离线对账和补货决策，**不作为实时库存展示的数据源**。
 
 ### 预售系统设计（双峰流量）
 

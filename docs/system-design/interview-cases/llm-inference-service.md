@@ -67,6 +67,22 @@ title: 大模型推理服务设计
 保守估算（含冗余 + prefill 负载 + 量化优化）：约需 2000~4000 张 A100
 ```
 
+**A100 单卡 Decode 吞吐推导（内存带宽瓶颈分析）：**
+
+Decode 阶段是**内存带宽瓶颈**（Memory-Bandwidth Bound），而非算力瓶颈，原因是每个 token 生成步骤需要将全部模型权重从 HBM 加载到 SRAM 一次。
+
+| 参数 | 数值 |
+|------|------|
+| A100 HBM2e 带宽 | 2 TB/s |
+| 70B 模型 BF16 权重大小 | 70B × 2 bytes = **140 GB** |
+| TP=8 时每卡持有权重 | 140 GB ÷ 8 = **17.5 GB** |
+| 每卡单步加载权重耗时 | 17.5 GB ÷ 2 TB/s ≈ **8.75 ms** |
+| 单步单卡吞吐（batch=1） | 1 token ÷ 8.75 ms ≈ **114 tokens/s** |
+| batch=16（均摊加载开销） | 114 × 16 ÷ 1 ≈ **1,824 tokens/s（8卡节点）** |
+| batch=64（实际常见配置） | 约 **4,000-5,000 tokens/s（8卡节点）** |
+
+> **面试技巧**：当面试官问"为什么 GPU 推理是内存带宽瓶颈"时，关键答案是：**推理时矩阵乘法的 arithmetic intensity（FLOP/Byte）远低于 A100 的 ridge point（约 208 FLOP/Byte）**，因此性能由 HBM 带宽决定，而非 TFLOPS。这也是为什么 Continuous Batching 可以提升吞吐——它提高了 arithmetic intensity，让 GPU 更接近算力瓶颈。
+
 ---
 
 ## 高层架构
@@ -319,24 +335,31 @@ Step 4: 本轮净输出：2~3 个 token（而非传统 1 个）
 **调度算法：**
 
 ```python
+# 修复：抢占低优先级后必须重新调用 can_allocate，避免在显存仍不足时将请求加入 batch 导致 OOM
 class PriorityScheduler:
     def schedule_next_batch(self) -> List[Request]:
         batch = []
-        # 先填充高优先级请求
-        while len(batch) < MAX_BATCH_SIZE and not self.high_priority_queue.empty():
-            req = self.high_priority_queue.pop()
+        while not self.high_priority_queue.empty():
+            req = self.high_priority_queue.peek()
             if self.kv_manager.can_allocate(req):
+                self.high_priority_queue.pop()
                 batch.append(req)
             else:
                 # 尝试抢占低优先级请求的 KV Cache
-                self._preempt_low_priority(req.estimated_kv_blocks)
-                batch.append(req)
-
-        # 剩余 slot 填充低优先级请求
-        while len(batch) < MAX_BATCH_SIZE and not self.low_priority_queue.empty():
-            req = self.low_priority_queue.pop()
+                freed = self._preempt_low_priority(req.estimated_kv_blocks)
+                if freed and self.kv_manager.can_allocate(req):  # 修复：抢占后重新检查
+                    self.high_priority_queue.pop()
+                    batch.append(req)
+                else:
+                    break  # 即使抢占后仍不足，停止调度（避免死锁）
+        # 用剩余空间调度低优先级请求
+        while not self.low_priority_queue.empty():
+            req = self.low_priority_queue.peek()
             if self.kv_manager.can_allocate(req):
+                self.low_priority_queue.pop()
                 batch.append(req)
+            else:
+                break
         return batch
 ```
 

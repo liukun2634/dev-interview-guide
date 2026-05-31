@@ -40,7 +40,7 @@ title: 抖音推荐流系统设计
 | 精排模型推理 QPS | 每次推荐精排 ~200 个候选 × 800万请求/s | 理论约 1.6B/s（用批处理摊平） |
 | Feature Store 写入 | 700M用户 × 每分钟更新行为特征 | ~12M 次/秒（Flink流处理） |
 | 用户兴趣模型大小 | 700M用户 × 100维向量 × 4B | ~280 GB（需分布式存储） |
-| 去重布隆过滤器 | 700M用户 × 7天 × 100视频/天 × 1 bit | ~87 GB |
+| 去重布隆过滤器（Redis 热用户） | 每用户独立 Bloom Filter（per-user 1000 videos, FPR 0.1%，14.4 bits/element）：每用户 ≈ 1.8 KB；DAU 热用户 1亿 × 1.8 KB | ≈180 GB（Redis），冷用户存 HBase |
 | 日志数据量 | 700M用户 × 100次曝光 × 200B/次 | ~14 TB/天 |
 
 ## 高层架构
@@ -161,6 +161,21 @@ DIN（Deep Interest Network）是字节系推荐的核心排序模型，关键�
 
 精排输出 pCTR（预估点击率）和 pVCR（预估完播率），最终分 = α × pCTR + β × pVCR（完播率权重更高）。
 
+**精排模型核心特征（DIN 输入特征示例）：**
+
+| 特征类别 | 特征名 | 说明 |
+|---------|--------|------|
+| 用户画像 | `user_age_bucket`, `user_gender`, `user_city_tier` | 人口统计学特征 |
+| 用户行为序列 | `user_last20_watch_ids`, `user_last20_category_ids` | DIN Attention 的目标序列 |
+| 用户实时行为 | `user_ctr_1h_{category}`, `user_vtr_1h_{category}` | 最近 1h 对该品类的点击/完播率 |
+| 视频内容 | `video_category`, `video_tags`, `video_duration_bucket` | 视频元数据特征 |
+| 视频统计 | `video_7d_vtr`, `video_7d_ctr`, `video_author_fans` | 7 天历史点击/完播率、作者粉丝数 |
+| 交叉特征 | `user_ctr_author_{author_id}`, `user_ctr_category_{cat}` | 用户对该作者/品类的历史偏好 |
+| 上下文特征 | `hour_of_day`, `day_of_week`, `network_type`, `device_model` | 请求时间、设备、网络环境 |
+| 负反馈特征 | `user_dislike_category_{cat}_7d` | 用户近 7 天对该品类的不感兴趣次数 |
+
+> **面试技巧**：被问到"模型用哪些特征"时，分四类回答：用户画像特征、用户实时行为特征、物品特征、交叉特征，每类举 2-3 个例子即可。
+
 **重排（Re-ranking）：**
 
 解决精排结果的多样性问题：
@@ -236,6 +251,19 @@ user_realtime_features = {
     "negative_feedback_count": 2                  # 本次会话负反馈次数
 }
 ```
+
+**在线特征存储容量规划：**
+
+| 规模参数 | 数值 |
+|---------|------|
+| 活跃用户 DAU | 7 亿 |
+| 每用户实时特征大小 | ~1 KB（约 50 个特征，Hash 存储） |
+| 热用户（在线）总存储 | 7亿 × 1 KB = **700 GB** |
+| Redis 单节点内存上限（留 20% 余量） | 80 GB × 0.8 = 64 GB |
+| 所需 Redis 主节点数 | 700 GB ÷ 64 GB ≈ **11 个主节点** |
+| 含 1 副本总节点数 | **22 个 Redis 节点** |
+
+实际部署采用 Redis Cluster 按 `user_id % N` 哈希分片，N=11；冷用户（非当日活跃）特征存 HBase，容量不计入 Redis。
 
 ### 决策4：冷启动策略
 
@@ -505,6 +533,18 @@ class UserWatchedBloom:
         bf = BloomFilter.deserialize(cached)
         return bf.check(str(video_id))
 ```
+
+**布隆过滤器容量分析（为什么不用全局单一 Bloom Filter）：**
+
+若使用全局方案（所有用户近 7 天看过的视频合并一个 Filter）：
+- 元素总量：700M 用户 × 7天 × 100 视频/天 = **490 亿** elements
+- 1 bit/element（FPR ≈ 10%）：490亿 ÷ 8 ≈ **61 GB**（误判率过高，不可用）
+- 0.1% FPR（14.4 bits/element）：490亿 × 14.4 ÷ 8 ≈ **882 GB** → 远超 Redis 单集群承载能力
+
+**实际方案**：每用户独立小 Bloom Filter，仅记录该用户最近看过的 1000 个视频（FPR 0.1%）：
+- 单用户大小：1000 × 14.4 bits ÷ 8 ≈ **1.8 KB**
+- 热活跃用户（DAU = 1 亿）存 Redis：1亿 × 1.8 KB = **180 GB**（可承载）
+- 冷用户（非当日活跃，约 6 亿）存 HBase，推荐时按需加载，用后回写
 
 ### 坑3：模型更新不及时导致推荐"过时"
 

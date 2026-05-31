@@ -110,6 +110,19 @@ graph TB
   （评价数量足够多，接近真实均值）
 ```
 
+**参数校准方法论：**
+
+贝叶斯平均公式 `(C × m + Σr) / (C + n)` 中，`m` 参数的设定直接影响新商家的评分稳定性：
+
+| 参数 | 计算方法 | 美团实际值（估算） |
+|------|---------|-----------------|
+| `C`（全站平均分） | 所有商家评分均值 | ~4.2 分（5分制） |
+| `m`（置信权重） | 全站商家评论数**第10百分位数** | ~5 条评论 |
+
+`m=5` 表示：**评论数 < 5 的新商家，评分向全站均值 4.2 拉近**。一个只有 1 条 5 分好评的新商家，贝叶斯评分 = (5×4.2 + 1×5) / (5+1) = 4.33，而非原始 5.0。这防止了极少量评论对排名的干扰。
+
+每月重新计算 `m` 值（随商家数量增长而变化），`C` 每周更新。
+
 **分维度评分：** 口味、环境、服务三个维度分别独立计算贝叶斯评分，存储时用 3 个字段分别保存。
 
 **评分更新策略：**
@@ -207,6 +220,33 @@ def detect_malicious_negative_review(review, merchant_id):
     risk_score = 1 - reduce(lambda acc, s: acc * (1 - s[1]), signals, 1)
     return risk_score > 0.7  # 风险分 > 0.7 进入人工审核
 ```
+
+**风险评分 → 处置流程：**
+
+```python
+def process_review_risk(review: Review, fingerprint_score: float):
+    if fingerprint_score > 0.9:
+        # 高风险：直接拒绝，不进入审核队列
+        return ReviewStatus.REJECTED, "high_risk_device"
+    
+    elif fingerprint_score > 0.7:
+        # 中风险：进入影子队列，额外检查
+        velocity = count_reviews_last_hour(review.device_id)
+        similarity = max_similarity_with_spam_templates(review.content)
+        
+        if velocity > 5 or similarity > 0.9:
+            return ReviewStatus.REJECTED, "spam_pattern"
+        else:
+            return ReviewStatus.PENDING_AUDIT, "manual_review"
+    
+    else:
+        # 低风险：走正常 ML 审核流程
+        return ReviewStatus.PENDING_ML_AUDIT, "normal"
+```
+
+**二次检查指标：**
+- `velocity`：同一设备指纹过去 1 小时内提交的评论数，> 5 次判定为机器刷评
+- `similarity`：与已知垃圾模板库（Top 1000 垃圾评论）的余弦相似度，> 0.9 判定为模板复制
 
 ### 决策3：内容审核管道
 
@@ -464,6 +504,56 @@ sequenceDiagram
         SC->>DB: UPDATE merchant_score_summary
         SC->>Redis: 更新评分缓存
     end
+```
+
+### 核心 API 接口
+
+**提交评价：**
+```http
+POST /api/v1/merchants/{merchant_id}/reviews
+Authorization: Bearer {user_token}
+Content-Type: application/json
+
+{
+  "order_id": "order_123",          // 必填，验证消费记录
+  "overall_rating": 4,              // 1-5 整数
+  "taste_rating": 5,                // 口味评分（餐饮类）
+  "packaging_rating": 4,            // 包装评分
+  "content": "味道很好，送餐也快",
+  "images": ["img_url_1", "img_url_2"],
+  "is_anonymous": false
+}
+
+// 响应
+{
+  "review_id": "rv_abc123",
+  "status": "PENDING_AUDIT",        // PENDING_AUDIT | PUBLISHED | REJECTED
+  "message": "评价已提交，审核后将公开展示"
+}
+```
+
+**获取商家评价列表（游标分页）：**
+```http
+GET /api/v1/merchants/{merchant_id}/reviews
+  ?cursor=rv_xyz&limit=20&sort=helpful&min_rating=3
+
+// 响应
+{
+  "reviews": [
+    {
+      "review_id": "rv_abc123",
+      "user_nickname": "用户***456",
+      "overall_rating": 4,
+      "content": "...",
+      "images": [],
+      "helpful_count": 23,
+      "created_at": "2024-01-01T12:00:00Z",
+      "merchant_reply": null
+    }
+  ],
+  "next_cursor": "rv_def456",       // null 表示最后一页
+  "total_count": 1234               // 总评价数（非精确值，每小时更新）
+}
 ```
 
 ## 踩过的坑 / 生产经验

@@ -104,6 +104,19 @@ graph TB
 3. 富文本 CRDT 的实现（如 Yjs、Automerge）对复杂格式操作仍有大量边界问题
 4. 中央服务器便于权限控制（服务端可以拒绝无权限的写操作）
 
+**为什么飞书选择 OT 而不是 CRDT？**
+
+| 维度 | OT（飞书实际选择） | CRDT |
+|------|-------------------|------|
+| 架构要求 | 需要中央服务器建立操作全序 | 支持真正 P2P，无需中心节点 |
+| 实现复杂度 | transform 函数实现复杂，但已有成熟框架（ShareDB/ShareJS） | 每种数据类型需独立实现 merge 语义（富文本 CRDT 极复杂） |
+| 富文本支持 | 成熟，Google Docs 2006年即用 OT 处理富文本 | 富文本 CRDT（如 Yjs/Peritext）2020年后才成熟 |
+| 离线编辑 | 需要将离线 op 与服务端 op 做多步 transform，冲突概率高 | 天然支持离线后合并，convergence 保证更强 |
+| 内存开销 | 低（只需记录操作，不需全量状态） | 高（CRDT 需要记录全量 tombstone） |
+| **飞书选择 OT 的核心原因** | 飞书是企业 SaaS 产品，有稳定的中央服务器；2018年飞书启动时，富文本 CRDT 方案尚不成熟；OT 配合 Block-based 文档模型可以将冲突范围限制在 Block 级别，降低 transform 实现难度 | |
+
+> **补充**：Google Wave 曾尝试 OT，后来 Google Docs 内部有过迁移到 CRDT 的讨论（Project Realtimecollab）。Notion 和新一代协同编辑产品（如 Linear）倾向 CRDT。飞书面试中被问到这个问题时，回答"OT 在有中央服务器的场景下足够，且当时富文本 CRDT 方案未成熟"是标准答案。
+
 ### 决策2：OT 核心原理与实现
 
 **Operation（操作）的数据结构：**
@@ -397,6 +410,17 @@ class VersionManager:
         return doc  # 最多只需回放 50 个 op，速度快
 ```
 
+**Snapshot 间隔选择（N=50）的数学依据：**
+
+| 参数 | 数值 | 说明 |
+|------|------|------|
+| 平均 op 大小 | ~100 bytes | 插入/删除/格式化操作 |
+| op 回放速度 | ~10,000 ops/s | 单线程内存操作 |
+| N=50 时回放耗时 | 50 ÷ 10,000 = **5 ms** | 用户打开文档的额外等待 |
+| N=500 时回放耗时 | 500 ÷ 10,000 = **50 ms** | 勉强可接受 |
+| N=50 时 Snapshot 存储成本 | 每 50 ops 一次快照，文档有 10,000 ops → 200 次快照 × 平均文档大小 500KB = **100 MB/文档** | 偏高 |
+| 实际策略 | **动态间隔**：小文档 N=100，大文档（>100页）N=500，后台低峰期强制 snapshot | 平衡存储与恢复速度 |
+
 **存储层设计：**
 
 ```sql
@@ -516,6 +540,27 @@ sequenceDiagram
     SRV->>CB: awareness_update {user_id: A, cursor: ...}
     CB->>CB: 在段落2第15字符处显示"A的光标"（蓝色光标指示）
 ```
+
+**光标位置的 OT 变换（CursorOp）：**
+
+当用户 A 在位置 10 插入 5 个字符，而用户 B 的光标也在位置 10 时，B 的光标位置必须同步更新：
+
+```python
+def transform_cursor(cursor_pos: int, op: Operation) -> int:
+    """将光标位置相对于已应用的 op 进行变换"""
+    if op.type == "INSERT":
+        if op.position <= cursor_pos:
+            return cursor_pos + len(op.content)  # 插入点在光标前，光标后移
+        return cursor_pos  # 插入点在光标后，光标不变
+    elif op.type == "DELETE":
+        if op.position + op.length <= cursor_pos:
+            return cursor_pos - op.length  # 删除在光标前，光标前移
+        elif op.position <= cursor_pos:
+            return op.position  # 光标在删除范围内，移到删除起点
+        return cursor_pos
+```
+
+飞书中每个用户的光标是独立的 `CursorState`，广播给同文档其他用户时，接收方需对本地未 ack 的 op 序列依次调用 `transform_cursor`，确保显示位置正确。
 
 ### 接口设计
 

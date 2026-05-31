@@ -247,6 +247,20 @@ def sample_danmu(danmu_list, max_per_second=30):
 | 超低延迟 | < 3s | WebRTC / QUIC | 电商直播、讲解类直播 |
 | 连麦/PK | < 500ms | WebRTC P2P | 双主播互动 |
 
+**各协议端到端延迟对比（主播画面 → 观众屏幕）：**
+
+| 协议 | 视角延迟 | 原理 | 适用场景 |
+|------|---------|------|---------|
+| **HLS**（2s 切片，3 切片缓冲） | **6-15 秒** | 切片上传 → CDN 分发 → 播放器缓冲 | 普通直播（画质优先） |
+| **LL-HLS**（200ms partial segment） | **1-3 秒** | 部分切片推送，减少缓冲窗口 | 互动直播（平衡延迟/画质） |
+| **RTMP 直接拉流**（无切片） | **1-3 秒** | PC 端直接 RTMP 拉流，无 HLS 切片延迟 | PC 端直播（Flash 时代遗留） |
+| **WebRTC**（P2P / SFU） | **< 500 毫秒** | UDP 传输，无缓冲，容忍丢包 | PK 连麦、互动答题 |
+| **SRT**（Secure Reliable Transport） | **< 1 秒** | UDP + ARQ 重传，弱网友好 | 跨国推流、弱网场景 |
+
+> **面试技巧**：被问"如何降低直播延迟"时，按场景回答：普通观看用 LL-HLS（1-3s，画质好）；PK/连麦用 WebRTC（< 500ms，允许画质下降）；跨国推流用 SRT（弱网稳定性优先）。
+
+**抖音实际方案**：普通直播用 LL-HLS（约 2-4s），连麦/PK 用 WebRTC（< 500ms），弱网推流改用 SRT（比 RTMP 丢包恢复快 3-5 倍）。
+
 **低延迟直播（LL-HLS）实现：**
 
 ```
@@ -339,6 +353,32 @@ def send_gift(user_id, gift_id, room_id, idempotency_key):
     finally:
         # 不删除锁，等自然过期（避免重入）
         pass
+
+**礼物发送幂等设计（防重复扣费）：**
+
+```python
+# 客户端带唯一幂等 key（UUID，本地生成）
+def send_gift(user_id: str, room_id: str, gift_id: str, idempotency_key: str):
+    # 原子检查 + 标记（Lua 脚本）
+    lua_script = """
+    local key = KEYS[1]
+    if redis.call('EXISTS', key) == 1 then
+        return redis.call('GET', key)  -- 返回原始结果，幂等
+    end
+    redis.call('SETEX', key, 86400, ARGV[1])  -- 标记已处理，TTL 24h
+    return nil  -- 需要处理
+    """
+    result = redis.eval(lua_script, 1, f"gift_idem:{idempotency_key}", "processed")
+    if result is not None:
+        return json.loads(result)  # 幂等：返回已有结果
+    
+    # 执行礼物扣费和特效播放
+    deduct_coins(user_id, gift_cost(gift_id))
+    broadcast_gift_effect(room_id, gift_id)
+    return {"status": "success"}
+```
+
+**场景**：用户点击发送礼物后，App 因网络超时未收到响应 → 自动重试 → 服务端用 `idempotency_key` 检测到重复请求 → 返回第一次的结果，不重复扣费。
 ```
 
 ### 决策6：高峰场景——10万人同时进入直播间

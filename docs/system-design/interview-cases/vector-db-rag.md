@@ -332,6 +332,80 @@ HNSW 索引不支持高效的随机删除（删除后图结构需要修复）。
 
 ## 详细设计
 
+### 元数据存储（PostgreSQL）
+
+```sql
+CREATE TABLE document_chunks (
+    chunk_id        VARCHAR(64)  PRIMARY KEY,          -- 格式: {doc_id}_{chunk_index}
+    doc_id          VARCHAR(64)  NOT NULL,
+    doc_version     INT          NOT NULL DEFAULT 1,   -- 文档版本，embedding 重建后递增
+    chunk_index     INT          NOT NULL,             -- 文档内第几个 chunk
+    chunk_text      TEXT         NOT NULL,             -- 原始文本（用于展示引用片段）
+    dept_ids        JSONB,                             -- 可见部门列表，null 表示全员可见
+    user_whitelist  JSONB,                             -- 额外白名单用户 ID 列表
+    is_public       BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_deleted      BOOLEAN      NOT NULL DEFAULT FALSE,  -- 软删除
+    model_version   VARCHAR(32)  NOT NULL,             -- 生成此 embedding 的模型版本
+    token_count     INT          NOT NULL,             -- chunk 的 token 数，用于 context 窗口管理
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_doc_id ON document_chunks (doc_id);
+CREATE INDEX idx_active_model ON document_chunks (is_deleted, model_version)
+    WHERE is_deleted = FALSE;  -- 用于 embedding 升级时找出需要重建的 chunk
+```
+
+> `model_version` 字段直接支持 Embedding 模型升级安全检查（坑3）：查询 `WHERE is_deleted=FALSE AND model_version != 'v2'` 可找出所有需要重建的 chunk。
+
+### 核心 API 接口
+
+**文档上传接口（异步）：**
+```http
+POST /api/v1/documents
+Content-Type: application/json
+
+{
+  "source_url": "feishu://doc/AbCd123",   // 文档来源 URL
+  "dept_ids": ["dept_rd", "dept_pm"],     // 可见部门，null 表示全员
+  "is_public": false
+}
+
+// 响应
+{
+  "doc_id": "doc_a1b2c3",
+  "status": "QUEUED",                     // QUEUED → PROCESSING → DONE / FAILED
+  "estimated_ready_at": "2024-01-01T10:05:00Z"
+}
+```
+
+**知识库问答接口（流式）：**
+```http
+POST /api/v1/query
+Content-Type: application/json
+
+{
+  "question": "年假如何申请？",
+  "session_id": "sess_xyz",               // 多轮对话 session
+  "user_id": "user_001",
+  "stream": true                          // SSE 流式返回
+}
+
+// 非流式响应
+{
+  "answer": "根据公司 HR 规定，年假申请步骤如下：...",
+  "citations": [
+    {
+      "doc_id": "doc_a1b2c3",
+      "chunk_id": "doc_a1b2c3_5",
+      "source_title": "员工手册 2024版",
+      "text_snippet": "年假申请需在 OA 系统提交..."
+    }
+  ],
+  "context_used": 3,                      // 用于生成回答的 chunk 数量
+  "latency_ms": 1243
+}
+```
+
 ### 文档解析模块
 
 ```
@@ -541,6 +615,23 @@ if max_relevance_score < 0.70:
   - 原始：「那产假呢？」
   - 改写后：「产假如何申请？」
 - 用改写后的独立问题进行向量检索，避免多轮对话造成的检索偏差
+
+### "Milvus 集群需要多少节点？"
+
+**向量数据库集群规模估算（Milvus）：**
+
+| 参数 | 数值 | 说明 |
+|------|------|------|
+| 总向量数 | 5,000 万 | 500 万文档 × 10 chunks/文档 |
+| 向量维度 | 1,536（float32） | BGE-M3 或 OpenAI embedding 维度 |
+| 原始向量存储 | 5000万 × 1536 × 4B = **300 GB** | FP32，未压缩 |
+| HNSW+PQ 压缩后 | ~30-35 GB | PQ16 压缩约 1/8，HNSW graph 额外 ~5 GB |
+| 单 Milvus 查询节点 QPS | ~1,000 QPS（P99 < 30ms） | 基于官方 5000万向量 HNSW benchmark |
+| 峰值查询 QPS | 5,000 | 10万用户 × 5% 并发率 |
+| 所需查询节点数 | 5,000 ÷ 1,000 = **5 个查询节点** | |
+| 完整集群 | 5 Query + 2 Index + 3 Data + 1 Root = **11 节点** | 生产最小配置 |
+
+> Milvus 架构中 Query Node 负责执行 ANN 搜索，Index Node 负责构建/维护索引，Data Node 负责数据持久化，Root Coord 负责元数据管理。
 
 ---
 
