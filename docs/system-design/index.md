@@ -66,6 +66,7 @@ title: 系统设计
 | [API 设计](./api-design) | 接口设计规范与安全 | REST/gRPC/GraphQL、版本管理、OAuth2/JWT/SSO、API 网关 |
 | [搜索与推荐](./search-and-recommendation) | 搜索引擎与推荐系统架构 | 倒排索引、分词、召回与排序、协同过滤、向量检索 |
 | [综合案例](./real-world-cases) | 高频系统设计题端到端解析 | 短链接、Feed 流、抢红包、秒杀、分布式文件存储等经典案例 |
+| [大厂实战面试题](./interview-cases/) | 腾讯/阿里/美团/字节真实面试题解析 | 微信消息、双十一洪峰、外卖调度、抖音推荐等 14 道工程实战题 |
 
 ## 建议顺序
 

@@ -204,6 +204,27 @@ export default withMermaid(defineConfig({
             { text: '综合案例', link: '/system-design/real-world-cases' },
           ],
         },
+        {
+          text: '大厂实战面试题',
+          collapsed: false,
+          items: [
+            { text: '题目总览', link: '/system-design/interview-cases/' },
+            { text: '微信消息系统', link: '/system-design/interview-cases/wechat-messaging' },
+            { text: '微信朋友圈', link: '/system-design/interview-cases/wechat-moments' },
+            { text: '微信红包', link: '/system-design/interview-cases/wechat-red-packet' },
+            { text: '微信登录与在线状态', link: '/system-design/interview-cases/wechat-login' },
+            { text: '阿里双十一洪峰', link: '/system-design/interview-cases/double-eleven-spike' },
+            { text: '支付宝支付系统', link: '/system-design/interview-cases/alipay-payment' },
+            { text: '淘宝商品搜索', link: '/system-design/interview-cases/taobao-search' },
+            { text: '阿里库存系统', link: '/system-design/interview-cases/inventory-system' },
+            { text: '美团外卖调度', link: '/system-design/interview-cases/delivery-dispatch' },
+            { text: '美团附近搜索', link: '/system-design/interview-cases/nearby-restaurant' },
+            { text: '美团评价系统', link: '/system-design/interview-cases/review-system' },
+            { text: '抖音推荐流', link: '/system-design/interview-cases/tiktok-feed' },
+            { text: '抖音直播系统', link: '/system-design/interview-cases/live-streaming' },
+            { text: '飞书协同编辑', link: '/system-design/interview-cases/feishu-collab-doc' },
+          ],
+        },
       ],
       '/engineering-practice/': [
         {
