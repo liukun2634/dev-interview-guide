@@ -113,7 +113,7 @@ $$
 | **GPT-4o / 4.1** | OpenAI | Decoder-Only (MoE) | 未公开 | 否 | 多模态原生；GPT-4.1（2025.4）强化指令遵循与长上下文 |
 | **o1 / o3 / o4-mini** | OpenAI | Decoder-Only | 未公开 | 否 | 推理模型系列，链式思考（CoT）推理能力突出 |
 | **Claude 3.5 Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 长上下文（200K）、代码能力强、安全对齐 |
-| **Claude 4 Opus/Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 2025 旗舰，代码与推理能力大幅提升，支持 Agent 场景 |
+| **Claude 4.6 Opus/Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 2025 旗舰，代码与推理能力大幅提升，支持 Agent 场景 |
 | **Gemini 2.0/2.5** | Google | Decoder-Only | 未公开 | 否 | 原生多模态、长上下文（1M+）、搜索集成 |
 | **LLaMA 3 / 4** | Meta | Decoder-Only | 8B-405B / MoE | 是 | 社区生态丰富；LLaMA 4（2025）引入 MoE 架构 |
 | **Qwen 2.5** | 阿里云 | Decoder-Only | 0.5B ~ 72B | 是 | 中英文表现优异 |
@@ -147,7 +147,7 @@ graph TD
 
 | 模态 | 能力 | 代表模型 |
 |------|------|----------|
-| **文本 + 图像理解** | 看图说话、图表分析、OCR | GPT-4o、Claude 4 Sonnet、Gemini 2.5 |
+| **文本 + 图像理解** | 看图说话、图表分析、OCR | GPT-4o、Claude 4.6 Sonnet、Gemini 2.5 |
 | **图像生成** | 根据文本描述生成图像 | DALL-E 3、Midjourney、Stable Diffusion |
 | **语音** | 语音识别 + 语音合成 | Whisper、GPT-4o |
 | **视频** | 视频理解与生成 | Sora、Gemini |

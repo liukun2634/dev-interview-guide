@@ -134,6 +134,10 @@ AI 面试题有三个层次：
 |---|---|---------|
 | RAG | 微调 | RAG 注入外部知识（不改模型），微调改变模型权重（不需要检索） |
 | RAG | Long Context | RAG 检索最相关片段（精准），Long Context 塞入全文（可能遗漏中间内容） |
+| RAG | Skill | RAG 是"教模型查资料"（注入知识），Skill 是"教模型按 SOP 办事"（注入流程 + 工具子集）；两者可组合，Skill 内部可调用 RAG |
+| Skill | Tool | Skill 是完整的任务流程（含指令+工具集+约束），Tool 是单个原子操作；Skill 通常会编排多个 Tool |
+| MCP | A2A | MCP 是 Agent 与工具/数据源之间的协议（垂直），A2A 是 Agent 与 Agent 之间的协议（水平） |
+| Reasoning Model | 普通 LLM | Reasoning Model 在推理时显式生成长思维链（test-time compute），适合数学/代码；普通 LLM 走"快思考"路径，延迟低成本低 |
 | 单模型调用 | Compound AI System | 单模型简单但不可靠，复合系统多组件协作更可靠但工程复杂 |
 | LoRA | 全量微调 | LoRA 只训练增量矩阵（省资源），全量微调更新所有参数（效果上限更高） |
 | RLHF | DPO | RLHF 需要单独训练奖励模型，DPO 直接从偏好数据优化（更简单） |

@@ -201,6 +201,137 @@ $$
 
 ---
 
+## MoE 推理优化
+
+MoE（Mixture of Experts）已是 2024-2025 年大模型的主流架构（DeepSeek-V3 671B / Mixtral 8x22B / LLaMA 4 / GPT-4o）。它在推理侧带来了**与 Dense 模型不同的瓶颈**——这是 2025-2026 年面试中"你了解 MoE 工程化吗"的高频追问点。
+
+### Dense vs MoE 推理特性
+
+| 维度 | Dense（稠密） | MoE | 工程含义 |
+|------|------------|-----|---------|
+| **参数总量** | 全部激活 | 部分激活（如 DeepSeek-V3 671B 中只激活 37B） | MoE 算力需求小，**显存需求大** |
+| **显存占用** | 等于激活参数 | 等于**总参数**（所有专家都要常驻显存） | MoE 部署门槛反而更高 |
+| **计算量 FLOPs** | 与激活参数成正比 | 与激活参数成正比 | MoE 推理速度可媲美小 Dense 模型 |
+| **带宽瓶颈** | 加载全部权重 | 每 Token 仅加载被路由到的专家权重 | MoE 受**显存带宽**限制更显著 |
+| **批处理友好度** | 高 | 低（不同 Token 路由到不同专家，难凑批） | MoE 需要专门的批调度 |
+
+### 三大核心挑战
+
+**① 专家负载不均（Expert Load Imbalance）**
+
+理想情况下 N 个专家应均匀分担流量，但实际推理时少数"热门专家"会被反复路由，导致：
+- 热门专家所在 GPU 排队，冷门 GPU 闲置
+- 整体延迟由最热 GPU 决定（木桶效应）
+
+**应对**：
+- 训练时：辅助损失（auxiliary loss）惩罚不均衡，DeepSeek-V3 采用**无辅助损失**的偏置项动态调整
+- 推理时：副本部署热门专家（Expert Replication）、动态再分配
+
+**② 跨 GPU 通信开销（Expert Parallelism）**
+
+大型 MoE 必须把专家切分到多卡，每个 Token 在路由后要 **All-to-All 通信**送到对应专家的 GPU：
+
+```
+Token Routing (Decode 阶段):
+  GPU 0 上的 Token → 被路由到 → GPU 5 上的 Expert 42
+  GPU 3 上的 Token → 被路由到 → GPU 0 上的 Expert 7
+  ...
+  → 每步 Decode 都触发 All-to-All，是 MoE 推理的主要延迟来源
+```
+
+**应对**：
+- **Expert Parallelism + Tensor Parallelism 混合切分**（DeepSpeed-MoE、SGLang）
+- 在节点内用 NVLink 减少跨节点流量
+- **MoE-aware Prefill/Decode 分离**：Prefill 阶段 Token 多易凑批，Decode 阶段单独优化
+
+**③ KV Cache 仍然是全量的**
+
+容易踩坑：MoE 只稀疏化了 FFN 层，**Attention 层和 KV Cache 不变**——所以 KV Cache 显存压力跟同等隐藏维度的 Dense 模型一样大。
+
+### MoE 工程化关键技术
+
+| 技术 | 解决问题 | 代表实现 |
+|------|---------|---------|
+| **Expert Parallelism (EP)** | 单卡装不下所有专家 | DeepSpeed-MoE、Megatron-LM |
+| **Expert Caching** | 冷门专家按需 swap 进显存 | Mixtral 本地部署、llama.cpp MoE |
+| **Speculative Routing** | 提前预测路由减少 All-to-All 等待 | 研究阶段 |
+| **Grouped Expert Layout** | 把常一起激活的专家放同一 GPU | DeepSeek-V3 部署经验 |
+| **MoE 量化** | FP8 量化专家权重，显存减半 | DeepSeek-V3 原生 FP8、vLLM 0.6+ |
+
+::: tip 💡 面试加分点
+
+能讲出 "MoE 模型推理时**算力像小模型，显存像大模型，通信开销远大于 Dense**" 这一句，就已经超出 80% 候选人。再补一句 DeepSeek-V3 用 FP8 + 无辅助损失负载均衡 + 多 Token 预测，整个面试官的眼睛会亮。
+
+:::
+
+---
+
+## 长上下文推理优化
+
+随着 128K-1M Token 上下文成为主流，长上下文推理出现了**与短文本完全不同**的瓶颈——Prefill 阶段的注意力计算和 KV Cache 显存。本节聚焦推理侧的优化技术（与长度外推训练侧的 RoPE/YaRN 区分，详见 [LLM 基础 — 长度外推](./llm-fundamentals#长度外推技术)）。
+
+### 长上下文的两个瓶颈
+
+| 阶段 | 主要瓶颈 | 数量级 |
+|------|---------|--------|
+| **Prefill（处理输入）** | 注意力 $O(n^2)$ 计算 | 100K Token 输入 ≈ 10× 短文本的 prefill 时间 |
+| **Decode（生成输出）** | KV Cache 显存读写带宽 | 100K Token 的 KV Cache 可达数十 GB |
+
+### 核心优化技术
+
+**① FlashAttention（必备基础）**
+
+把注意力计算重新组织为**分块流式**，所有中间矩阵不再实例化到 HBM，只在 SRAM 中运算：
+- 计算复杂度依然 $O(n^2)$，但**显存复杂度从 $O(n^2)$ 降到 $O(n)$**
+- 长上下文场景 prefill 提速 2-4×
+- 已是 PyTorch、vLLM、SGLang、TensorRT-LLM 的默认实现
+- 演进：FlashAttention-2（更好的并行）、FlashAttention-3（FP8 + Hopper 架构）
+
+**② Ring Attention（超长上下文必备）**
+
+当单卡装不下完整 KV Cache（如 1M Token）时，把 KV Cache **环形切分到多卡**，Q 在卡之间"绕环"逐段计算：
+
+```
+GPU 0: Q + KV[0:250K]
+GPU 1:     KV[250K:500K]   ← Q 旋转到 GPU 1 计算这段
+GPU 2:     KV[500K:750K]   ← Q 继续旋转
+GPU 3:     KV[750K:1M]
+```
+
+- 让上下文长度**线性扩展**（卡数翻倍 → 上下文翻倍）
+- 是 Gemini 1.5 Pro、Claude 长上下文背后的关键技术之一
+- 代表实现：Megatron-LM Context Parallelism、vLLM 长上下文模式
+
+**③ Chunked Prefill**
+
+把超长输入的 prefill **切成多个小块**，与其他请求的 decode 步**交替执行**：
+- 解决"长 prefill 阻塞所有 decode 请求"的尾延迟问题
+- vLLM、SGLang、TensorRT-LLM 已原生支持
+
+**④ Prefix Cache / KV Cache 复用**
+
+多个请求共享相同前缀（System Prompt、Few-shot、长文档）时，**KV Cache 只算一次跨请求复用**：
+- vLLM 的 Automatic Prefix Caching、SGLang 的 RadixAttention 是代表
+- 与 [Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)（API 层）配套，构成"前端缓存命中 + 后端 KV 复用"的完整链路
+
+**⑤ KV Cache 压缩 / 驱逐**
+
+超长对话中老 Token 价值递减，可主动丢弃或压缩：
+- **StreamingLLM**：保留 attention sink token（前几个）+ 滑动窗口
+- **H2O / SnapKV**：基于注意力分数动态淘汰
+- 适合无限长流式对话（如长期 Agent 会话）
+
+### 技术选型对照
+
+| 场景 | 推荐组合 |
+|------|---------|
+| **128K 以内、单卡部署** | FlashAttention-2/3 + PagedAttention + Prefix Cache |
+| **1M+ 上下文、多卡部署** | + Ring Attention / Context Parallelism |
+| **高并发长 prefill** | + Chunked Prefill |
+| **无限长流式 Agent** | + StreamingLLM 风格的 KV 驱逐 |
+
+---
+
 ## 推理框架对比
 
 | 框架 | 开发者 | 核心特性 | 适用场景 | 典型性能 |
