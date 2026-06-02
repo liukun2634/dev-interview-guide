@@ -593,6 +593,126 @@ function UserProfile({ id }: { id: number }) {
 | 跨层级 | Context API |
 | 全局复杂状态 | Redux / Zustand 等状态库 |
 
+### React Server Components (RSC) 与 Next.js 15
+
+React Server Components（RSC）是 **React 18.x / 19** 引入、**Next.js 13 App Router** 开始大规模生产化的核心范式变革。2025-2026 年前端面试**"什么是 RSC、它和 SSR 有什么区别"**是必问题。
+
+#### Server Component vs Client Component vs SSR
+
+| 维度 | 传统 Client Component | SSR（Server-Side Rendering）| **Server Component（RSC）** |
+|------|---------------------|--------------------------|-------------------------|
+| **运行位置** | 浏览器 | 服务端首次渲染 + 浏览器 hydration | **始终在服务端**（每次请求都跑）|
+| **JS 包含** | ✅ 打包到 bundle | ✅ 打包到 bundle | **❌ 零 JS 发到浏览器** |
+| **能用 hooks** | ✅ 全部 | ✅ 全部 | ❌（**无 useState/useEffect**）|
+| **能直接读数据库** | ❌（要经 API）| ❌ | **✅ 直接 SQL/ORM 调用** |
+| **能用 async/await** | ❌（要 hooks）| ❌ | **✅ 函数本身可以 async** |
+| **能保留交互状态** | ✅ | ✅（hydration 后）| ❌（每次重渲染）|
+
+```tsx
+// Server Component（默认）
+async function PostList() {
+  // 直接在组件里查数据库——无需 API Route
+  const posts = await db.post.findMany();
+  return <ul>{posts.map(p => <PostItem key={p.id} post={p} />)}</ul>;
+}
+
+// Client Component（需要 'use client' 显式声明）
+'use client';
+export function LikeButton({ postId }) {
+  const [liked, setLiked] = useState(false);  // ← 能用 hooks
+  return <button onClick={() => setLiked(!liked)}>{liked ? '❤️' : '🤍'}</button>;
+}
+```
+
+#### RSC 解决了什么
+
+| 痛点（传统 SSR + CSR）| RSC 怎么解 |
+|------------------|----------|
+| 客户端 bundle 越来越大（React 应用 200KB+ 起步）| 服务端组件不打包到 bundle |
+| 组件查数据要走 API 层（API → DB → API → UI）| **组件直接读数据库**，消除中间 API |
+| Waterfall 数据请求 | 服务端并行解决 |
+| 敏感数据（API Key、用户隐私）泄露风险 | **服务端代码永不发到浏览器** |
+| Hydration 慢 + 闪烁 | **Streaming + Partial Hydration** |
+
+#### Next.js 15 关键能力（2024-2025）
+
+| 能力 | 解决问题 | 用法 |
+|------|---------|------|
+| **App Router** | RSC 默认架构 | `app/` 目录、文件即路由 |
+| **Server Actions** | 表单提交无需手写 API | `'use server'` 标记函数，前端直接调 |
+| **Partial Pre-rendering（PPR）** | 静态壳 + 动态内容流式塞入 | 一个页面既能 CDN 缓存又有实时内容 |
+| **Turbopack**（Rust 写的打包器）| 替代 Webpack，dev 启动快 700× | `next dev --turbo` |
+| **`use cache` 指令** | 细粒度缓存控制 | 标记任意函数/组件结果可缓存 |
+| **Streaming + Suspense** | 首屏快、其他部分逐步流式渲染 | `<Suspense fallback={...}>` |
+
+#### Server Actions 实战
+
+替代了 99% 的 `useState + fetch + try/catch` 表单代码：
+
+```tsx
+// app/actions.ts
+'use server';
+export async function createPost(formData: FormData) {
+  const title = formData.get('title') as string;
+  await db.post.create({ data: { title } });
+  revalidatePath('/posts');     // 自动失效缓存
+}
+
+// app/page.tsx
+import { createPost } from './actions';
+
+export default function NewPostPage() {
+  return (
+    <form action={createPost}>          {/* ← 直接传 server function */}
+      <input name="title" />
+      <button>发布</button>
+    </form>
+  );
+}
+```
+
+::: tip 💡 面试加分点
+
+能讲清 **"Server Action 本质是 Next.js 帮你自动生成了 POST 端点 + 序列化 + 调用 + revalidate"** ——这个抽象层级的理解会让面试官觉得你跟得上前沿。
+
+:::
+
+#### RSC 边界规则（最常踩的坑）
+
+```
+Server Component ─可以引入→ Client Component （会被打包到 bundle）
+Client Component ─不能引入→ Server Component （编译报错）
+Client Component ─可以接收 RSC 渲染结果作为 children/props
+```
+
+错误示例（最常见）：
+
+```tsx
+// ❌ 错误：Client Component 不能直接 import Server Component
+'use client';
+import ServerThing from './server-thing';  // 编译报错
+
+// ✅ 正确：作为 children 传入
+'use client';
+export function Layout({ children }) {
+  return <div>{children}</div>;            // children 可以是任何东西
+}
+// 在 Server Component 中组合：<Layout><ServerThing /></Layout>
+```
+
+#### 何时**不**用 RSC
+
+| 场景 | 原因 |
+|------|------|
+| **纯静态站点** | Vite + 静态 SPA 更简单 |
+| **完全离线优先 PWA** | Service Worker 主导，服务端组件意义不大 |
+| **重度交互应用**（如 Figma、在线 IDE）| 几乎所有组件都是 Client，RSC 没有收益 |
+| **不想锁 Next.js 生态** | RSC 目前主要落地在 Next.js / Remix v3 |
+
+#### 面试黄金回答
+
+> **"RSC 是 React 把'查数据 + 渲染 HTML'下沉到服务端的范式，**核心收益是零 JS Bundle + 直接访问数据库 + 消除 API 中间层**。它和 SSR 的区别是 SSR 还需要 hydration（同一份代码跑两次），RSC 服务端代码永远不发到浏览器。Next.js 15 配合 Server Actions 和 Partial Pre-rendering 让 RSC 落地到生产，是 2025 年 React 项目的默认选择。"**
+
 ---
 
 ## 面试常问 & 怎么答

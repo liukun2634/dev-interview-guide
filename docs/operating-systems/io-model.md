@@ -265,6 +265,123 @@ Reactor 是基于 I/O 多路复用的事件驱动设计模式：用一个或多�
 
 ---
 
+## io_uring 深度解析
+
+`io_uring` 是 Linux 5.1（2019）引入的**异步 I/O 框架**，2023-2025 年已经从"前沿技术"变成**高并发后端面试必问**——尤其是数据库、网关、存储类岗位。
+
+### 为什么需要 io_uring？epoll 还不够吗？
+
+| 痛点（epoll）| 解决（io_uring）|
+|-----------|-------------|
+| 每次 I/O 操作都要系统调用 | **批量提交**，N 次操作一次 syscall |
+| 是 I/O 多路复用（**等待**就绪），不是真异步 | **真正异步**——内核完成读写后才通知 |
+| 磁盘 I/O 不能用 epoll | **统一覆盖**网络 + 磁盘 + 文件 |
+| read/write 仍要拷贝 | 配合 **`IORING_OP_*` + Registered Buffers** 减少拷贝 |
+| 每次都要进出内核态 | **SQPOLL 模式**：内核轮询 SQ，应用提交后无需 syscall |
+
+### SQ/CQ 双环形队列架构
+
+io_uring 的核心数据结构是**共享内存中的两个无锁环形队列**：
+
+```
+┌─────────────────────────────────────────────────┐
+│              用户态应用程序                       │
+│  写入 SQE             读取 CQE                   │
+│    ↓                    ↑                       │
+│  ┌──────┐  共享 mmap   ┌──────┐                 │
+│  │  SQ  │ ←──────────→ │  CQ  │                 │
+│  │ 提交 │              │ 完成 │                 │
+│  │ 队列 │              │ 队列 │                 │
+│  └──────┘              └──────┘                 │
+│    ↓                    ↑                       │
+└─────────────────────────────────────────────────┘
+       ↓                    ↑
+┌─────────────────────────────────────────────────┐
+│             Linux 内核                          │
+│  消费 SQE → 异步执行 I/O → 写入 CQE             │
+└─────────────────────────────────────────────────┘
+```
+
+- **SQE（Submission Queue Entry）**：应用提交的 I/O 请求（读 / 写 / accept / send 等 200+ 操作）
+- **CQE（Completion Queue Entry）**：内核完成后的结果
+- **共享内存**：避免 syscall 时数据拷贝
+- **无锁设计**：通过 head/tail 索引实现单生产者-单消费者无锁队列
+
+### 三大杀手特性
+
+#### ① Batched Submission：N 操作 1 次 syscall
+
+```c
+// 传统 epoll：100 个 read 需要 100 次系统调用
+for (int i = 0; i < 100; i++) read(fds[i], bufs[i], size);
+
+// io_uring：100 个 read 准备好后，1 次 io_uring_enter() 全部提交
+for (int i = 0; i < 100; i++) {
+    sqe = io_uring_get_sqe(ring);
+    io_uring_prep_read(sqe, fds[i], bufs[i], size, 0);
+}
+io_uring_submit(ring);   // 唯一一次 syscall
+```
+
+**收益**：syscall 从 100 次降到 1 次，对**高并发短连接场景**（如 API 网关）TPS 提升 30-100%。
+
+#### ② SQPOLL：内核轮询模式（零 syscall）
+
+启用 `IORING_SETUP_SQPOLL` 后内核会**自己轮询 SQ 队列**，应用只管往里写 SQE，**完全不需要 syscall**：
+
+```
+应用线程: 写 SQE → 写 SQE → 写 SQE   (用户态，纳秒级)
+                      ↓ (共享内存)
+内核线程: 轮询 SQ → 执行 I/O → 写 CQE  (始终在内核态)
+```
+
+**代价**：内核多一个常驻线程消耗 CPU（典型 ~50-100% 单核）。适合超高频 I/O 场景。
+
+#### ③ Registered Buffers / Files：消除重复注册
+
+`IORING_REGISTER_BUFFERS` 把用户态 buffer **预先注册到内核**，后续 I/O 直接复用，避免每次 read 都做 `get_user_pages()`：
+
+| 模式 | 单次 I/O 开销 | 适用 |
+|------|-------------|------|
+| 普通 io_uring | ~100ns | 通用 |
+| + Registered Buffers | ~50ns | 固定 buffer 池 |
+| + Registered Files | ~30ns | 长连接持久 fd |
+
+### io_uring vs epoll 决策表
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| **传统 Web 服务器**（C10K）| epoll 即可 | 成熟、跨内核版本兼容 |
+| **超高 QPS API 网关**（> 50w QPS）| io_uring + SQPOLL | syscall 是瓶颈 |
+| **数据库 / 存储系统** | **io_uring 必选** | 磁盘 I/O epoll 没法用 |
+| **需要支持 Linux < 5.1 / Windows** | epoll / IOCP | io_uring 仅 Linux 5.1+ |
+| **简单应用** | epoll | io_uring API 学习曲线陡 |
+
+### 生产案例
+
+| 项目 | 用法 | 收益 |
+|------|------|------|
+| **Cloudflare** | 边缘网关切 io_uring | TPS +40% |
+| **ScyllaDB** | 全栈 io_uring + SPDK | 比 Cassandra 快 10× |
+| **PostgreSQL 17** | 实验性 io_uring AIO | WAL 写入延迟下降 |
+| **Tokio**（Rust）| `tokio-uring` 运行时 | 文件 I/O 性能提升 |
+| **Netty** | `IOUringEventLoop`（实验）| Java 圈未来方向 |
+
+### Linux 6.x 关键演进
+
+- **6.0**：io_uring multishot（一次提交持续接受多个完成事件，如多次 accept）
+- **6.5**：BPF 集成、零拷贝 send/receive 标准化
+- **6.7+**：iowq 调度优化，缓解 SQPOLL CPU 占用
+- **2024 安全收紧**：默认禁用部分 op，云厂商按需开启
+
+### 面试黄金回答模板
+
+> **"epoll 是 I/O 多路复用——让你**等**很多 fd 就绪后**自己**去 read；io_uring 是真异步——你**告诉内核**要做什么，内核做完通过完成队列通知你。两者的核心差异是 SQ/CQ 双环形队列 + 共享内存 + 批量提交，把每次 I/O 的 syscall 开销从 ~1μs 降到 ~50ns。**
+> 
+> **在 50w+ QPS 的网关、数据库存储引擎、磁盘 I/O 这三类场景下 io_uring 不可替代；通用 Web 服务器 epoll 仍是默认选择。"**
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：select、poll、epoll 的区别？**

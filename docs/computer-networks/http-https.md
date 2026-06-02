@@ -160,6 +160,109 @@ Keep-Alive: timeout=5, max=100   # 空闲 5 秒关闭，最多复用 100 次
 
 **HTTP/2 不需要 Keep-Alive** — 多路复用本身就是一个连接处理所有请求。
 
+## gRPC：基于 HTTP/2 的高性能 RPC
+
+gRPC 是 Google 2015 年开源、基于 **HTTP/2 + Protobuf** 的 RPC 框架，已成为云原生时代**微服务间通信的事实标准**（K8s、Istio、etcd 全部基于 gRPC）。2025-2026 年面试中"为什么用 gRPC 而不是 REST"是必问题。
+
+### gRPC vs REST 核心区别
+
+| 维度 | REST / JSON over HTTP/1.1 | gRPC |
+|------|--------------------------|------|
+| **传输协议** | HTTP/1.1 | **HTTP/2**（多路复用）|
+| **序列化** | JSON（文本）| **Protobuf**（二进制，体积小 3-10×）|
+| **接口定义** | OpenAPI / 文档 | **`.proto` 文件**，强类型 |
+| **代码生成** | 部分（Swagger Codegen）| **全语言全栈自动生成** |
+| **流式** | 不支持（要 SSE/WebSocket 兜底）| **原生支持双向流** |
+| **浏览器直连** | ✅ 原生 | ❌（需 gRPC-Web 代理）|
+| **可读性** | 高（curl 即可调试）| 低（需 grpcurl / BloomRPC）|
+| **典型延迟** | 5-50ms | **1-10ms** |
+| **典型场景** | 浏览器 API、第三方开放 | **内部微服务、移动端、强类型场景** |
+
+### 四种 RPC 模式
+
+gRPC 把 HTTP/2 的流能力发挥到极致，提供 4 种调用模式：
+
+```protobuf
+service ChatService {
+  // 1. Unary：传统请求-响应（像 REST）
+  rpc SendMessage(MessageRequest) returns (MessageResponse);
+
+  // 2. Server Streaming：服务端流（订阅推送）
+  rpc Subscribe(SubscribeRequest) returns (stream Message);
+
+  // 3. Client Streaming：客户端流（批量上传）
+  rpc UploadLogs(stream LogEntry) returns (UploadResult);
+
+  // 4. Bidirectional Streaming：双向流（聊天 / 协作编辑）
+  rpc Chat(stream Message) returns (stream Message);
+}
+```
+
+| 模式 | 经典场景 |
+|------|---------|
+| **Unary** | 用户查询、订单创建（替代 REST）|
+| **Server Streaming** | 实时报价订阅、AI Token 流式输出 |
+| **Client Streaming** | 大文件分片上传、批量指标上报 |
+| **Bidirectional** | 实时聊天、协作编辑、Computer Use Agent 控制 |
+
+### 为什么 gRPC 快？三个底层原因
+
+#### ① HTTP/2 多路复用
+
+```
+HTTP/1.1：每个连接一次处理一个请求 → 100 并发要 100 连接
+HTTP/2：  一个连接多个并行流       → 100 并发只要 1 个连接
+```
+
+避免了反复 TCP/TLS 握手，减少 90%+ 连接建立开销。
+
+#### ② Protobuf 二进制序列化
+
+```
+JSON:     {"userId": 1234567890, "name": "alice"}  → ~40 字节
+Protobuf: <binary>                                 → ~12 字节（小 3×）
+```
+
+- 字段用 **tag number** 编码而非字符串
+- 变长整数（varint）压缩小数字
+- 无需 schema 推断 → 序列化/反序列化比 JSON 快 5-10×
+
+#### ③ HTTP/2 头部压缩（HPACK）
+
+请求头静态字典 + 动态字典 + 霍夫曼编码，重复请求的头部开销趋近于 0。
+
+### 服务发现与负载均衡（gRPC 特有）
+
+gRPC 默认是**长连接**，传统 4 层 LB（如 Nginx、ELB）会**只把所有流量打到一个后端**——这是面试高频陷阱。
+
+| 方案 | 原理 | 适用 |
+|------|------|------|
+| **客户端 LB**（gRPC 原生）| 客户端订阅 service registry，自己挑后端 | 微服务内部 |
+| **Proxy LB**（gRPC-aware）| Envoy / Istio 在 7 层解析 HTTP/2 流 | Service Mesh 场景 |
+| **Headless Service**（K8s）| DNS 返回所有 Pod IP，客户端自选 | K8s 部署 |
+| **xDS API**（gRPC + Envoy）| 控制面下发路由配置 | 大规模生产 |
+
+::: warning ⚠️ 别用 4 层 LB 直接挂 gRPC
+
+把 gRPC 服务放在 ELB / Nginx stream 模块后面 = 长连接 + 不均衡 = **单实例打爆**。必须用 Envoy / Istio / Spring Cloud LB 这类**理解 HTTP/2 的 7 层负载均衡**。
+
+:::
+
+### gRPC 的局限与权衡
+
+| 局限 | 影响 | 缓解 |
+|------|------|------|
+| **浏览器不能直连** | 前端调不到 | gRPC-Web + Envoy 转换；或前端用 GraphQL/REST，后端微服务间用 gRPC |
+| **调试不友好** | curl 调不通 | 用 grpcurl / Postman gRPC 模式 |
+| **跨语言团队学习曲线** | 需要全员懂 .proto | 配合 buf.build 做 schema 治理 |
+| **不利于公开 API** | 第三方接入门槛高 | 公开 API 用 REST，内部用 gRPC |
+
+### 一句话面试总结
+
+> **"gRPC = HTTP/2（多路复用 + 头部压缩）+ Protobuf（二进制紧凑）+ IDL（强类型代码生成）+ 双向流。它是内部微服务、移动端、AI 流式场景的最佳选择；浏览器开放 API 仍然用 REST。生产中最大的坑是用 4 层 LB 导致负载不均，必须用 Envoy 这类 7 层 gRPC-aware 代理。"**
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1: HTTP/1.1 和 HTTP/2 的区别？

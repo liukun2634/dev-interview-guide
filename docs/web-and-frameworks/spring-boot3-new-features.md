@@ -240,6 +240,144 @@ spring.mvc.problemdetails.enabled=true
 
 可以通过 @ExceptionHandler 返回 ProblemDetail 对象，实现统一且标准化的错误响应。
 
+## Spring AI（2024-2025 重磅新成员）
+
+Spring AI 是 Spring 官方在 2024 年正式 GA 的 AI 集成框架，**让 Java 后端能像调 JPA 一样调 LLM**。2025-2026 年 Java 后端面试**"你怎么在 Spring 里接 LLM？"** 已成为高频问题。
+
+### 为什么需要 Spring AI
+
+| 痛点（裸调 LLM SDK）| Spring AI 解决 |
+|------------------|-------------|
+| 切 OpenAI / Anthropic / DeepSeek 各家 SDK 不同 | **统一 `ChatClient` 抽象**，切模型改配置即可 |
+| RAG 要手写 Embedding + 向量库 + 检索 + Prompt 拼接 | **`VectorStore` + `RetrievalAugmentationAdvisor` 一行接入** |
+| Function Calling 各家协议不同 | **`@Tool` 注解 + 自动注册**，跟 `@RestController` 一样 |
+| 流式输出要手写 SSE | **`Flux<ChatResponse>` 原生集成 WebFlux** |
+| Prompt 模板散落代码各处 | **`PromptTemplate` + 资源文件管理** |
+
+### 核心抽象
+
+```
+┌─────────────────────────────────────────┐
+│         ChatClient（统一入口）            │
+│  .prompt().user("Hello").call().content() │
+└─────────────────────────────────────────┘
+            │
+   ┌────────┼────────┬────────┐
+   ↓        ↓        ↓        ↓
+┌──────┐┌──────┐┌──────┐┌──────┐
+│OpenAI││Claude││DeepSk││Ollama│ ← 切换只改 application.yml
+└──────┘└──────┘└──────┘└──────┘
+            │
+   ┌────────┼────────┬─────────┐
+   ↓        ↓        ↓         ↓
+┌────────┐┌──────────┐┌──────────┐┌──────────┐
+│Embedding││VectorStor││ChatMemory││ToolCallba│
+│  Model  ││ (RAG)    ││ (历史)   ││ck (函数) │
+└────────┘└──────────┘└──────────┘└──────────┘
+```
+
+### 最小示例
+
+```yaml
+# application.yml — 切模型只改这里
+spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+```
+
+```java
+@RestController
+@RequiredArgsConstructor
+public class ChatController {
+    private final ChatClient chatClient;  // 自动注入
+
+    @GetMapping("/chat")
+    public String chat(@RequestParam String message) {
+        return chatClient.prompt()
+                .user(message)
+                .call()
+                .content();
+    }
+
+    // 流式 SSE
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> stream(@RequestParam String message) {
+        return chatClient.prompt()
+                .user(message)
+                .stream()
+                .content();
+    }
+}
+```
+
+### RAG 一行接入
+
+```java
+@Bean
+ChatClient chatClient(ChatClient.Builder builder,
+                     VectorStore vectorStore) {
+    return builder
+        .defaultAdvisors(
+            // 自动从 vectorStore 检索 → 注入到 Prompt → 调 LLM
+            new QuestionAnswerAdvisor(vectorStore, SearchRequest.builder().topK(5).build())
+        )
+        .build();
+}
+```
+
+**业务方调用没有任何变化**，但每次请求会自动检索向量库 + 注入上下文——这就是 Spring AI 抽象的威力。
+
+### Tool Calling（@Tool 注解）
+
+```java
+@Service
+public class OrderTools {
+    @Tool(description = "查询订单状态")
+    public String getOrderStatus(@ToolParam(description = "订单 ID") String orderId) {
+        return orderService.findById(orderId).getStatus();
+    }
+}
+
+// 注册到 ChatClient
+String response = chatClient.prompt()
+        .user("帮我查订单 ORD-123 的状态")
+        .tools(orderTools)        // ← LLM 自动决定何时调用
+        .call()
+        .content();
+```
+
+LLM 会自动识别"查订单状态"意图 → 解析参数 → 调用方法 → 把结果整合进回答。**完全没有手写 if/else 派发**。
+
+### Spring AI vs LangChain4j 对比
+
+2025 年 Java 圈两大 AI 框架的取舍：
+
+| 维度 | **Spring AI** | LangChain4j |
+|------|--------------|-------------|
+| **背景** | Spring 官方 | 社区，借鉴 Python LangChain |
+| **生态融合** | 与 Spring Boot/Cloud 深度集成 | 独立框架，可在任何 Java 项目 |
+| **学习曲线** | 低（Spring 用户秒上手）| 中（独立的 API 风格）|
+| **抽象成熟度** | 简洁、Spring 风格 | 概念多（Chain、Agent、Memory 完整移植 LangChain）|
+| **适合** | **Spring Boot 项目首选** | 非 Spring 项目、需要复杂 Chain 编排 |
+
+### 何时不用 Spring AI 直接裸调 SDK
+
+| 场景 | 原因 |
+|------|------|
+| **超高性能需求**（每毫秒延迟敏感）| Spring AI 多一层抽象，~1-2ms 开销 |
+| **使用框架未支持的新特性** | 等 Spring AI 跟进可能要数月 |
+| **极简一次性脚本** | 引入整套 Spring AI 太重 |
+
+### 面试黄金回答
+
+> **"Spring AI 是 2024 GA 的官方 AI 框架，核心抽象是 ChatClient + VectorStore + ToolCallback，让 Java 后端接 LLM 像写 @RestController 一样自然。**关键价值是统一了 OpenAI / Claude / DeepSeek 的差异、把 RAG 抽象成一个 Advisor、Tool Calling 用 @Tool 注解自动注册**。Spring Boot 项目我会用 Spring AI；如果是非 Spring 项目或需要复杂的 Agent 编排，会选 LangChain4j。"**
+
+详见 [AI 技术 — RAG](../ai-technology/rag) 和 [AI Agent](../ai-technology/ai-agents)。
+
 ## 面试常问 & 怎么答
 
 ### Q1: Spring Boot 3 有哪些重大变化？
