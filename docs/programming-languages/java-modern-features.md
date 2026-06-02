@@ -383,6 +383,131 @@ String classify(Object obj) {
 
 ---
 
+### 8. JDK 22 ~ 25 新进展（2024-2025）
+
+JDK 21（2023）是 LTS，2025 年 9 月 JDK 25 也是 LTS。**JDK 22-25 的主要进展集中在三条线**：稳定 Loom 后续特性、推进 Project Panama（本地互操作）、收尾 Project Valhalla（值类型）。
+
+#### 关键 JEP 速查
+
+| JEP | 版本 | 主题 | 状态 | 面试影响 |
+|-----|------|------|------|---------|
+| **JEP 423: Region Pinning for G1** | 22 | G1 GC 区域钉住 | Final | JNI 调用期间不阻塞 GC |
+| **JEP 454: Foreign Function & Memory API** | 22 | Panama 本地调用 | **Final** | 替代 JNI 的现代方案，零拷贝调本地库 |
+| **JEP 459: String Templates (Preview)** | 22 | 字符串模板 | Preview | 类似 Kotlin 的 `"$name"` 语法 |
+| **JEP 467: Markdown Documentation Comments** | 23 | Javadoc 支持 Markdown | Final | 文档体验大幅改善 |
+| **JEP 469: Vector API (8th incubator)** | 23 | SIMD 向量计算 | 继续孵化 | AI/数据处理性能 5-10× |
+| **JEP 471: Deprecate `Unsafe` Memory-Access** | 23 | 弃用 Unsafe 内存操作 | Deprecation | 鼓励迁移到 Panama / VarHandle |
+| **JEP 480: Structured Concurrency** | 24 | 结构化并发 | 4th Preview | 虚拟线程时代的并发管理 |
+| **JEP 481: Scoped Values** | 24 | 作用域值 | 3rd Preview | ThreadLocal 的现代替代 |
+| **JEP 491: Synchronize Virtual Threads without Pinning** | 24 | 虚拟线程 `synchronized` 不再 Pin | Final | **重要**：解决虚拟线程最大坑 |
+| **JEP 503: Remove 32-bit x86 Port** | 25 | 移除 32 位 x86 | Final | 64 位才是唯一选择 |
+
+#### JEP 491：虚拟线程的"坑王"被修了
+
+Java 21 推出虚拟线程时，**`synchronized` 块内不能挂起**（被称为 Pinning 问题）——会回退到平台线程，让性能优势消失。**JDK 24 彻底修复**：
+
+```java
+// JDK 21: synchronized 内 sleep 会 Pin
+synchronized (lock) {
+    Thread.sleep(1000);  // Pin 平台线程！
+}
+
+// JDK 24+: synchronized 内挂起不再 Pin
+synchronized (lock) {
+    Thread.sleep(1000);  // 虚拟线程正常挂起、释放载体线程
+}
+```
+
+**面试要点**：能讲出"JDK 21 虚拟线程有 synchronized Pinning 坑，JDK 24 已彻底解决"——是了解最新动态的强信号。
+
+#### Structured Concurrency 一图看懂
+
+结构化并发让"父任务等所有子任务"变得**和 try-with-resources 一样自然**：
+
+```java
+// 传统：手动管理 Future + 异常处理 + 取消
+try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+    Future<User>   user  = scope.fork(() -> fetchUser(id));
+    Future<Order>  order = scope.fork(() -> fetchOrder(id));
+    scope.join();             // 等所有子任务
+    scope.throwIfFailed();    // 任一失败抛出
+    return new Profile(user.resultNow(), order.resultNow());
+}
+// 离开 scope 自动取消未完成任务，避免泄漏
+```
+
+---
+
+### 9. JVM GC 演进：ZGC vs G1 vs Generational ZGC
+
+**2024-2025 年 GC 面试三件套**：G1（默认）、ZGC（低延迟新王）、Generational ZGC（JDK 21 新增分代版本）。
+
+#### 三种 GC 详细对比
+
+| 维度 | G1 GC（默认）| ZGC（JDK 15+）| Generational ZGC（JDK 21+）|
+|------|------------|--------------|-------------------------|
+| **设计目标** | 平衡吞吐 + 延迟 | **超低延迟**（< 10ms）| 低延迟 + 接近 G1 的吞吐 |
+| **暂停时间** | 100-500ms | **< 10ms**（< 1ms 常见）| < 10ms |
+| **堆大小支持** | < 32GB 友好 | **TB 级** | TB 级 |
+| **是否分代** | ✅ | ❌（JDK 21 前）| **✅** |
+| **吞吐损失** | 基准 | -10-15% | -5% |
+| **使用阶段** | 通用首选、堆 < 16GB | 大堆 + 严苛延迟 | **2024 起新通用首选** |
+| **关键技术** | Region + Remember Set + SATB | **Colored Pointers + Load Barrier** | + 分代回收 |
+
+#### 关键选型决策
+
+```mermaid
+graph TD
+    A["堆大小？"] --> B{"< 8GB"}
+    A --> C{"8-32GB"}
+    A --> D{"> 32GB"}
+    B --> E["G1 默认参数即可"]
+    C --> F{"对延迟敏感？"}
+    F -->|是| G["Generational ZGC（JDK 21+）"]
+    F -->|否| H["G1"]
+    D --> I["Generational ZGC 必选"]
+```
+
+#### ZGC 为什么这么快？
+
+ZGC 实现 < 10ms 暂停的**核心两招**：
+
+1. **Colored Pointers（染色指针）**：把对象状态信息存在指针的高位 bit 中，标记和重定位**无需 stop-the-world**
+2. **Load Barrier（加载屏障）**：每次读对象引用时 JVM 插入检查代码，自动处理"未完成搬移"的指针
+
+```
+对象访问流程:
+  代码: Object o = a.field;
+  ↓ JVM 自动插入
+  Load Barrier 检查: 这个指针有没有过期/正在移动？
+    ↓ 有 → 修正指针，让访问透明
+    ↓ 没 → 直接访问
+```
+
+#### 生产推荐配置（2025）
+
+```bash
+# 现代后端服务（Spring Boot 应用，堆 16GB）
+java -XX:+UseZGC -XX:+ZGenerational \
+     -Xms16g -Xmx16g \
+     -XX:+UnlockExperimentalVMOptions \
+     -jar app.jar
+
+# 大数据计算（堆 128GB+）
+java -XX:+UseZGC -XX:+ZGenerational \
+     -Xms128g -Xmx128g \
+     -XX:SoftMaxHeapSize=100g \
+     -jar app.jar
+```
+
+::: tip 💡 面试加分点
+
+能说出 **"JDK 21 引入 Generational ZGC，把 ZGC 的低延迟和 G1 的分代效率结合，已成为新版本的通用首选；JDK 24 又解决了虚拟线程 synchronized Pinning 的问题"**，立刻显示是在持续跟进 Java 现代化的工程师。
+
+:::
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：Stream 的 `map` 和 `flatMap` 有什么区别？**

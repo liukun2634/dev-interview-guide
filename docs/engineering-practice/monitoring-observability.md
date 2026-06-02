@@ -258,6 +258,179 @@ filter {
 
 ---
 
+## OpenTelemetry 深度
+
+OpenTelemetry（OTel）是 CNCF 顶级项目，2024-2025 年已经成为**可观测领域的事实标准**——统一了 Logs / Metrics / Traces 三大支柱的采集协议。
+
+### 为什么需要 OTel
+
+| 痛点（没 OTel）| 解决（有 OTel）|
+|------------|------------|
+| 接 Datadog 改一套 SDK，接 New Relic 又改一套 | **一次埋点，多后端导出**（OTLP 协议）|
+| Logs/Metrics/Traces 数据孤岛 | 三支柱**共享 TraceID/SpanID** 自动关联 |
+| 跨语言、跨服务的链路追踪格式不统一 | **W3C TraceContext** 标准化跨服务传递 |
+| Java 应用必须改代码加埋点 | **Java Auto-Instrumentation Agent** 零代码侵入 |
+
+### 核心组件
+
+```
+┌──────────────────────────────────────────┐
+│  应用 (业务代码 + OTel SDK)               │
+│  ├── Tracer / Meter / Logger              │
+│  └── Auto-Instrumentation Agent           │
+└──────────────────────────────────────────┘
+                  ↓ OTLP (gRPC/HTTP)
+┌──────────────────────────────────────────┐
+│  OTel Collector（可独立部署）              │
+│  ├── Receivers: 接收 OTLP / Prometheus    │
+│  ├── Processors: 过滤 / 采样 / 批处理     │
+│  └── Exporters: 推送给 Backend            │
+└──────────────────────────────────────────┘
+                  ↓
+   ┌──────────┐ ┌──────────┐ ┌──────────┐
+   │ Jaeger   │ │Prometheus│ │ Datadog  │
+   └──────────┘ └──────────┘ └──────────┘
+```
+
+### Trace Propagation：跨服务如何串起来
+
+Trace 能跨服务关联的关键是**Context 通过 HTTP Header 自动传播**。W3C TraceContext 标准定义了两个 Header：
+
+```http
+GET /api/order HTTP/1.1
+traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+            ↑ ver  ↑ trace-id (16 字节)            ↑ span-id     ↑ flags
+tracestate: rojo=00f067aa0ba902b7,congo=t61rcWkgMzE
+```
+
+- **traceparent**：标识当前请求所在的 trace / span（必传）
+- **tracestate**：厂商扩展信息，用于把不同厂商的 Trace 系统连起来
+
+::: tip 💡 面试加分点
+
+能说出**"OTel 用 W3C TraceContext 取代 Zipkin B3 / Jaeger uber-trace-id，成为跨厂商兼容的标准"**——这是了解 2024-2025 趋势的信号。Spring Boot 3 / Spring Cloud 2024 已默认使用 W3C 格式。
+
+:::
+
+### Baggage：跨服务传透的业务数据
+
+Baggage 是和 TraceContext 平行的另一个 Header，用于把**业务上下文**（如 userId、tenantId、experimentId）一路透传到所有下游服务：
+
+```http
+baggage: userId=u12345,tenantId=acme,experimentGroup=B
+```
+
+**典型用途**：
+- **A/B 测试**：用户落在哪个实验组，整条链路都能看到
+- **多租户**：把 tenantId 传到 DB 调用做行级隔离
+- **业务染色**：在日志/Trace 里按业务维度过滤
+
+::: warning ⚠️ Baggage 不是免费的
+
+Baggage 默认会**附加到所有出向 HTTP 请求**——一个 50 字段的 Baggage 会让每个请求多 1-2KB。生产中要明示**白名单**字段，避免无脑全传。
+
+:::
+
+### 采样策略（生产必懂）
+
+100% 全采集会让 Trace 存储成本爆炸（一个中型服务一天能产生 TB 级 Trace）。OTel 支持三种采样策略：
+
+| 策略 | 时机 | 优势 | 局限 |
+|------|------|------|------|
+| **Head-based**（头部采样）| Trace 起点决定 | 简单、零开销 | 慢请求/异常无法保证采到 |
+| **Tail-based**（尾部采样）| Span 全收完后决定 | 能精准采"慢请求/错误请求"| Collector 需缓存全 Trace |
+| **Probabilistic**（概率采样）| 固定百分比 | 实现最简 | 关键 Trace 可能漏 |
+
+**生产推荐**：**头部低采样率（1-5%）+ 尾部规则补充（错误必采、慢请求必采、特定用户必采）**——Datadog / Honeycomb / Tempo 都这么做。
+
+### Java Auto-Instrumentation 零代码接入
+
+OTel Java Agent 通过 Bytecode Instrumentation **不改一行代码**就能采集 Spring、JDBC、HTTP Client、Kafka 等 100+ 库的 Trace：
+
+```bash
+java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.service.name=order-service \
+     -Dotel.exporter.otlp.endpoint=http://collector:4317 \
+     -jar app.jar
+```
+
+**何时还需要手动埋点**：业务关键节点（核心算法步骤、关键状态机切换）—— Auto 只采集框架边界，业务内部需要 `Tracer.spanBuilder("step-name").startSpan()` 手工补充。
+
+---
+
+## SRE 实践：Error Budget / Runbook / 复盘
+
+可观测性的终极目标不是看监控，而是**用数据驱动可靠性决策**。SRE（Site Reliability Engineering）把这套方法论体系化了。
+
+### Error Budget 驱动发布节奏
+
+错误预算 = `1 - SLO`，是 SRE 最核心的"预算管理"工具：
+
+```
+月度 SLO 99.9% (可用性)
+→ Error Budget = 0.1% = 43.2 分钟 不可用 / 月
+
+预算用法:
+  剩余 > 50% → 大胆发版、做实验
+  剩余 20-50% → 正常发版、加强 Review
+  剩余 < 20% → 冻结 risky 变更，只允许修复
+  剩余 < 0%  → 冻结所有发版直到下月，全员复盘
+```
+
+::: tip 💡 SRE 黄金一句
+
+> **"如果团队从不烧光 Error Budget，说明 SLO 设高了（过度浪费可靠性）；如果总是烧光，说明 SLO 设低了或工程能力不足。"**
+
+:::
+
+### 四大黄金信号 vs 用户视角 SLI
+
+Google SRE 提出的"四大黄金信号"（Latency / Traffic / Errors / Saturation）是**服务端视角**——关注实例健康。真正能衡量"用户感受"的是**用户视角 SLI**：
+
+| 视角 | 例子 | 谁会看 |
+|------|------|--------|
+| **服务端 SLI** | 实例 P99 延迟、CPU 使用率 | 运维 / 平台团队 |
+| **用户视角 SLI** | 用户首屏时间、订单创建成功率 | 业务方 / 产品 |
+| **业务 SLI** | 每分钟成交单量、支付成功率 | 老板 / 财务 |
+
+**生产建议**：SLO 定在**用户视角 SLI**而非服务端 SLI——服务端 99.99% 但用户首屏 5 秒，业务依然是失败的。
+
+### Runbook（运维手册）
+
+Runbook 是把"故障处理经验"固化为**可执行步骤**的文档。一个好 Runbook 应包含：
+
+```
+1. 触发条件: 告警名称 / 表现
+2. 影响范围: 哪些用户/业务受影响
+3. 严重程度: P0-P3 分级
+4. 诊断步骤: 看哪几个面板、查哪几条日志
+5. 缓解步骤: 紧急止血操作（限流、回滚、切流）
+6. 根因排查: 进阶分析步骤
+7. 升级路径: 什么情况通知谁
+8. 历史记录: 类似故障的过往复盘链接
+```
+
+**演进方向**：从 Markdown → 半自动化（一键执行的脚本）→ **完全自动化**（AIOps + LLM Agent 自动诊断 + 修复）。2025-2026 年这是 SRE 岗位的新热点：**用 LLM 把 Runbook 变成 Agent 的 Skill**。
+
+### 事故复盘（Postmortem）
+
+SRE 文化的核心：**Blameless Postmortem（无责复盘）**。
+
+| 错误的复盘 | 正确的复盘 |
+|----------|----------|
+| "张三 push 错代码导致故障" | "缺少 Pre-commit Hook 拦截这类错误" |
+| 关注**谁错了** | 关注**系统/流程为何让人能犯错** |
+| 让人不敢承担 | 让人愿意分享真实信息 |
+
+**复盘模板必含**（参考 Google SRE Book）：
+1. **时间线**：精确到分钟，每个动作 + 影响
+2. **根因（5 Why）**：连续问 5 个为什么直到结构性原因
+3. **影响评估**：业务损失（金额/用户数）+ Error Budget 消耗
+4. **What went well / wrong**：避免只盯坏的
+5. **Action Items**：每条带 Owner + Deadline + Issue 链接
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q：可观测性三大支柱是什么？各自的适用场景？**

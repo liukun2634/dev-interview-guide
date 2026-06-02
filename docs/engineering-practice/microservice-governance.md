@@ -197,6 +197,151 @@ public Order getOrderWithRetry(Long id) {
 
 ---
 
+## Service Mesh 与 Istio
+
+Service Mesh 是 2025-2026 年大厂微服务架构面试的**必考主题**。它解决了"治理能力散落在每个业务代码里"的痛点——把熔断、限流、重试、灰度等全部下沉到**基础设施层**。
+
+### 核心思想：Sidecar 模式
+
+```
+┌─────────────────────────────────────────┐
+│         传统（治理在 SDK 里）             │
+│  [Spring Cloud SDK] ←嵌入业务代码         │
+│  熔断/重试/链路追踪/服务发现 = 业务包      │
+│  升级 SDK = 全公司升级                    │
+└─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│      Service Mesh（治理在 Sidecar）       │
+│  ┌──────┐    拦截    ┌─────────┐         │
+│  │业务 A│ ←────────→ │ Envoy A │         │
+│  └──────┘            └─────────┘         │
+│      ↓ 业务零感知       ↓                │
+│  ┌─────────┐         ┌─────────┐         │
+│  │ Envoy B │ ←────── │业务 B   │         │
+│  └─────────┘         └─────────┘         │
+│  治理逻辑在 sidecar  ↑ 业务包零依赖       │
+└─────────────────────────────────────────┘
+```
+
+### Istio 架构（控制面 + 数据面）
+
+```
+┌──────────────────────────────────────┐
+│         控制面（Control Plane）        │
+│  ┌─────────────────────────────────┐ │
+│  │  Istiod                          │ │
+│  │  ├── Pilot:   下发路由/流量规则   │ │
+│  │  ├── Citadel: 证书签发（mTLS）   │ │
+│  │  └── Galley:  配置校验           │ │
+│  └─────────────────────────────────┘ │
+└──────────────────────────────────────┘
+           ↓ xDS 协议
+┌──────────────────────────────────────┐
+│       数据面（Data Plane）            │
+│  ┌────────┐ ┌────────┐ ┌────────┐   │
+│  │Envoy A │ │Envoy B │ │Envoy C │   │
+│  └────────┘ └────────┘ └────────┘   │
+└──────────────────────────────────────┘
+```
+
+### Istio 核心 CRD（面试必背）
+
+| CRD | 作用 | 一句话理解 |
+|-----|------|----------|
+| **VirtualService** | 流量路由规则 | "什么流量去哪个版本"（按 header / weight / path 路由）|
+| **DestinationRule** | 目标服务策略 | "到了这个服务后，怎么连接/负载均衡/熔断" |
+| **Gateway** | 入口流量配置 | 集群入口的"南北向"流量配置 |
+| **ServiceEntry** | 外部服务接入 | 把外部服务（如 RDS、SaaS API）纳入 Mesh 管理 |
+| **PeerAuthentication** | mTLS 策略 | 强制服务间双向 TLS |
+| **AuthorizationPolicy** | 访问控制 | 谁能调用谁，类似 RBAC |
+
+### 实战配置示例
+
+#### 灰度发布（按 Header + 按 Weight）
+
+```yaml
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: orders
+spec:
+  hosts: [orders.default.svc.cluster.local]
+  http:
+  # 规则 1：带特定 header 的灰度用户 → v2
+  - match:
+    - headers:
+        x-user-type:
+          exact: beta
+    route:
+    - destination: { host: orders, subset: v2 }
+  # 规则 2：剩余流量 90/10 切流
+  - route:
+    - destination: { host: orders, subset: v1 }
+      weight: 90
+    - destination: { host: orders, subset: v2 }
+      weight: 10
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: orders
+spec:
+  host: orders
+  trafficPolicy:
+    connectionPool:
+      tcp: { maxConnections: 100 }
+      http: { http2MaxRequests: 1000 }
+    outlierDetection:        # 熔断
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+  subsets:
+  - name: v1
+    labels: { version: v1 }
+  - name: v2
+    labels: { version: v2 }
+```
+
+### Service Mesh vs Spring Cloud
+
+这是 2025 年最常被追问的对比：
+
+| 维度 | Spring Cloud | Service Mesh（Istio）|
+|------|-------------|---------------------|
+| **治理位置** | 业务代码（SDK 嵌入）| Sidecar（业务无感知）|
+| **多语言支持** | 主要 Java | **全语言**（任何语言都享受治理）|
+| **升级成本** | 全公司升级 SDK | 升 Envoy/Istio，业务无感 |
+| **运行时开销** | 进程内调用，零额外 | **+2-5ms 延迟**（Sidecar 跳两次）|
+| **学习曲线** | 中（Java 程序员熟悉）| 高（需懂 K8s + Envoy + xDS）|
+| **运维门槛** | 中 | **高**（Istiod 自身就是个分布式系统）|
+| **典型选型** | Java 单语言、中小团队 | 多语言、规模化、K8s 重度用户 |
+
+### 何时不该上 Istio
+
+::: warning ⚠️ 别为了 "云原生" 而 Service Mesh
+
+**不该上的信号**：
+- 服务数 < 30，且都是 Java
+- 团队没专职 SRE/Platform 工程师
+- 业务对延迟敏感（每请求 +2-5ms 不可接受）
+- 已用 Spring Cloud 多年，治理体系已成熟
+
+**渐进路线**：从 **Spring Cloud → 边缘网关（Higress / Apache APISIX）→ Istio Ambient Mode（无 Sidecar 模式）→ 完整 Istio**，每一步都拿到价值。
+
+:::
+
+### Sidecar Mode vs Ambient Mode（2024 新趋势）
+
+| 模式 | 部署 | 优势 | 局限 |
+|------|------|------|------|
+| **Sidecar Mode**（传统）| 每个 Pod 注入 Envoy | 隔离强、规则细 | 资源开销大、启动慢 |
+| **Ambient Mode**（2024 GA）| 节点级 ztunnel + 命名空间 Waypoint | 资源减半、平滑接入 | 部分高级功能仍演进中 |
+
+**面试加分点**：能说出"Istio 2024 推出的 Ambient Mode 用节点级代理替代 Sidecar，把资源开销降低 50%+"——这是了解前沿动态的信号。
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q：四种限流算法的区别和适用场景？**
