@@ -186,6 +186,117 @@ Hash 取模分片时，从 N 个分片扩容到 M 个分片，路由规则变化
 
 ---
 
+## 分布式数据库 vs 分库分表
+
+2024-2025 年起，**"分库分表 vs 直接上分布式数据库"** 已成为面试高频追问。两条路线本质区别在于：**分库分表把分片复杂度推给应用层**，**分布式数据库把这复杂度封装在引擎内**。
+
+### 决策路线图
+
+```mermaid
+graph TD
+    Q["数据量增长压垮单机？"] --> A{"是否能停机切迁?"}
+    A -->|不能停机| B{"是否需要全 SQL/事务?"}
+    A -->|能| B2["分库分表<br/>(ShardingSphere / Vitess)"]
+    B -->|需要| C["NewSQL<br/>(TiDB / OceanBase / CockroachDB)"]
+    B -->|可妥协| D{"主要场景?"}
+    D -->|读多写少| E["云原生 MySQL<br/>(PolarDB / Aurora)"]
+    D -->|HTAP 混合| F["TiDB / OceanBase"]
+    D -->|纯分析| G["Doris / ClickHouse"]
+```
+
+### 主流分布式数据库对比
+
+| 维度 | TiDB | OceanBase | PolarDB-X | CockroachDB | Vitess |
+|------|------|-----------|-----------|-------------|--------|
+| **架构** | 计算/存储分离<br/>(TiDB + TiKV + PD) | Shared-Nothing<br/>(OBServer 多副本)| 计算/存储分离<br/>(GMS + CN + DN) | Shared-Nothing<br/>(Raft 多副本) | MySQL 集群代理 |
+| **协议兼容** | MySQL | MySQL + Oracle 部分 | MySQL | PostgreSQL | MySQL |
+| **强一致性** | Raft（TiKV）| Paxos | Paxos | Raft | 依赖 MySQL 复制 |
+| **HTAP** | ✅（TiFlash 列存）| ✅（OBCDC）| ✅（HTAP 节点）| ❌（重 OLTP）| ❌ |
+| **分布式事务** | 2PC + Percolator | Paxos + 2PC | 2PC | 2PC + 时序 | XA |
+| **典型规模** | 千节点级 | 万级（蚂蚁双 11）| 万级（阿里）| 百节点级 | 万级（YouTube/Slack）|
+| **国产化要求** | 国产可选 | **强（金融国产化首选）**| **强（阿里云生态）**| 否 | 否 |
+
+### 选型建议（一句话定位）
+
+- **TiDB**：MySQL 协议 + HTAP，**通用首选**，社区活跃；适合从 MySQL 平滑迁移、需要在线分析能力
+- **OceanBase**：金融级强一致、抗 IDC 故障，**蚂蚁/银行国产化首选**
+- **PolarDB-X**：阿里云生态强绑定，**云上 MySQL 平滑扩展**
+- **CockroachDB**：PostgreSQL 兼容、跨地域多活，**海外 SaaS 常用**
+- **Vitess**：YouTube/Slack/Shopify 用，**纯分片代理**，适合规模到亿级 QPS 的 MySQL 集群
+
+### 何时**不**应该上分布式数据库
+
+| 场景 | 原因 | 替代方案 |
+|------|------|---------|
+| 数据 < 1 TB | 杀鸡用牛刀，运维成本远超收益 | 单机 + 读写分离 |
+| 强 RDBMS 特性依赖（触发器、复杂存储过程）| 多数 NewSQL 兼容度有限 | 云原生 MySQL（PolarDB / Aurora）|
+| 团队无 DBA / SRE | 分布式 DB 运维门槛远高于单机 | 托管版（TiDB Cloud / OceanBase Cloud）|
+
+::: tip 💡 面试加分点
+
+能讲出 **"分库分表是用应用复杂度换数据库可用性，分布式数据库是用引擎复杂度换应用简单性"**，再补一句 **"TiDB 适合 HTAP、OceanBase 强在金融国产化、PolarDB-X 是云上首选"**，几乎能拿到这道题满分。
+
+:::
+
+---
+
+## CDC（Change Data Capture）
+
+CDC 是 2025 年数据架构的**基础设施级技术**——把数据库的变更（INSERT/UPDATE/DELETE）实时同步到下游（搜索引擎、数据湖、缓存、其他数据库）。**几乎所有大厂面试系统设计题都会涉及 CDC**。
+
+### 三种实现机制
+
+```
+┌──────────────┬───────────────────────────────────┬────────────┐
+│ 机制         │ 原理                              │ 实时性     │
+├──────────────┼───────────────────────────────────┼────────────┤
+│ 查询型 CDC   │ 定时 SELECT WHERE updated_at>?    │ 分钟级     │
+│ 触发器型 CDC │ 表上写 trigger 把变更写到影子表   │ 秒级，侵入 │
+│ 日志型 CDC   │ 解析 binlog / WAL / redo log      │ 毫秒级，标准│
+└──────────────┴───────────────────────────────────┴────────────┘
+```
+
+**生产几乎都用日志型**（MySQL binlog、PostgreSQL WAL、Oracle Redo），因为**零侵入、性能影响 < 5%、能拿到完整 before/after 镜像**。
+
+### 主流 CDC 工具对比
+
+| 工具 | 实现 | 适用 | 优势 | 局限 |
+|------|------|------|------|------|
+| **Debezium** | binlog/WAL → Kafka Connect | Kafka 生态 | 社区最活跃、支持多源 DB | 部署较重（依赖 Kafka）|
+| **Flink CDC** | 基于 Debezium，Flink 内置 | Flink 数仓 | 流批一体、SQL 操作 | Flink 学习曲线 |
+| **Canal** | 模拟 MySQL Slave 拉 binlog | 阿里系 | 中文文档好、阿里生产验证 | 主要支持 MySQL |
+| **Maxwell** | binlog → JSON 输出 | 轻量场景 | 配置极简 | 功能少、社区弱 |
+| **AWS DMS** | 托管 CDC 服务 | AWS 上云 | 零运维 | 跨云锁定 |
+
+### 典型应用场景
+
+1. **MySQL → Elasticsearch**：商品/订单数据实时同步到搜索引擎
+2. **MySQL → 数据湖（Iceberg/Hudi）**：T+0 数仓建设
+3. **MySQL → Redis**：缓存失效（订阅删除事件直接 DEL）
+4. **MySQL → MySQL**：异地多活、灾备
+5. **MySQL → Kafka → 多下游**：解耦扇出（同一份变更喂给搜索/数仓/风控）
+
+### CDC 的三个隐藏坑（生产踩过）
+
+::: warning ⚠️ CDC 不是"启动即正确"
+
+**坑 1：初始全量怎么导？**
+binlog 只能拿到"从某时刻起的增量"，初始数据需要**先全量快照 + 再切到增量**，中间不能漏（Debezium 的 Snapshot 模式、Flink CDC 的 `scan.startup.mode=initial` 自动处理）。
+
+**坑 2：DDL 变更怎么办？**
+ALTER TABLE 在 binlog 里是 DDL 事件，下游 schema 不变会直接挂——必须做**schema 注册中心**（如 Confluent Schema Registry），或者**约定字段变更必须先下游兼容、再上游变更**。
+
+**坑 3：消费端的乱序与幂等**
+同一行的 UPDATE 必须按顺序消费，否则会出现"旧值覆盖新值"。两种方案：①下游按主键 partition 保证有序；②下游做版本号比较（`WHERE version < new_version`）。
+
+:::
+
+### 面试黄金回答模板
+
+> "CDC 是用日志型机制（binlog/WAL）零侵入捕获数据库变更，毫秒级推到下游。生产最常用 **Debezium + Kafka** 做扇出，或 **Flink CDC** 做流式数仓。三个必踩的坑：初始全量+增量的切换、DDL 兼容、消费端的乱序幂等。设计题里只要涉及'数据库 → 搜索/缓存/数仓的同步'，都应该立刻想到 CDC，不要再用定时拉取的老方案。"
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：什么时候需要分库分表？垂直和水平怎么选？**

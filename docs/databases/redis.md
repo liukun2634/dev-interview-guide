@@ -347,6 +347,118 @@ Redis Cluster 通过数据分片实现水平扩展，支持 PB 级数据。
 
 ---
 
+## Redis 7.x / 8.x 新特性
+
+Redis 自 7.0 起进入"功能成熟期"，2024-2025 年面试中 **Streams、ACL、Functions、Sharded Pub/Sub** 已经从"加分项"变成"中级标配"。
+
+### 关键版本时间线
+
+| 版本 | 发布时间 | 主要变化 |
+|------|---------|---------|
+| **7.0** | 2022 | Functions、ACL v2、Sharded Pub/Sub、Multi-part AOF、Client-side Cache（RESP3）|
+| **7.2** | 2023 | 命令权限收紧、Cluster 性能优化、PSYNC2 复制改进 |
+| **7.4** | 2024 | Hash 字段级 TTL、向量集索引预览 |
+| **8.0** | 2024 | 性能整体 +30%、Redis Stack 合并（含 JSON / Search / TimeSeries 模块）、向量检索原生化 |
+
+### Streams：原生消息队列
+
+Redis 5 引入、7 成熟。Streams 是 List/Pub-Sub 的**完整替代品**，支持消费者组、ACK、重放，类似 Kafka 简化版。
+
+| 特性 | List + BLPOP | Pub/Sub | Streams |
+|------|-------------|---------|---------|
+| **消息持久化** | ✅ | ❌（fire-and-forget）| ✅ |
+| **消费者组** | ❌ | ❌ | ✅ |
+| **消息 ACK / 重投** | ❌ | ❌ | ✅（XACK + XPENDING）|
+| **消息回溯** | ❌ | ❌ | ✅（按 ID 范围读）|
+| **适用场景** | 简单队列 | 实时广播 | 轻量级 MQ、事件溯源 |
+
+```bash
+# 生产
+XADD orders * user 1001 amount 99.5
+# 消费组消费
+XGROUP CREATE orders order_consumers $ MKSTREAM
+XREADGROUP GROUP order_consumers worker-1 COUNT 10 STREAMS orders >
+# 确认处理完
+XACK orders order_consumers 1700000000000-0
+```
+
+**面试高频追问**：与 Kafka 区别？Streams **单节点性能高、运维简单**，但**没有分区**、依赖 Cluster 才能水平扩展；**百万级 TPS 以下选 Streams，更高量级选 Kafka**。
+
+### Functions：可热加载的服务端脚本
+
+Functions 是 7.0 引入的**Lua 脚本升级版**，相比 EVAL 的三大改进：
+
+| 维度 | EVAL（旧脚本）| Functions（新）|
+|------|--------------|--------------|
+| **存储方式** | 客户端发送、Server 编译 | **服务端持久化**（FUNCTION LOAD）|
+| **复制/AOF** | 重放整段脚本 | 复制 function 调用 |
+| **版本管理** | 无 | 库（library）粒度，可热替换 |
+| **语言** | Lua 5.1 | Lua（未来可扩展其他）|
+
+```bash
+# 加载（脚本会持久化、写入 AOF/RDB）
+FUNCTION LOAD "#!lua name=mylib\nredis.register_function('myadd',
+  function(keys, args) return tonumber(args[1]) + tonumber(args[2]) end)"
+# 调用
+FCALL myadd 0 1 2     # → 3
+```
+
+**生产用法**：把限流、去重、原子计数等逻辑写成 Functions，应用端只 FCALL，**升级逻辑无需改客户端代码**。
+
+### ACL v2：细粒度权限
+
+Redis 6 引入 ACL，7.0 扩展为支持**按 Key 模式 + 按命令类别 + 按 Pub/Sub Channel**三维授权：
+
+```bash
+# 只允许读取 cache:* 前缀的 Key，且只能执行 GET/MGET/EXISTS
+ACL SETUSER reporter on >password \
+  ~cache:* &* \
+  +@read -@dangerous
+```
+
+**面试要点**：ACL 解决了 Redis "要么全权限，要么完全只读" 的旧痛点；生产中**应用账号、运维账号、备份账号** 必须用不同 ACL 隔离，是 2025 年安全审计的必查项。
+
+### Sharded Pub/Sub：解决 Cluster 下的广播放大
+
+旧版 Pub/Sub 在 Cluster 中**所有节点都要广播每条消息**，节点越多带宽越炸。Sharded Pub/Sub（7.0）让消息**按 channel 哈希到固定 slot**，只在该 slot 的节点间传播：
+
+```bash
+SPUBLISH news:tech "Redis 8 released"
+SSUBSCRIBE news:tech
+```
+
+**何时切换**：Cluster 节点 ≥ 6 + Pub/Sub 流量大的场景，必换 Sharded 版本。
+
+### Client-Side Cache（RESP3）
+
+RESP3 协议（7.0 默认可选）支持服务端主动推送，让客户端能**安全做本地缓存**——key 在服务端变更时收到 INVALIDATE 通知：
+
+```
+应用层缓存（本地，纳秒级访问）
+    ↓ 命中失败/失效
+Redis（毫秒级）
+    ↓ key 变更
+INVALIDATE 推送 → 应用层失效本地缓存
+```
+
+**收益**：热点 Key 场景延迟从 0.5ms → 50ns，**降低 90%+ Redis 负载**，是 Java（Lettuce）/ Go（redigo）等客户端的高级特性。
+
+### 8.0 向量检索原生化
+
+Redis 8.0 把 Redis Stack 的 Search 模块合并进核心，**原生支持向量检索**：
+
+```bash
+# 创建向量索引（HNSW）
+FT.CREATE docs ON HASH PREFIX 1 doc:
+  SCHEMA embedding VECTOR HNSW 6 TYPE FLOAT32 DIM 768 DISTANCE_METRIC COSINE
+# KNN 查询
+FT.SEARCH docs "*=>[KNN 5 @embedding $vec]" PARAMS 2 vec "..." DIALECT 2
+```
+
+**对比专用向量库**：Redis 适合**Top-100 万级 + 低延迟在线查询**（< 5ms），数据量更大或召回要求更高时仍需 Milvus/Qdrant。详见 [Embedding 与向量数据库](../ai-technology/embedding-and-vector-db#向量数据库选型实战)。
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1: Redis 为什么这么快？
