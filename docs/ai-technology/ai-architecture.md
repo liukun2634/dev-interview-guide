@@ -184,6 +184,96 @@ class ModelRouter:
         return "complex"
 ```
 
+### LLM 网关与多模型管理
+
+2025 年起，**LLM 网关（Gateway）** 已成为生产 AI 应用的标准中间件——所有 LLM 调用不直接打到 OpenAI/Anthropic/DeepSeek，而是先经过统一网关。这是 2025-2026 年 AI 架构面试的高频考点。
+
+#### 为什么需要 LLM 网关
+
+| 痛点（没网关）| 解决（有网关）|
+|------------|------------|
+| 切换模型要改一堆代码 | 统一 OpenAI 兼容协议，换模型只改配置 |
+| 各家 SDK 错误处理不一 | 网关层统一重试、降级、超时 |
+| 单家厂商宕机就全挂 | 多家厂商自动故障转移（Fallback） |
+| 成本/用量不可见 | 网关统一打点、计费、限额 |
+| 各业务线 API Key 混乱 | 网关统一鉴权、虚拟密钥 |
+| 缓存逻辑每个应用各写 | 网关层做语义缓存，全局复用 |
+
+#### 主流 LLM 网关对比
+
+| 方案 | 部署 | 核心特性 | 适用 |
+|------|------|---------|------|
+| **LiteLLM** | 自建 / SaaS | 100+ 模型统一 SDK，路由 / 重试 / 缓存 / Spend Tracking | **最广泛使用**，Python 团队首选 |
+| **Portkey** | SaaS / 自建 | 网关 + 可观测 + Prompt 库 + Guardrails | 想要"开箱即用全套" |
+| **Helicone** | SaaS / 自建 | 轻量代理，重点在可观测与成本分析 | 已有调用层，只想加观测 |
+| **OpenRouter** | SaaS | 100+ 模型聚合，按 token 转售 | 个人/小团队快速试模型 |
+| **Kong AI Gateway** | 自建 | 企业级 API 网关 + AI 插件 | 已用 Kong 的企业 |
+| **自建网关** | 自建 | 完全可控 | 大厂、合规要求严苛 |
+
+#### LLM 网关的 6 大职责（面试黄金答案）
+
+```mermaid
+graph LR
+    APP["业务应用"] --> GW["LLM Gateway"]
+    GW --> M1["OpenAI"]
+    GW --> M2["Anthropic"]
+    GW --> M3["DeepSeek"]
+    GW --> M4["自部署 vLLM"]
+    
+    GW -.->|1. 统一协议| L1["OpenAI 兼容 API"]
+    GW -.->|2. 智能路由| L2["按成本/质量/可用性"]
+    GW -.->|3. 容错降级| L3["失败时切备用模型"]
+    GW -.->|4. 限流配额| L4["按用户/按 key"]
+    GW -.->|5. 缓存| L5["语义缓存 / Prompt Caching"]
+    GW -.->|6. 可观测| L6["Trace/Cost/质量打点"]
+```
+
+#### LiteLLM 最小实战
+
+```python
+import litellm
+
+# 1. 统一 API 调用任何模型
+response = litellm.completion(
+    model="claude-sonnet-4-6",     # 改成 "gpt-4o" / "deepseek-chat" 即可
+    messages=[{"role": "user", "content": "Hello"}],
+)
+
+# 2. 自动 Fallback：主模型失败时按列表降级
+response = litellm.completion(
+    model="claude-sonnet-4-6",
+    messages=[...],
+    fallbacks=["gpt-4o", "deepseek-chat"],  # Claude 挂了打 GPT，再挂打 DeepSeek
+)
+
+# 3. 路由策略（最低延迟 / 最低成本 / 加权轮询）
+from litellm import Router
+router = Router(
+    model_list=[
+        {"model_name": "smart", "litellm_params": {"model": "claude-sonnet-4-6"}},
+        {"model_name": "smart", "litellm_params": {"model": "gpt-4o"}},
+        {"model_name": "smart", "litellm_params": {"model": "deepseek-chat"}},
+    ],
+    routing_strategy="latency-based-routing",  # 自动挑当前最快的
+)
+response = router.completion(model="smart", messages=[...])
+```
+
+#### 自建 vs 用现成网关
+
+| 维度 | 用 LiteLLM/Portkey | 自建网关 |
+|------|-------------------|---------|
+| **接入速度** | 1 天 | 数周 |
+| **可观测/计费** | 开箱即用 | 自研 |
+| **合规/数据出境** | 受厂商政策约束 | 完全自控 |
+| **极致性能** | 中（多一跳代理）| 高（可贴近业务优化）|
+| **推荐起点** | 早期 + 中等规模 | 大流量 + 强合规 |
+
+**面试加分点**：能区分 **LLM 网关 vs Model Router vs Reverse Proxy**——
+- **Reverse Proxy**（Nginx）只做转发，不懂 LLM 协议
+- **Model Router** 只决定"这个请求用哪个模型"，是网关内的一个模块
+- **LLM Gateway** 是包含 Router + 协议适配 + 容错 + 计费 + 缓存 + 可观测的**完整中间件层**
+
 ### 缓存策略
 
 | 层级 | 说明 | 效果 |
