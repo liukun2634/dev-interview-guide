@@ -45,6 +45,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: '一般流程', link: '/data-structures-and-algorithms/foundations/problem-solving-workflow' },
             { text: '算法技巧', link: '/data-structures-and-algorithms/foundations/algorithm-patterns' },
+            { text: '高阶算法模板', link: '/data-structures-and-algorithms/foundations/advanced-templates' },
             { text: 'Java环境配置', link: '/data-structures-and-algorithms/foundations/java-problem-solving-basics' },
             { text: '调试技巧', link: '/data-structures-and-algorithms/foundations/debug-and-review' },
             { text: 'AI 时代刷题', link: '/data-structures-and-algorithms/foundations/ai-assisted-practice' },
@@ -196,6 +197,7 @@ export default withMermaid(defineConfig({
             { text: '高可用架构', link: '/system-design/high-availability' },
             { text: '缓存策略', link: '/system-design/caching-strategies' },
             { text: '限流与熔断', link: '/system-design/rate-limiting' },
+            { text: '幂等性与热点 Key', link: '/system-design/hot-key-and-idempotency' },
             { text: '消息队列', link: '/system-design/message-queue' },
             { text: '微服务架构', link: '/system-design/microservices' },
             { text: '存储选型', link: '/system-design/database-selection' },

@@ -345,6 +345,330 @@ CompletableFuture<String> future = CompletableFuture
 
 ---
 
+## 现代并发工具与高性能模式
+
+JDK 8 之后引入了一系列**针对高并发场景的专用工具**，能在特定场景下把性能再压榨一个数量级。2025-2026 年大厂 Java 面试中**"AtomicLong 不够用怎么办"、"读多写少用什么锁"、"为什么 Disruptor 比 BlockingQueue 快"** 是高频追问。
+
+### LongAdder 原理：分段累加的设计
+
+`LongAdder`（JDK 8）是 `AtomicLong` 的高并发替代品。在 64 核机器上**计数性能可比 AtomicLong 高 5-10 倍**。
+
+#### 为什么 AtomicLong 在高并发下会慢
+
+```
+所有线程都 CAS 同一个 long 变量
+        ↓
+高并发下大量 CAS 失败 → 重试自旋 → CPU 空转
+        ↓
+吞吐量 / 核数曲线变成"先上升后下降"
+```
+
+#### LongAdder 的解法：分段+按需扩容
+
+```
+AtomicLong（单点竞争）:
+  Thread1 ↘
+  Thread2 → [base]      ← 所有线程争一个变量
+  Thread3 ↗
+
+LongAdder（分段写入 + 求和读取）:
+  Thread1 → [Cell 0]
+  Thread2 → [Cell 1]    ← 不同线程落到不同 Cell（按哈希）
+  Thread3 → [Cell 2]    ← 完全无竞争
+  ...
+  sum() = base + Σ Cell  ← 读取时再求和
+```
+
+#### 关键源码思想
+
+```java
+public void add(long x) {
+    Cell[] as; long b, v; int m; Cell a;
+    if ((as = cells) != null || !casBase(b = base, b + x)) {
+        // base 上 CAS 失败 → 走 Cell 数组
+        boolean uncontended = true;
+        if (as == null
+            || (m = as.length - 1) < 0
+            || (a = as[getProbe() & m]) == null   // 按线程哈希定位 Cell
+            || !(uncontended = a.cas(v = a.value, v + x))) {
+            longAccumulate(x, null, uncontended); // 扩容 Cell 数组
+        }
+    }
+}
+```
+
+#### 何时**不**用 LongAdder
+
+| 场景 | 选什么 |
+|------|------|
+| 低并发计数 | `AtomicLong` 内存占用更小（1 个 long）|
+| **需要"读后立即更新"原子操作** | `AtomicLong`（`incrementAndGet()` 返回新值）|
+| 高并发只写、读少 | **LongAdder 首选** |
+
+::: tip 💡 一句话辨析
+
+> **"AtomicLong 是单点 CAS，所有线程争同一个变量；LongAdder 是分段写、汇总读，把竞争分散到多个 Cell。但 LongAdder 的 sum() 不是强一致的——读取瞬间可能不等于真实值，所以不能用于"读后立即决策"的场景。"**
+
+:::
+
+### StampedLock：读多写少的乐观读神器
+
+`StampedLock`（JDK 8）是为**读极多、写极少**场景优化的锁。相比 `ReentrantReadWriteLock` 提供**乐观读模式**——读时不上锁，写完后再验证。
+
+#### 三种模式
+
+```java
+StampedLock lock = new StampedLock();
+
+// 1. 写锁（独占）
+long stamp = lock.writeLock();
+try { /* 写操作 */ }
+finally { lock.unlockWrite(stamp); }
+
+// 2. 悲观读锁（共享）
+long stamp = lock.readLock();
+try { /* 读操作 */ }
+finally { lock.unlockRead(stamp); }
+
+// 3. 乐观读（无锁！只标记一个 stamp）
+long stamp = lock.tryOptimisticRead();
+int currentX = x, currentY = y;          // 不上锁直接读
+if (!lock.validate(stamp)) {              // 验证读期间是否有写
+    stamp = lock.readLock();              // 失败回退到悲观读
+    try { currentX = x; currentY = y; }
+    finally { lock.unlockRead(stamp); }
+}
+```
+
+#### 三种锁对比
+
+| 维度 | `synchronized` | `ReentrantReadWriteLock` | **`StampedLock`** |
+|------|---------------|------------------------|-----------------|
+| **读读并发** | ❌ | ✅ | ✅ |
+| **乐观读（无锁）** | ❌ | ❌ | **✅** |
+| **可重入** | ✅ | ✅ | ❌（陷阱！）|
+| **可中断** | ❌ | ✅ | ✅ |
+| **条件变量** | ✅ | ✅ | ❌ |
+| **适用** | 简单同步 | 读多写少 | **读极多 + 短写**（如配置/路由表）|
+
+::: warning ⚠️ StampedLock 三大坑
+
+1. **不可重入**——同一线程二次获取会死锁
+2. **不支持 Condition** —— 不能做经典的"等待-通知"
+3. **乐观读期间读到的字段可能被部分修改** —— 必须用 final / volatile 保护
+
+:::
+
+### Disruptor：单机百万 TPS 的无锁队列
+
+LMAX Disruptor 是 2010 年开源的**高性能内存队列**，性能比 `BlockingQueue` 高 10-100 倍。**Log4j 2、Apache Storm、Spring Cloud Stream** 都在底层使用它。
+
+#### 为什么比 BlockingQueue 快
+
+| 痛点（BlockingQueue）| Disruptor 怎么解 |
+|-----------------|--------------|
+| ReentrantLock 锁竞争 | **CAS + 内存屏障**，完全无锁 |
+| 链表节点频繁分配/GC | **预分配环形数组（Ring Buffer）** |
+| 多线程访问共享变量导致 **伪共享（False Sharing）** | **Cache Line Padding** 强制对齐 64 字节 |
+| 生产者/消费者通过 head/tail 双指针 → 缓存乒乓 | **Sequence 单调递增**，独立缓存行 |
+
+#### Ring Buffer 核心结构
+
+```
+       producer
+          ↓
+   ┌───┬───┬───┬───┬───┬───┬───┬───┐
+   │ 0 │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │  ← 预分配的固定大小数组（2^n）
+   └───┴───┴───┴───┴───┴───┴───┴───┘
+                ↑              ↑
+            consumer 1     consumer 2
+```
+
+- **数组替代链表**：CPU 缓存友好（顺序访问）+ 零 GC 压力
+- **2 的幂次取模**：`index = sequence & (size - 1)`，比 `%` 快 10×
+- **多消费者依赖图**：Consumer B 可以等 Consumer A 处理完同一事件再处理
+
+#### 最小示例
+
+```java
+// 1. 定义事件
+public static class LongEvent { private long value; /* ... */ }
+
+// 2. 创建 Disruptor
+Disruptor<LongEvent> disruptor = new Disruptor<>(
+    LongEvent::new, 1024,           // 工厂 + 环形大小
+    DaemonThreadFactory.INSTANCE,
+    ProducerType.SINGLE,            // 单/多生产者
+    new BusySpinWaitStrategy()      // 等待策略
+);
+
+// 3. 注册消费者
+disruptor.handleEventsWith((event, sequence, endOfBatch) -> {
+    System.out.println("Received: " + event.getValue());
+});
+
+// 4. 启动 + 生产
+disruptor.start();
+RingBuffer<LongEvent> ringBuffer = disruptor.getRingBuffer();
+long seq = ringBuffer.next();
+try {
+    ringBuffer.get(seq).setValue(123L);
+} finally {
+    ringBuffer.publish(seq);
+}
+```
+
+#### 何时选 Disruptor
+
+| 场景 | 推荐 |
+|------|------|
+| **单 JVM 内、极致低延迟** | Disruptor（金融交易、日志、游戏循环）|
+| **跨进程 / 跨机器** | Kafka / RocketMQ（持久化 + 网络）|
+| **简单线程间通信** | `BlockingQueue`（实现简单、足够好）|
+| **响应式编程** | Reactor / RxJava |
+
+### Caffeine：现代 JVM 缓存事实标准
+
+Caffeine（JDK 8+，Spring Boot 2 起默认本地缓存）已经全面替代 Guava Cache。**核心改进是 W-TinyLFU 淘汰算法**，命中率比 LRU 高 10-30%。
+
+#### W-TinyLFU 一句话原理
+
+```
+传统 LRU: 只看"最近用过"
+  → 偶发的批量扫描会冲掉热点
+  
+W-TinyLFU: 看"最近 + 频率"
+  ├── Window LRU（1%）：保护新进来的"未来可能成为热点"
+  └── Main Cache（99%）：基于近似计数（Count-Min Sketch）的 LFU
+  → 抗扫描污染、命中率高
+```
+
+#### 关键能力对比
+
+| 维度 | Guava Cache | **Caffeine** |
+|------|------------|------------|
+| **淘汰算法** | LRU | **W-TinyLFU**（命中率高 10-30%）|
+| **异步加载** | ❌ | ✅（`asyncLoadAll`）|
+| **刷新策略** | refreshAfterWrite | **refreshAfterWrite + 后台 refresh** |
+| **统计** | 简单 | 完整 + 低开销 |
+| **基准 QPS** | 1× | **3-5×** |
+| **生产推荐** | 已不推荐 | **首选** |
+
+#### Spring Boot 一键接入
+
+```java
+@Configuration
+@EnableCaching
+public class CacheConfig {
+    @Bean
+    public CacheManager cacheManager() {
+        CaffeineCacheManager mgr = new CaffeineCacheManager("users");
+        mgr.setCaffeine(Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(10))
+            .refreshAfterWrite(Duration.ofMinutes(5))   // 5 分钟后后台刷新
+            .recordStats());
+        return mgr;
+    }
+}
+
+@Service
+public class UserService {
+    @Cacheable(value = "users", key = "#id")
+    public User findUser(Long id) {
+        return userRepository.findById(id);
+    }
+}
+```
+
+#### Caffeine + Redis 二级缓存（生产黄金组合）
+
+```
+请求 → Caffeine（本地，纳秒级，10K QPS/节点）
+        ↓ miss
+       Redis（中心，毫秒级，跨节点共享）
+        ↓ miss
+       DB
+```
+
+详见 [缓存策略 — L1/L2 分层缓存](../system-design/caching-strategies)。
+
+### ForkJoinPool：CPU 密集型并行计算
+
+`ForkJoinPool` 是 JDK 7 引入的"分治并行"线程池，**`parallelStream()` 和 `CompletableFuture` 默认线程池**都是它（`commonPool`）。
+
+#### 工作窃取（Work-Stealing）核心思想
+
+```
+线程 1 的任务队列: [T1, T2, T3, T4]    （从队尾 push/pop，LIFO）
+线程 2 的任务队列: [T5, T6]             （处理完了）
+                        ↓
+线程 2 从线程 1 的队头偷一个: 偷走 T1
+                        ↓
+减少了线程闲置，比传统 ThreadPool 利用率高
+```
+
+#### vs ThreadPoolExecutor
+
+| 维度 | `ThreadPoolExecutor` | `ForkJoinPool` |
+|------|---------------------|---------------|
+| **任务队列** | 一个全局队列 | **每个线程独立队列 + 工作窃取** |
+| **适用任务** | I/O 密集、独立任务 | **CPU 密集、可分治的任务** |
+| **任务粒度** | 中等 | 越细越好（递归分治）|
+| **典型场景** | Web 请求处理 | 大数组计算、归并排序、AI 推理 |
+
+#### parallelStream 的陷阱
+
+```java
+// ❌ 错误：用 commonPool 跑慢的 I/O，会拖累整个 JVM
+list.parallelStream().forEach(this::callRemoteApi);
+
+// ✅ 正确：传入独立 ForkJoinPool
+ForkJoinPool customPool = new ForkJoinPool(20);
+customPool.submit(() -> list.parallelStream().forEach(this::callRemoteApi)).get();
+```
+
+`commonPool` 是**全 JVM 共享**的，被你的慢任务占满后，其他依赖它的代码（包括 `CompletableFuture`、`parallelStream`）全部受影响。
+
+### VarHandle / Atomic 家族对比（JDK 9+）
+
+`VarHandle` 是 JDK 9 的"`sun.misc.Unsafe` 的官方替代"，提供**字段级别的原子操作 + 内存屏障控制**。
+
+```java
+// 替代 AtomicReferenceFieldUpdater + Unsafe 的现代方案
+private static final VarHandle VALUE_HANDLE;
+private volatile long value;
+static {
+    try {
+        VALUE_HANDLE = MethodHandles.lookup()
+            .findVarHandle(MyClass.class, "value", long.class);
+    } catch (ReflectiveOperationException e) { throw new Error(e); }
+}
+
+// 多种内存语义
+VALUE_HANDLE.compareAndSet(this, 0L, 1L);          // CAS
+VALUE_HANDLE.getAndAdd(this, 5L);                  // 原子加
+VALUE_HANDLE.setRelease(this, 10L);                // Release 语义
+long v = (long) VALUE_HANDLE.getAcquire(this);     // Acquire 语义
+```
+
+**何时用 VarHandle**：库作者、需要细粒度内存语义控制。**应用层用 `AtomicXxx` / `LongAdder` 即可**。
+
+### 选型速查（生产黄金一张表）
+
+| 场景 | 选什么 |
+|------|------|
+| 高并发计数 | **LongAdder**（高并发） / AtomicLong（低并发）|
+| 读极多 + 短写（配置/路由表） | **StampedLock** + 乐观读 |
+| 读多写少（缓存等）| `ReentrantReadWriteLock` |
+| 极致单机消息队列 | **Disruptor** |
+| 本地缓存 | **Caffeine**（替代 Guava）|
+| CPU 密集分治计算 | **ForkJoinPool** + 自定义实例 |
+| 库级原子字段 + 内存屏障 | **VarHandle**（替代 Unsafe）|
+| 异步编排 | `CompletableFuture` / `StructuredTaskScope`（JDK 21+）|
+
+---
+
 ## 面试常问 & 怎么答
 
 <div class="dig-questions">
