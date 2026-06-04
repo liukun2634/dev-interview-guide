@@ -226,6 +226,122 @@ int fd = open("data.bin", O_RDWR | O_DIRECT);
 
 ---
 
+### 7. 写入路径深度：Buffered / Direct / Sync / fsync
+
+**这是数据库面试的"高频追问"**——你说 MySQL `innodb_flush_log_at_trx_commit=1`、Redis `appendfsync everysec`，背后到底发生了什么？
+
+#### 完整写路径
+
+```
+应用 write(fd, buf, n)
+    ↓
+[用户态缓冲]  ← stdio fwrite 还会经过 glibc 缓冲
+    ↓
+[内核 Page Cache]
+    ↓ ← write() 返回了，但数据可能还没落盘！
+[Block Layer]
+    ↓
+[I/O 调度器]
+    ↓
+[设备驱动 → 磁盘控制器 cache]
+    ↓ ← 磁盘控制器有自己的 cache（断电会丢）
+[磁盘盘片]   ← 真正持久化
+```
+
+#### 四种写入模式
+
+| 模式 | 用法 | 何时持久化 | 性能 | 适用 |
+|------|------|----------|------|------|
+| **buffered 写**（默认）| `write()` | 内核后台 30s 刷盘 | 最快 | 普通文件、日志 |
+| **`write() + fsync()`** | 写完调 fsync | 强制 Page Cache + 磁盘 cache 都刷 | 慢 | 数据库 WAL |
+| **`write() + fdatasync()`** | 写完调 fdatasync | 只刷数据不刷元数据 | 比 fsync 快 | MySQL `innodb_flush_method=O_DSYNC` |
+| **O_DIRECT + 自管缓存** | open 加标志 | 绕过 Page Cache，自己控制 | 视场景 | MySQL InnoDB / 大数据 |
+| **O_SYNC**（罕用）| open 加标志 | 每次 write 都同步刷盘 | 最慢 | 几乎不用 |
+
+#### fsync vs fdatasync 区别
+
+```
+fsync(fd):
+  ① 数据从 Page Cache → 磁盘
+  ② 元数据（mtime, 文件大小等）也刷盘
+  → 慢，因为需要额外的元数据 I/O
+
+fdatasync(fd):
+  ① 数据从 Page Cache → 磁盘
+  ② 元数据只在影响数据完整性时刷（如文件变大需要刷大小）
+  → 快 ~20%，MySQL/Redis 都默认用它
+```
+
+#### 磁盘控制器 Cache 陷阱（顶级追问）
+
+::: warning ⚠️ fsync 不一定真的持久化
+
+> `fsync` 把数据交给磁盘控制器，但**磁盘控制器有自己的易失性 cache**——突然掉电仍可能丢数据。
+>
+> **真正持久化的方案**：
+> ① **磁盘控制器带电池（BBU）** 或 **闪存 cache**（企业级 SSD/RAID）
+> ② **内核 write barrier**：fsync 触发后内核会下发 `FUA`（Force Unit Access）或 `FLUSH` 命令强制清空控制器 cache
+> ③ 关闭磁盘 write cache：`hdparm -W 0 /dev/sda`（性能砍半）
+
+:::
+
+### 8. 主流文件系统对比与选型
+
+| 文件系统 | 适用 | 关键特性 | 不适合 |
+|---------|------|---------|--------|
+| **ext4** | 通用、桌面、中小服务器 | 成熟稳定、修复工具丰富 | 海量小文件、大于 16TB 单文件 |
+| **XFS** | **大文件、高并发写、生产数据库** | 64-bit 寻址、AG 并行、高效大文件 | 缩容受限（只能扩不能缩）|
+| **Btrfs** | 多卷管理、快照需求 | 写时复制（CoW）、原生快照、checksum | 大文件性能不如 XFS |
+| **ZFS** | 数据完整性优先（NAS、备份）| 端到端 checksum、Raid-Z、压缩 | 内存开销大、Linux 非原生 |
+| **F2FS** | SSD/Flash 优化（手机）| 针对 NAND 特性设计 | 机械盘场景 |
+| **OverlayFS** | 容器镜像分层（Docker / containerd）| Union 文件系统 | 不是通用 FS，专用场景 |
+
+#### 生产选型决策
+
+::: tip 💡 一句话推荐
+
+> ① **数据库服务器** → XFS（RHEL 8+ 默认）；② **K8s/Docker 节点** → OverlayFS（容器层）+ XFS（数据卷）；③ **NAS/备份** → ZFS（如果团队会维护）；④ **嵌入式/移动** → F2FS；⑤ **不知道选什么** → XFS（生产几乎从不出错）。
+
+:::
+
+#### ext4 vs XFS 关键差异
+
+```
+ext4:
+  ✅ 修复工具最成熟（e2fsck）
+  ✅ 可缩容（resize2fs 支持 shrink）
+  ❌ 大于 100w 文件/目录时性能下降
+  ❌ 大文件随机写不如 XFS
+
+XFS:
+  ✅ 高并发写性能强（Allocation Group 并行）
+  ✅ 适合 TB+ 大文件
+  ✅ 现代版本（Linux 5.4+）支持 reflink（CoW 快照）
+  ❌ 只能扩容不能缩容
+  ❌ 老版本 xfs_repair 易丢数据（已大幅改进）
+```
+
+### 9. 硬链接 vs 软链接（必背基础）
+
+| 类型 | 实现 | 特性 |
+|------|------|------|
+| **硬链接（hard link）** | 多个文件名指向**同一 inode** | 不能跨文件系统；不能链接目录；删除任一不影响其他 |
+| **软链接（symbolic link）** | 独立文件，内容是目标路径 | 可跨文件系统；可链接目录；目标删除则失效（dangling）|
+
+```bash
+ln file.txt link.txt        # 硬链接：inode 相同，引用计数 +1
+ln -s file.txt symlink.txt  # 软链接：新 inode，文件类型为 symlink
+ls -li                       # 看 inode 号、链接数
+```
+
+::: tip 💡 一个 inode 引用计数到 0 才真删除
+
+> Linux 删文件 = `unlink()` → 引用计数 -1。**只要还有任何硬链接或打开的文件描述符**，文件就不会被真删除——这就是为什么 `rm` 一个正在被进程打开的日志文件，**磁盘空间不会立刻释放**，只有进程关闭后才释放。
+
+:::
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：硬链接和软链接有什么区别？**

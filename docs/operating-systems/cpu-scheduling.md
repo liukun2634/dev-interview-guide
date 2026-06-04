@@ -189,6 +189,115 @@ Linux 提供两种实时调度策略，优先级高于 CFS：
 
 Linux POSIX 互斥锁支持 `PTHREAD_PRIO_INHERIT` 属性，启用后实现优先级继承：当高优先级线程等待锁时，持锁的低优先级线程临时提升至高优先级，确保其尽快释放锁，避免中间优先级线程横插。
 
+---
+
+### 5. nice 值与生产调优实战
+
+**nice 是普通用户最常用的优先级控制工具**，2025-2026 年 Linux 面试常考。
+
+#### nice 值范围与影响
+
+```
+nice 取值: -20 ~ +19
+  -20 = 最高优先级（CFS 权重最大）
+  +19 = 最低优先级（CFS 权重最小）
+   0  = 默认
+
+权重映射: weight = 1024 / (1.25 ^ nice)
+  nice = 0  → weight 1024
+  nice = -20 → weight 88761  (约 86×)
+  nice = +19 → weight 15     (约 1/68×)
+```
+
+**实战命令**：
+
+```bash
+# 启动时指定 nice
+nice -n 10 ./batch-job.sh             # 低优先级跑批
+
+# 修改运行中进程
+renice -n -5 -p 12345                 # 提升 PID 12345 优先级（需 root）
+
+# 实时调度
+chrt -f 50 ./latency-critical.sh      # SCHED_FIFO, 优先级 50
+chrt -r 30 ./video-server.sh          # SCHED_RR, 优先级 30
+chrt -p <pid>                         # 查看进程调度策略
+```
+
+::: warning ⚠️ 普通用户只能降低优先级
+
+> 非 root 用户只能把 nice 调**大**（降低优先级），不能调小。这是 Linux 防止用户进程抢系统资源的硬约束。
+
+:::
+
+### 6. cgroups：容器化时代的 CPU 调度核心
+
+**cgroups（Control Groups）** 是 K8s / Docker 实现 CPU 限制的底层机制。**容器化运维必问**——能讲清楚 CPU `requests / limits` 怎么映射到 cgroups，是 SRE 加分点。
+
+#### cgroups v1 vs v2
+
+| 版本 | 状态 | 关键差异 |
+|------|------|---------|
+| **v1** | 老版本，逐步淘汰 | 每个子系统独立层级（cpu / memory / blkio 分开）|
+| **v2** | RHEL 9 / Ubuntu 22+ 默认 | **统一层级**（一个 cgroup 同时控制 CPU+内存+IO）|
+
+#### CPU cgroups 三种限制方式
+
+```
+1. cpu.shares (v1) / cpu.weight (v2):
+   相对权重，CPU 紧张时按权重分配
+   例: container-A weight=100, container-B weight=200
+   → CPU 紧张时 A:B = 1:2 分配
+
+2. cpu.cfs_quota_us / cpu.cfs_period_us (v1)
+   cpu.max (v2): "200000 100000"  ← quota / period
+   绝对上限: 每 period(默认 100ms) 最多用 quota 微秒
+   K8s 的 limits.cpu=2 → quota=200000, period=100000
+
+3. cpuset.cpus:
+   绑定到指定 CPU 核心，避免跨核切换
+   例: cpuset.cpus="0-3" → 只能在 0-3 号核运行
+```
+
+#### K8s CPU requests / limits 映射
+
+```yaml
+resources:
+  requests:
+    cpu: "500m"      # 0.5 核
+  limits:
+    cpu: "2"         # 2 核
+```
+
+```
+requests.cpu=500m  →  cpu.weight = 51 (v2)  ← 影响 CPU 紧张时调度优先级
+limits.cpu=2       →  cpu.max = "200000 100000"  ← 硬上限
+```
+
+::: warning ⚠️ CPU Throttling 陷阱
+
+> K8s 的 CPU `limits` 是**硬上限**——即使节点空闲，超 limits 也会被**强制降速（throttle）**，导致**响应延迟突刺**。
+
+**生产实践**：
+- ① 不要给延迟敏感服务设 CPU limits（只设 requests）
+- ② 或用 **Burstable QoS**：`requests < limits`，但理解会被 throttle
+- ③ 监控 `container_cpu_cfs_throttled_seconds_total`，超过 5% 立即扩容
+
+:::
+
+### 7. EEVDF：CFS 的继承者（Linux 6.6+）
+
+**EEVDF（Earliest Eligible Virtual Deadline First）** 是 Linux 6.6（2023.10）引入的**新默认调度器**，正在逐步替代 CFS。能讲到 EEVDF 是了解前沿动态的强信号。
+
+| 维度 | CFS | **EEVDF** |
+|------|-----|---------|
+| **核心思想** | 最小 vruntime 优先 | **最早 virtual deadline 优先** |
+| **延迟优化** | 弱 | **强**（每任务可配 latency-nice 期望延迟）|
+| **公平性** | 长期公平 | **保持公平 + 短期可定制延迟** |
+| **状态** | Linux ≤ 6.5 默认 | **6.6+ 默认** |
+
+**EEVDF 的关键优势**：交互式任务可以声明"我希望 5ms 内被调度"，调度器尽量满足；批处理任务声明"我不在乎延迟"，给它更长的运行片提升吞吐。
+
 ## 面试常问 & 怎么答
 
 **Q1：常见的 CPU 调度算法有哪些？各有什么优缺点？**

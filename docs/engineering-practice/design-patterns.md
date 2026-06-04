@@ -448,6 +448,116 @@ auth.handle(request);
 
 **面试追问**：哪些框架用了责任链？Servlet Filter、Spring Security Filter Chain、Spring MVC Interceptor、Dubbo Filter、Netty Pipeline、MyBatis Plugin（拦截器链）都是责任链模式的经典应用。
 
+#### 9. 状态模式（State Machine）
+
+**业务面试 Top 模式**——任何"订单状态、审批流、工单生命周期"类系统都会用到。能写出干净的状态机代码，立刻区分初级和中级工程师。
+
+**一句话定义**：把每个状态的行为封装为独立类，状态切换 = 替换对象引用，**彻底消除巨型 `switch(status)`**。
+
+**典型场景**：订单状态（待支付 → 已支付 → 已发货 → 已签收）、工单审批流、设备状态、游戏角色状态。
+
+##### 反模式：if-else / switch 的灾难
+
+```java
+// ❌ 经典反模式：随业务增长会膨胀到几百行
+public class Order {
+    private String status;
+    public void pay() {
+        if ("PENDING".equals(status)) {
+            // 校验金额、扣库存、改状态...
+            status = "PAID";
+        } else if ("PAID".equals(status)) {
+            throw new IllegalStateException("已支付");
+        } else if ("CANCELLED".equals(status)) {
+            throw new IllegalStateException("已取消");
+        } else if ("REFUNDING".equals(status)) {
+            throw new IllegalStateException("退款中");
+        }
+        // ... 还有 ship() refund() cancel() 各自的 if-else
+    }
+}
+```
+
+##### 状态模式重构
+
+```java
+// 状态接口
+public interface OrderState {
+    void pay(OrderContext ctx);
+    void ship(OrderContext ctx);
+    void cancel(OrderContext ctx);
+}
+
+// 具体状态：每个 class 只负责自己状态下能做什么
+@Component("pendingState")
+public class PendingState implements OrderState {
+    public void pay(OrderContext ctx)    { ctx.setState("paidState"); /* 扣库存 */ }
+    public void ship(OrderContext ctx)   { throw new IllegalStateException("待支付不能发货"); }
+    public void cancel(OrderContext ctx) { ctx.setState("cancelledState"); }
+}
+
+@Component("paidState")
+public class PaidState implements OrderState {
+    public void pay(OrderContext ctx)    { throw new IllegalStateException("已支付"); }
+    public void ship(OrderContext ctx)   { ctx.setState("shippedState"); /* 通知物流 */ }
+    public void cancel(OrderContext ctx) { ctx.setState("refundingState"); /* 触发退款 */ }
+}
+
+// 上下文：持有当前状态，对外暴露固定 API
+@Component
+public class OrderContext {
+    @Autowired private Map<String, OrderState> stateMap;
+    private OrderState current = stateMap.get("pendingState");
+
+    public void pay()    { current.pay(this); }
+    public void ship()   { current.ship(this); }
+    public void cancel() { current.cancel(this); }
+    public void setState(String name) { this.current = stateMap.get(name); }
+}
+```
+
+##### 状态模式 vs 策略模式
+
+| 维度 | 策略模式 | **状态模式** |
+|------|---------|-----------|
+| **本质** | 算法可替换 | **状态可流转** |
+| **谁切换** | **客户端**显式选 | **状态本身**决定下一个状态 |
+| **状态间是否互通** | 各算法独立 | **状态间相互引用、构成状态图** |
+| **典型场景** | 优惠/计费/算法切换 | 订单/审批/工单生命周期 |
+
+##### 生产升级：状态机引擎（Spring StateMachine / Squirrel）
+
+```java
+@Configuration
+@EnableStateMachine
+public class OrderStateMachineConfig extends StateMachineConfigurerAdapter<States, Events> {
+    @Override
+    public void configure(StateMachineTransitionConfigurer<States, Events> transitions) throws Exception {
+        transitions
+            .withExternal()
+                .source(States.PENDING).target(States.PAID).event(Events.PAY)
+                .action(ctx -> { /* 扣库存 */ })
+                .guard(ctx -> /* 校验金额 */ true)
+            .and()
+            .withExternal()
+                .source(States.PAID).target(States.SHIPPED).event(Events.SHIP)
+            .and()
+            .withExternal()
+                .source(States.PENDING).target(States.CANCELLED).event(Events.CANCEL);
+    }
+}
+```
+
+::: tip 💡 何时手撸状态模式，何时上引擎
+
+> **手撸足够**：3-5 个状态、流转简单（单向为主）；**上引擎**：10+ 状态、有分支/合并/并行、需要可视化、要持久化状态机实例。**滴滴/美团/京东**的订单核心都是上**Spring StateMachine 或自研引擎**。
+
+:::
+
+**Spring 应用**：Spring StateMachine 框架；Spring WebFlow（已淘汰）；Activiti / Camunda 工作流引擎本质都是状态机。
+
+**面试加分点**：能讲出"状态模式消除巨型 switch + 状态间显式定义转移 + 配合状态机引擎做生产级状态流转 + 状态持久化（每次切换记录到 DB 用于审计）"。
+
 ---
 
 ## 面试常问 & 怎么答
