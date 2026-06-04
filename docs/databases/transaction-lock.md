@@ -271,6 +271,72 @@ SELECT * FROM performance_schema.data_locks;
 SET GLOBAL innodb_print_all_deadlocks = ON;
 ```
 
+#### 死锁日志解读模板（必背）
+
+**面试经常给一段死锁日志让你解读**——能讲清"哪两个事务、各持什么锁、等什么锁、谁被回滚"立刻显出实战经验。
+
+```
+------------------------
+LATEST DETECTED DEADLOCK
+------------------------
+2026-06-04 10:00:00
+*** (1) TRANSACTION:                              ← 事务 1
+TRANSACTION 12345, ACTIVE 5 sec starting index read
+mysql tables in use 1, locked 1
+LOCK WAIT 3 lock struct(s), heap size 1136
+MySQL thread id 100, query id 1000 user1
+UPDATE orders SET status=1 WHERE id=2
+
+*** (1) HOLDS THE LOCK(S):                        ← 事务 1 持有的锁
+RECORD LOCKS space id 30 page no 4 n bits 72 index PRIMARY
+of table `db`.`orders` trx id 12345
+Record lock, heap no 2 PHYSICAL RECORD ... id=1   ← 持有 id=1 的行锁
+
+*** (1) WAITING FOR THIS LOCK TO BE GRANTED:      ← 事务 1 等待的锁
+RECORD LOCKS space id 30 page no 4 n bits 72 index PRIMARY
+of table `db`.`orders` trx id 12345
+Record lock, heap no 3 PHYSICAL RECORD ... id=2   ← 想拿 id=2 的行锁
+
+*** (2) TRANSACTION:                              ← 事务 2
+TRANSACTION 12346, ACTIVE 5 sec
+UPDATE orders SET status=1 WHERE id=1
+
+*** (2) HOLDS THE LOCK(S):                        ← 持有 id=2
+RECORD LOCKS ... id=2
+
+*** (2) WAITING FOR THIS LOCK TO BE GRANTED:      ← 等待 id=1
+RECORD LOCKS ... id=1
+
+*** WE ROLL BACK TRANSACTION (2)                  ← MySQL 回滚事务 2
+```
+
+**解读 4 步流程**：
+1. 看 **TRANSACTION (1) / (2)** 各执行的 SQL
+2. 看 **HOLDS THE LOCK(S)** 各自持有什么锁（哪个表、哪行、什么锁）
+3. 看 **WAITING FOR THIS LOCK** 各自在等什么锁
+4. 看 **WE ROLL BACK TRANSACTION** 哪个被牺牲（**通常是 undo log 量较小的**）
+
+#### 常见死锁场景速判
+
+| 场景 | 原因 | 修复 |
+|------|------|------|
+| **更新顺序不一致** | A 先改 id=1 再 id=2，B 先改 id=2 再 id=1 | **业务统一按主键升序更新** |
+| **范围更新 + 等值更新** | A 锁范围 [1, 10]，B 等值锁 id=5 | 减少范围更新、用主键定点更新 |
+| **唯一索引冲突回滚** | 两个事务都 INSERT 相同唯一键 → 一个 INSERT 时持 next-key lock | 改为 `INSERT ... ON DUPLICATE KEY UPDATE` |
+| **gap lock 不互斥** | RR 级别下两个事务都拿同一段 gap lock，再都想插入 → 死锁 | 改 RC 级别 / 业务前置去重 |
+
+#### Gap 锁（间隙锁）实战陷阱
+
+::: warning ⚠️ Gap 锁在 RR 下很容易"莫名其妙"出现
+
+> **常见场景**：`UPDATE orders WHERE status='PENDING'` 在 status 列**没有索引**时：
+> 
+> RR 级别下 InnoDB **会把所有扫描过的行都加锁**（实际上锁整张表）。两个事务同时这么 UPDATE → 互相 Gap 锁等待 → 死锁。
+> 
+> **修复**：① 给 status 加索引；② 用主键 IN 列表更新；③ 改 RC 级别（去掉 Gap 锁）。
+
+:::
+
 ---
 
 ## 面试常问 & 怎么答

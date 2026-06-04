@@ -250,6 +250,109 @@ Redis 作者 antirez 提出，需要 **N 个（通常 5 个）独立的 Redis Ma
 
 :::
 
+#### ZooKeeper 分布式锁实现
+
+**ZK 锁是金融级场景的事实标准**，原理是利用**临时顺序节点 + Watch 机制**：
+
+```
+1. 客户端在 /lock 下创建临时顺序节点
+   → /lock/lock-0000000001 (Client A)
+   → /lock/lock-0000000002 (Client B)
+   → /lock/lock-0000000003 (Client C)
+
+2. 检查自己是否是最小序号节点:
+   ├─ 是 → 获得锁
+   └─ 否 → 监听比自己小一个的节点（不是最小节点，避免"惊群")
+          ↓
+          被监听节点删除（持锁者释放/崩溃）→ 收到通知 → 再判断是否最小
+
+3. 业务完成 → 删除自己创建的节点 = 释放锁
+```
+
+**关键安全保证**：
+- **临时节点**：客户端会话断开（如崩溃）自动删除 → 永不死锁
+- **顺序节点**：天然防"羊群效应"（thundering herd）
+- **Watch 单向触发**：只监听前一个节点，避免万人挤一节点
+
+#### etcd 分布式锁实现
+
+**etcd 基于 Raft 强一致**，是 K8s 自带的注册中心 + 锁服务：
+
+```
+1. Client 创建租约（lease），如 10 秒 TTL
+2. PUT /lock/my-resource value=client-id LEASE=租约ID + IF_NOT_EXIST
+   ├─ 成功 → 加锁，启动 KeepAlive 心跳续约
+   └─ 失败 → Watch /lock/my-resource，等删除事件
+3. 业务完成 → 撤销租约 → 自动删除 key
+```
+
+**etcd 比 ZK 优势**：
+- **HTTP/gRPC API**：客户端实现简单（ZK 客户端复杂）
+- **轻量**：3 节点集群 200MB 内存够用
+- **K8s 生态**：CRD 控制器、Operator 天然集成
+
+#### Redis vs ZooKeeper vs etcd 终极对比
+
+| 维度 | **Redis (Redisson)** | **ZooKeeper** | **etcd** |
+|------|------------------|--------------|----------|
+| **一致性协议** | 主从异步复制（弱）| **ZAB 强一致** | **Raft 强一致** |
+| **加锁性能** | **最快**（~1ms）| 中（5-20ms）| 中（5-15ms）|
+| **正确性** | "最大努力" | **金融级保证** | **金融级保证** |
+| **客户端复杂度** | 简单（Redisson 封装好）| 复杂（Curator 必备）| **简单**（HTTP/gRPC）|
+| **运维成本** | 低（Redis 团队都会）| **高**（ZK 自身难维护）| 中 |
+| **生态** | 通用 | Hadoop / Dubbo / Kafka | **K8s / 云原生** |
+| **典型应用** | 缓存击穿防护、防重 | 金融、Hadoop、Dubbo 配置中心 | **K8s、容器编排** |
+
+::: tip 💡 现代选型推荐
+
+> **2025 新项目** ① 缓存级互斥 → Redis + Redisson；② 业务强一致 → **etcd**（云原生生态更好）；③ 已有 Hadoop/Dubbo 栈 → ZooKeeper；④ **不要再自己造分布式锁轮子**，3 种都有成熟客户端。
+
+:::
+
+#### 实战：Curator 实现 ZK 分布式锁
+
+```java
+// 基于 Apache Curator (ZK 官方推荐客户端)
+CuratorFramework client = CuratorFrameworkFactory.newClient(
+    "zk1:2181,zk2:2181,zk3:2181",
+    new ExponentialBackoffRetry(1000, 3)
+);
+client.start();
+
+InterProcessMutex lock = new InterProcessMutex(client, "/locks/orders");
+try {
+    if (lock.acquire(10, TimeUnit.SECONDS)) {
+        // 业务...
+    } else {
+        throw new RuntimeException("加锁超时");
+    }
+} finally {
+    lock.release();
+}
+```
+
+#### 实战：etcd 分布式锁（jetcd）
+
+```java
+Client etcd = Client.builder()
+    .endpoints("http://etcd1:2379", "http://etcd2:2379", "http://etcd3:2379")
+    .build();
+
+Lock lockClient = etcd.getLockClient();
+Lease leaseClient = etcd.getLeaseClient();
+
+long leaseId = leaseClient.grant(10).get().getID();          // 10s 租约
+ByteSequence key = ByteSequence.from("/locks/orders", UTF_8);
+
+LockResponse resp = lockClient.lock(key, leaseId).get();      // 加锁
+try {
+    // 业务...
+} finally {
+    lockClient.unlock(resp.getKey()).get();
+    leaseClient.revoke(leaseId);
+}
+```
+
 ---
 
 ### 5. 内存淘汰策略（8 种）

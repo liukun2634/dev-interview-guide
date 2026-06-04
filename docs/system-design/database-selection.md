@@ -177,6 +177,70 @@ MemStore（内存）──满后刷盘──► HFile（磁盘，不可变）
 **适用场景：** 海量时序数据（IoT 传感器）、日志存储、历史行为数据  
 **特点：** 按行键范围分片（Region），列族内数据列式存储，高写入吞吐，点查需设计好 RowKey
 
+#### ClickHouse / Doris：OLAP 列式存储（2025 必问）
+
+**ClickHouse** 和 **StarRocks / Doris** 是 2024-2025 年实时数仓的事实标准，能讲清"为什么列存比行存快 100×" 是 OLAP 面试加分点。
+
+##### 行存 vs 列存核心差异
+
+```
+行存（MySQL/InnoDB）:
+  Page 1: [id=1, name="A", age=18, city="BJ"][id=2, ...][id=3, ...]
+  → 查"所有用户的平均年龄" 要扫整张表的所有列 → 大量无效 IO
+
+列存（ClickHouse）:
+  Column id:    [1, 2, 3, ...]
+  Column name:  ["A", "B", "C", ...]
+  Column age:   [18, 25, 30, ...]
+  Column city:  ["BJ", "SH", "SZ", ...]
+  → 查"所有用户的平均年龄" 只读 age 这一列 → IO 减少 N 倍 + 压缩率极高
+```
+
+##### 列存为什么这么快（三个底层原因）
+
+| 技术 | 收益 |
+|------|------|
+| **只读需要的列** | 100 列的表只查 3 列 → IO 减少 30× |
+| **高压缩比**（同类型数据连续）| 列内数据相似，压缩比 5-10×（行存通常 2-3×）|
+| **向量化执行**（SIMD）| 一次 CPU 指令处理 64-512 个值，比逐行处理快 10× |
+
+##### ClickHouse vs Doris vs StarRocks
+
+| 维度 | **ClickHouse** | **Doris (StarRocks)** |
+|------|--------------|---------------------|
+| **架构** | MergeTree 列存 + 分布式表 | FE（元数据）+ BE（存储计算）|
+| **写入** | **批量优于实时**（≥ 1000 行/批）| **实时友好**（毫秒级写入）|
+| **Join** | **多表 Join 弱**（推荐宽表）| **多表 Join 强**（CBO 优化）|
+| **更新** | **几乎不支持**（追加为主）| 支持主键模型更新 |
+| **典型场景** | 日志分析、广告投放分析、监控时序 | **实时数仓**、报表系统、对外 BI |
+| **国内采用** | 字节跳动 / 腾讯 | **百度（Doris）/ 美团 / 滴滴** |
+
+##### 选型口诀
+
+::: tip 💡 一句话决定用哪个
+
+> **"宽表 + 追加为主 + 极致单表性能 → ClickHouse；多表 Join + 需要实时更新 + 兼容 MySQL 协议 → Doris/StarRocks；混合负载（OLTP+OLAP） → TiDB"**。
+> 
+> 不要再说"OLAP 就上 Hive"——Hive 是 T+1 批处理，**ClickHouse / Doris 已经把延迟降到秒级**。
+
+:::
+
+##### 实战架构：MySQL → ClickHouse 实时数仓
+
+```
+MySQL (业务库)
+   ↓ binlog
+Debezium / Canal
+   ↓ Kafka
+Flink CDC (转换、聚合)
+   ↓
+ClickHouse (实时分析)
+   ↓
+Superset / Grafana (BI)
+```
+
+详见 [CDC 数据同步](../databases/sharding#cdc-change-data-capture)。
+
 ---
 
 ### 3. NewSQL
