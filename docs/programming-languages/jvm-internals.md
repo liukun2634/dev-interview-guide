@@ -316,6 +316,134 @@ PhantomReference<Object> ref = new PhantomReference<>(new Object(), queue);
 
 ---
 
+### 6. 生产 5 大典型故障的诊断模式
+
+理论懂了不代表能排错。**2025-2026 年 Java 后端面试**经常给你一个"线上 CPU 100%/内存暴涨/OOM/响应慢"的故障场景，让你**讲完整诊断流程**。下面是必背的 5 大模式。
+
+#### 模式 1：CPU 100%（单核或多核打满）
+
+```
+诊断 5 步:
+  1. top -Hp <pid>           找出占 CPU 最高的"线程"（不是进程）
+  2. printf "%x" <tid>       把十进制线程 ID 转十六进制
+  3. jstack <pid> | grep -A 30 <hex_tid>
+                             定位到 Java 线程在执行什么代码
+  4. 分析 stacktrace:
+     ├─ 看到 GC 相关 → JVM GC 频繁 → 看 jstat -gcutil
+     ├─ 看到死循环 / hot path → 业务代码 bug
+     └─ 看到大量 RUNNABLE 的同一方法 → 锁竞争或正则回溯
+  5. Arthas: thread -n 3      看 CPU 最高的 3 个线程实时栈
+```
+
+::: tip 💡 高频根因 Top 3
+
+> ① **JSON 反序列化大对象**（Jackson/Fastjson）；② **正则灾难性回溯**（`(a+)+` 这类 pattern）；③ **死循环或频繁 GC**。
+
+:::
+
+#### 模式 2：内存持续上涨（疑似内存泄漏）
+
+```
+诊断 4 步:
+  1. jstat -gcutil <pid> 1000
+     → 看 O（老年代）使用率: 是否 Full GC 后仍然不下降？
+     → 如果是 → 内存泄漏确认
+  2. jmap -histo:live <pid> | head -30
+     → 看哪个类的对象数最多、占内存最大
+  3. jmap -dump:format=b,file=heap.hprof <pid>
+     → 把堆 dump 下来（生产慎用，会 STW）
+     → 推荐: 提前配 -XX:+HeapDumpOnOutOfMemoryError
+  4. MAT 打开 dump → Leak Suspects 报告
+     → 看 Dominator Tree 找最大对象 + GC Root 引用链
+```
+
+::: tip 💡 内存泄漏高频原因
+
+> ① **静态集合无限增长**（`static Map cache = new HashMap()`）；② **ThreadLocal 没 remove**；③ **未关闭的资源**（Stream / Connection）；④ **监听器/回调未注销**。
+
+:::
+
+#### 模式 3：频繁 Full GC（响应突然变慢）
+
+```
+诊断步骤:
+  1. jstat -gcutil <pid> 1000
+     → Look at YGC / FGC 次数和耗时
+     → 健康: FGC 几小时一次, 耗时 < 200ms
+     → 异常: FGC 几分钟一次, 耗时 > 1s
+  2. -Xlog:gc*:file=gc.log (JDK 9+) 或 -XX:+PrintGCDetails
+     → 用 GCViewer / GCEasy 在线分析
+  3. 看 GC 日志:
+     ├─ "Allocation Failure" → 老年代空间不足，可能晋升过快
+     ├─ "Metadata GC Threshold" → Metaspace 不足
+     └─ "G1 Humongous Allocation" → 大对象触发 Mixed GC
+  4. 调优:
+     ├─ 老年代不足 → 增大 -Xmx 或 -XX:NewRatio
+     ├─ 晋升过快 → 调 -XX:MaxTenuringThreshold
+     └─ 大对象多 → 增大 G1HeapRegionSize
+```
+
+#### 模式 4：响应时间陡升（接口慢但 CPU/内存正常）
+
+```
+诊断顺序（从外到内）:
+  1. 看监控面板: 慢请求集中在某个时间点？某个接口？某台机器？
+  2. arthas: trace com.xx.Service xxMethod
+     → 实时看方法各步骤耗时
+  3. 高频根因:
+     ├─ DB 慢查询: 看 slow log + EXPLAIN
+     ├─ 锁等待: jstack 看 BLOCKED 线程
+     ├─ 下游接口超时: 看 OpenFeign / RestTemplate 调用链
+     ├─ GC pause: 同模式 3
+     └─ 连接池耗尽: Druid / HikariCP 监控面板看 active 数
+```
+
+#### 模式 5：服务直接 Crash / kill -9（无 OOM 错误）
+
+```
+关键: JVM 自己挂了，连 OOM 日志都没留
+  1. 看 hs_err_pid<pid>.log
+     → JVM crash 报告，常见原因: JNI bug / GC bug / OS signal
+  2. 看 dmesg | tail -100
+     → 是否被 OOM Killer 杀掉？
+     → "Out of memory: Kill process X (java)"
+  3. OOM Killer 触发原因:
+     ├─ 容器内存超限 (memory.limit_in_bytes)
+     ├─ Java 进程实际 RSS > -Xmx (堆外内存:Metaspace/DirectBuffer/线程栈)
+     └─ Native memory leak (Netty DirectBuffer / JNI)
+  4. 排查堆外内存:
+     ├─ jcmd <pid> VM.native_memory summary  (需启用 NMT)
+     ├─ pmap -x <pid>  看进程内存映射
+     └─ 看 /proc/<pid>/smaps
+```
+
+::: warning ⚠️ 容器化 JVM 必读
+
+> 容器（Docker/K8s）中 JVM 默认看的是**宿主机**内存（除非用 JDK 10+ 或加 `-XX:+UseContainerSupport`）。**生产配置：`-XX:MaxRAMPercentage=75.0`** 让 JVM 自动按容器内存的 75% 计算堆大小。
+
+:::
+
+#### Arthas 高频命令速查（生产必用）
+
+| 命令 | 用途 | 示例 |
+|------|------|------|
+| `dashboard` | 实时面板（CPU/内存/线程/GC）| 一眼看全貌 |
+| `thread -n 3` | 最忙 3 个线程的栈 | CPU 高排查 |
+| `thread -b` | **死锁检测** | 直接定位死锁 |
+| `trace Class method` | **方法各步骤耗时** | 接口慢分析 |
+| `watch Class method` | 观察方法入参/返回值 | 不停服 debug |
+| `jad Class` | **反编译已加载的类** | 确认线上代码版本 |
+| `redefine` | **热修复**（替换 class） | 紧急 bug 修复不停服 |
+| `heapdump` | 生成堆 dump | 替代 jmap |
+
+::: tip 💡 面试黄金答题框架
+
+> **"线上故障排查就 5 个模式：CPU 高 → top -Hp + jstack；内存涨 → jstat + jmap + MAT；Full GC 频 → gc.log + GCEasy；响应慢 → arthas trace；进程死 → hs_err + dmesg。每种都有清晰的 4-5 步流程。生产首选 Arthas，比传统 jstack/jmap 更安全（不停服 + 不 STW）。"**
+
+:::
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1：类加载过程是什么？什么是双亲委派？为什么要打破它？

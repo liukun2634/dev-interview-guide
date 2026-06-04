@@ -547,6 +547,86 @@ TransactionSendResult result = producer.sendMessageInTransaction(msg, null);
 - **企业应用/复杂路由** → RabbitMQ（灵活的路由机制、低延迟、协议标准化）
 - **电商/金融** → RocketMQ（事务消息、延迟消息、阿里巴巴大规模验证）
 
+### Pulsar：云原生时代的新选择
+
+**Apache Pulsar**（Yahoo 开源 → Apache 顶级项目）是 2024-2025 年崛起的"**云原生流处理平台**"，**StreamNative、Splunk、腾讯、华为**等已大规模采用。能讲清楚 Pulsar 和 Kafka 的本质差异，是 MQ 面试的加分项。
+
+#### 核心差异：存算分离
+
+```
+Kafka:                          Pulsar:
+┌────────────────┐              ┌────────────────┐
+│  Broker        │              │  Broker        │  ← 只负责调度（无状态）
+│  ├─ 数据存储    │              │  (stateless)   │
+│  └─ 路由调度    │              └────────────────┘
+└────────────────┘                      ↓
+                                ┌────────────────┐
+                                │  BookKeeper    │  ← 专门的分布式存储
+                                │  (data layer)  │
+                                └────────────────┘
+存储与计算耦合                    存算分离 → 任意扩展、Broker 秒级重启
+```
+
+#### Pulsar vs Kafka 深度对比
+
+| 维度 | Kafka | **Pulsar** |
+|------|-------|----------|
+| **架构** | 存算耦合 | **存算分离**（Broker + BookKeeper）|
+| **扩容** | 涉及数据迁移，慢 | **Broker 秒级扩容**，数据不动 |
+| **多租户** | 弱（依赖独立集群隔离）| **强**（namespace 原生隔离）|
+| **地理复制** | MirrorMaker 2（异步）| **原生 geo-replication** |
+| **消息模型** | 仅流式（partition）| **流式 + 队列**（Shared/Exclusive/Failover 订阅）|
+| **分层存储** | 3.6+ 才支持 | **原生**（热数据 BookKeeper + 冷数据 S3）|
+| **延迟消息** | 不支持 | **原生**（毫秒级精度）|
+| **生态** | **最成熟**（Flink、Spark）| 较新但快速增长 |
+| **适合** | 通用流处理、有 Kafka 历史 | **云原生、多租户、地理复制** |
+
+#### Pulsar 关键优势
+
+::: tip 💡 Pulsar 适合什么场景
+
+> ① **K8s 上跑 MQ**：Broker 无状态，pod 重启秒级 vs Kafka 分钟级；② **多租户 SaaS**：单集群隔离上百个租户；③ **跨地域多活**：geo-replication 比 MirrorMaker 简单太多；④ **延迟消息**：原生毫秒级精度，无需 RocketMQ；⑤ **存储成本敏感**：分层存储自动把老消息推到 S3。
+
+:::
+
+#### 为什么 Kafka 仍是主流
+
+- **生态最成熟**：Flink、Spark、Beam、Debezium 都首先支持 Kafka
+- **企业熟悉度高**：99% 大数据工程师都用过
+- **Kafka 4.0**（2025）也引入分层存储和 KRaft（去 ZK 化），追上 Pulsar 的部分优势
+
+### 消息可靠性三端方案（必背）
+
+**面试 Top 1 题目**：消息怎么保证不丢？答题必须**完整覆盖 Producer/Broker/Consumer 三端**。
+
+```
+┌─────────────────────────────────────────────────┐
+│ Producer 端                                       │
+│  ├─ acks=all                                     │
+│  ├─ retries=MAX, max.in.flight=1（保序）         │
+│  ├─ 同步发送 (send().get())                       │
+│  └─ enable.idempotence=true（防重）              │
+├─────────────────────────────────────────────────┤
+│ Broker 端                                         │
+│  ├─ replication.factor >= 3                      │
+│  ├─ min.insync.replicas >= 2                     │
+│  ├─ unclean.leader.election.enable=false         │
+│  └─ flush.messages / log.flush.interval.messages │
+├─────────────────────────────────────────────────┤
+│ Consumer 端                                       │
+│  ├─ enable.auto.commit=false                     │
+│  ├─ 业务处理成功后才 commit offset                │
+│  ├─ 消费端做幂等                                  │
+│  └─ 失败消息进 DLQ（死信队列）                    │
+└─────────────────────────────────────────────────┘
+```
+
+::: warning ⚠️ 三个端少一个都白搭
+
+> **Producer 设了 acks=all 但 Broker 只 1 个副本** = 副本挂了消息丢；**Broker 配了 3 副本但 Consumer 自动提交 offset** = 消费失败但 offset 已提交，消息丢。**必须三端配合**。
+
+:::
+
 ### 实战案例：延迟消息实现订单超时取消
 
 **场景：** 用户下单后 30 分钟未付款，自动取消订单。

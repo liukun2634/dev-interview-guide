@@ -97,6 +97,129 @@ HTTPS:  应用层数据 → TLS 加密 → TCP → IP → 网络
 
 **证书链：** 根 CA → 中间 CA → 服务器证书。浏览器内置根 CA 公钥。
 
+### TLS 1.3 / 0-RTT 的安全权衡
+
+**0-RTT（Zero Round-Trip Time）** 是 TLS 1.3 最激进的优化——**复用上次会话**时第一个包就能携带应用数据。但它**牺牲了前向安全性的一部分保证**。
+
+```
+普通 TLS 1.3:    1-RTT 握手 → 应用数据
+0-RTT 复用:       Client Hello (含 0-RTT 数据) → Server 直接处理
+                  ↑ 用上次会话的 PSK (Pre-Shared Key) 加密
+```
+
+::: warning ⚠️ 0-RTT 重放攻击风险
+
+> 0-RTT 数据**没有挑战机制**——同一个包**可以被中间人反复重放**。如果服务端处理的是非幂等请求（如转账、下单），会被多次执行。
+
+**规范禁止**：仅可用于 **GET 等幂等请求**，且服务端应有重放检测（如 Nonce 缓存）。
+
+:::
+
+## 同源策略与 CORS
+
+**CORS（跨源资源共享）** 是浏览器端 Web 安全的核心机制，**2025-2026 年前后端面试 100% 问到**。能完整讲出"预检请求 + 五大响应头 + 凭证模式"立刻显出深度。
+
+### 同源策略（Same-Origin Policy）
+
+两个 URL 的 **协议、域名、端口** 三者完全相同才叫"同源"。浏览器**强制隔离不同源**的资源访问，防止恶意网站读取用户在其他网站的数据。
+
+```
+当前页面: https://example.com:443/index.html
+
+✅ 同源: https://example.com/api/users
+❌ 不同源 (协议): http://example.com
+❌ 不同源 (域名): https://api.example.com
+❌ 不同源 (端口): https://example.com:8080
+```
+
+### CORS：跨源访问的标准方案
+
+CORS 用一组 HTTP Header 让服务器**主动声明**"我允许哪些源跨域访问我"。浏览器根据这些 Header 决定是否放行响应给 JS。
+
+#### 简单请求 vs 预检请求
+
+```
+简单请求（同时满足）:
+  ① 方法是 GET / HEAD / POST
+  ② Content-Type 是 application/x-www-form-urlencoded / multipart/form-data / text/plain
+  ③ 没有自定义 Header
+  → 浏览器直接发，服务器响应带 Access-Control-* 即可
+
+预检请求（CORS Preflight）:
+  浏览器先发 OPTIONS 请求询问服务器:
+    OPTIONS /api/users
+    Origin: https://app.example.com
+    Access-Control-Request-Method: PUT          ← 我想用 PUT
+    Access-Control-Request-Headers: Content-Type, Authorization  ← 我要带这些头
+  服务器返回:
+    Access-Control-Allow-Origin: https://app.example.com
+    Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+    Access-Control-Allow-Headers: Content-Type, Authorization
+    Access-Control-Max-Age: 86400               ← 缓存预检结果 24h
+  → 预检通过后，浏览器才发真实请求
+```
+
+::: tip 💡 触发预检的常见 case
+
+- 用了 PUT / DELETE / PATCH
+- Content-Type 是 `application/json`（**最常见**）
+- 带了自定义 Header（如 `Authorization`、`X-Custom-Token`）
+- 跨域 fetch 带 `credentials: 'include'`
+
+很多人不知道 **`Content-Type: application/json` 会触发预检**——这就是为什么调通 GET 的 API 一改 POST + JSON 就报 CORS 错。
+
+:::
+
+### 五大 CORS 响应头
+
+| Header | 作用 | 注意 |
+|--------|------|------|
+| **Access-Control-Allow-Origin** | 允许的源（具体域名或 `*`）| 带凭证时**不能用 `*`**，必须指定具体 origin |
+| **Access-Control-Allow-Methods** | 允许的方法 | 仅预检响应中需要 |
+| **Access-Control-Allow-Headers** | 允许的请求头 | 仅预检响应中需要 |
+| **Access-Control-Allow-Credentials** | 是否允许携带 Cookie | 取值只能是 `true`，配合 `withCredentials` |
+| **Access-Control-Max-Age** | 预检结果缓存时长（秒） | **必加**，减少不必要的预检 |
+| **Access-Control-Expose-Headers** | 允许 JS 读取的响应头 | 默认 JS 只能读 6 个标准 Header |
+
+### 凭证模式（Credentials）的严格规则
+
+```javascript
+// 前端
+fetch('https://api.example.com/users', {
+    credentials: 'include'    // 带上 Cookie
+});
+
+// 服务端必须满足全部:
+// ① Access-Control-Allow-Origin: 必须是具体 origin（不能是 *）
+// ② Access-Control-Allow-Credentials: true
+// ③ Set-Cookie: ...; SameSite=None; Secure   ← Cookie 也必须配合
+```
+
+::: warning ⚠️ CORS 不是访问控制
+
+> CORS **不是**在保护服务器——服务器仍然会处理请求并返回响应；CORS 只是浏览器决定要不要把响应交给 JS。**真正的鉴权必须在服务端做**（JWT / Session 验证）。
+
+`curl` / Postman 这类非浏览器客户端**完全不受 CORS 约束**——CORS 只是浏览器的客户端机制。
+
+:::
+
+### Spring Boot 配置示例
+
+```java
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+            .allowedOrigins("https://app.example.com")    // 具体域名
+            .allowedMethods("GET", "POST", "PUT", "DELETE")
+            .allowedHeaders("*")
+            .allowCredentials(true)
+            .maxAge(86400);                                // 缓存预检 24h
+    }
+}
+```
+
 ## HTTP 缓存机制
 
 ### 强缓存 vs 协商缓存
