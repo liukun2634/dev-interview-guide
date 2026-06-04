@@ -155,6 +155,121 @@ public V put(K key, V value) {
 
 `index = hash & (capacity - 1)` 当 capacity 是 2 的幂时，`capacity - 1` 的二进制全为 1，这个按位 AND 等效于取模，且位运算比取模快很多。
 
+### HashMap 线程安全：必踩的三大坑
+
+HashMap **非线程安全**——这是面试**最高频追问**。具体会出什么问题？
+
+| 版本 | 问题 | 后果 |
+|------|------|------|
+| **JDK 7** | 多线程扩容时**链表头插法形成环** | **CPU 100%**（死循环遍历）|
+| **JDK 8** | 改为尾插法，无死链；但仍有**数据丢失** | put 操作相互覆盖 |
+| **所有版本** | size 不准 / 遍历时抛 `ConcurrentModificationException` | 业务异常 |
+
+**正确选择**：
+
+| 方案 | 线程安全实现 | 性能 | 适用 |
+|------|------------|------|------|
+| `Hashtable` | **方法级 synchronized** | 极差（**全表锁**）| 已淘汰 |
+| `Collections.synchronizedMap()` | 包装类 + synchronized | 差 | 简单场景 |
+| **`ConcurrentHashMap`** | **JDK 7**：分段锁（16 段）<br/>**JDK 8+**：CAS + synchronized（桶级锁）| **最好** | **生产首选** |
+
+#### ConcurrentHashMap 的关键改进（JDK 8）
+
+```
+JDK 7: Segment[16] 分段锁
+       → 锁粒度 = 桶组（hash % 16）
+       → 最多 16 线程并发写
+
+JDK 8: 数组 + 链表/红黑树
+       → 锁粒度 = 单个桶（synchronized 锁桶的头节点）
+       → 不同 hash 的 put 完全并发
+       → 性能比 JDK 7 高 1 个数量级
+```
+
+::: warning ⚠️ ConcurrentHashMap 仍然有"复合操作非原子"陷阱
+
+```java
+// 错误：竞态条件
+if (!map.containsKey(key)) {
+    map.put(key, value);   // 两个线程可能都进 if，都执行 put
+}
+
+// 正确：原子复合操作
+map.putIfAbsent(key, value);
+map.computeIfAbsent(key, k -> expensiveCompute(k));
+```
+
+`ConcurrentHashMap` 的单个方法是原子的，但**"先检查再操作"的组合**仍要用 `putIfAbsent` / `compute` 系列。
+
+:::
+
+### equals() 与 hashCode() 的契约（必背）
+
+**JDK 文档明确规定的契约**——违反会导致 HashMap/HashSet 行为异常：
+
+::: tip 💡 三条铁律
+
+1. **自反性**：`a.equals(a)` 必须为 `true`
+2. **对称性**：`a.equals(b)` 为 true ⇔ `b.equals(a)` 为 true
+3. **传递性**：`a.equals(b)` 且 `b.equals(c)` → `a.equals(c)` 为 true
+4. **一致性**：多次调用结果相同（只要对象不变）
+5. **与 hashCode 的强约束**：**`a.equals(b)` 为 true → `a.hashCode() == b.hashCode()` 必须成立**
+
+:::
+
+#### 常见错误案例
+
+```java
+// ❌ 只重写 equals 不重写 hashCode
+public class User {
+    Long id;
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof User u && Objects.equals(id, u.id);
+    }
+    // 忘了重写 hashCode!
+}
+
+Set<User> set = new HashSet<>();
+set.add(new User(1L));
+set.contains(new User(1L));   // false! 因为 hashCode 不同，落到不同桶
+```
+
+#### 正确写法（IDE 自动生成 / Lombok / record）
+
+```java
+// ✅ 方式 1: record（JDK 16+，自动正确）
+public record User(Long id, String name) {}
+
+// ✅ 方式 2: Lombok
+@EqualsAndHashCode  // 同时生成两者
+public class User { Long id; String name; }
+
+// ✅ 方式 3: 手写
+@Override public int hashCode() { return Objects.hash(id, name); }
+@Override public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof User u)) return false;
+    return Objects.equals(id, u.id) && Objects.equals(name, u.name);
+}
+```
+
+### Integer 缓存陷阱
+
+```java
+Integer a = 127;
+Integer b = 127;
+Integer c = 128;
+Integer d = 128;
+
+a == b;   // true   ← 落入缓存
+c == d;   // false  ← 超出缓存，new 出新对象
+a.equals(b);  // true（用 equals 永远对）
+c.equals(d);  // true
+```
+
+**Integer 缓存范围**：`-128 ~ 127`（可通过 `-XX:AutoBoxCacheMax=N` 调大上限）。**面试黄金一句**："Integer == 比较只在 -128 ~ 127 才可靠，业务代码永远用 equals。"
+
 ## 并发：synchronized vs ReentrantLock
 
 | 特性 | `synchronized` | `ReentrantLock` |

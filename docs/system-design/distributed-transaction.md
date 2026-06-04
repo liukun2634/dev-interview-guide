@@ -457,6 +457,164 @@ Cancel 阶段（任一 Try 失败）：
 
 ---
 
+## Outbox 模式：现代微服务的事实标准
+
+**Outbox 模式**（Transactional Outbox）是 2024-2025 年微服务事件驱动架构的**事实标准**——它把"业务数据写入"和"事件发布"放在**同一个本地事务**中，解决"业务成功但消息发送失败"这个最棘手的一致性问题。
+
+**面试要点**：能讲出 Outbox 比裸调 MQ 强在哪、为什么是本地消息表的工业级版本，是 2025-2026 年微服务面试的硬通货。
+
+### 为什么不能"先写 DB 再发 MQ"
+
+```
+方案 A: DB 提交 → 发 MQ
+  ❌ MQ 发送失败 → 消息丢失 → 下游永远不知道这事发生过
+
+方案 B: 发 MQ → DB 提交
+  ❌ DB 提交失败 → 消息已发送 → 下游做了不该做的事
+
+方案 C: 加分布式事务（2PC over DB+MQ）
+  ❌ 性能差、几乎没有 MQ 真正支持
+```
+
+### Outbox 模式核心思想
+
+```
+┌─────────────────────────────────────────────┐
+│              单个本地事务                     │
+│  ┌──────────────────┐  ┌─────────────────┐  │
+│  │ 1. 写业务表       │  │ 2. 写 outbox 表  │  │
+│  │   (订单创建)      │  │   (待发事件)     │  │
+│  └──────────────────┘  └─────────────────┘  │
+│         同一事务，要么都成功，要么都失败       │
+└─────────────────────────────────────────────┘
+              ↓ 事务提交后
+┌─────────────────────────────────────────────┐
+│  独立 Outbox Relay 进程（轮询 / CDC）        │
+│    扫描 outbox 表 status=pending             │
+│    → 发送到 MQ                              │
+│    → 成功后标记 status=sent                  │
+└─────────────────────────────────────────────┘
+              ↓
+        Kafka / RabbitMQ → 下游消费者
+```
+
+### 实现方式对比
+
+| 实现 | 原理 | 优势 | 局限 |
+|------|------|------|------|
+| **轮询 Outbox 表** | 单独进程定期 SELECT status=pending | 简单、所有 DB 都支持 | 有轮询延迟（百毫秒级）|
+| **CDC（Debezium 等）** | 监听 outbox 表的 binlog 实时推送 | **延迟毫秒级**，无轮询负担 | 需要 CDC 基础设施 |
+| **RocketMQ 事务消息** | 半消息 + 本地事务回查 | 无需 outbox 表 | 仅 RocketMQ |
+
+### Outbox 表设计
+
+```sql
+CREATE TABLE outbox (
+    id            BIGINT PRIMARY KEY AUTO_INCREMENT,
+    aggregate_id  VARCHAR(64) NOT NULL,    -- 业务 ID（如 order_id）
+    event_type    VARCHAR(64) NOT NULL,    -- 事件类型
+    payload       JSON NOT NULL,           -- 事件内容
+    status        ENUM('PENDING', 'SENT'),
+    created_at    DATETIME(3) DEFAULT NOW(3),
+    sent_at       DATETIME(3),
+    KEY idx_status_created (status, created_at)   -- 加速 Relay 扫描
+);
+```
+
+```java
+@Transactional
+public void createOrder(Order order) {
+    // 1. 写业务表
+    orderRepository.save(order);
+    // 2. 写 outbox 表（同一事务）
+    outboxRepository.save(new Outbox(
+        order.getId(),
+        "OrderCreated",
+        JSON.toJSONString(order),
+        "PENDING"
+    ));
+    // 事务提交后，Relay 进程会异步发到 MQ
+}
+```
+
+### 配套保证：消费方幂等
+
+Outbox 模式只能保证**消息至少投递一次**（at-least-once），消费方**必须实现幂等**（详见 [幂等性与热点 Key](./hot-key-and-idempotency)）：
+
+```java
+@KafkaListener(topics = "order-events")
+public void consume(OrderCreatedEvent event) {
+    // 消费表去重
+    if (consumedRepo.existsById(event.getEventId())) {
+        return;  // 已处理，幂等
+    }
+    // 处理业务
+    inventoryService.deduct(event.getProductId(), event.getQty());
+    consumedRepo.save(event.getEventId());
+}
+```
+
+### Outbox vs RocketMQ 事务消息
+
+| 维度 | Outbox 模式 | RocketMQ 事务消息 |
+|------|------------|---------------|
+| **MQ 厂商绑定** | 无 | 仅 RocketMQ |
+| **需要本地表** | 是（outbox 表）| 否 |
+| **延迟** | 100ms-1s（轮询）/ 10-100ms（CDC）| **10-100ms** |
+| **DB 压力** | 多一张表的读写 | 无 |
+| **跨 DB 事务** | 不支持 | 不支持 |
+| **生产采用** | **绝对主流**（业界事实标准）| 阿里系常用 |
+
+::: tip 💡 一句话面试总结
+
+> **"Outbox 模式把业务数据写入和消息事件持久化放在同一个本地事务里——通过引入 outbox 表 + 独立 Relay 进程异步发送 MQ，消除了'业务成功但消息发送失败'的最常见一致性问题。生产中配合 Debezium CDC 把延迟压到毫秒级，已经成为微服务事件驱动架构的事实标准。消费方必须实现幂等来兜底 at-least-once 投递。"**
+
+:::
+
+---
+
+## 分布式事务选型决策树
+
+面试中**最容易加分的回答**：不要罗列 6 种方案，而是给出一个**清晰的决策路径**——
+
+```mermaid
+graph TD
+    Q["业务对一致性的要求"] --> A{"必须强一致<br/>零容忍中间状态？"}
+    A -->|是| B{"单库内？"}
+    B -->|是| B1["**本地事务**<br/>InnoDB ACID"]
+    B -->|否| B2["**TCC**<br/>金融转账场景"]
+    A -->|可接受最终一致<br/>秒-分钟级| C{"业务流程结构？"}
+    C -->|多步长流程<br/>每步可补偿| C1["**Saga**<br/>订单→库存→物流"]
+    C -->|事件驱动<br/>无需补偿| C2["**Outbox 模式**<br/>+ CDC + 消费幂等"]
+    A -->|只要消息送达| D["**可靠消息表 / 事务消息**"]
+
+    style B1 fill:#9f9
+    style B2 fill:#ff9
+    style C1 fill:#9ff
+    style C2 fill:#9ff
+```
+
+### 一张速查表回答"我应该选哪种"
+
+| 场景 | 推荐 | 原因 |
+|------|-----|------|
+| **支付/转账**（金融）| **TCC** | 资源冻结、强一致、不能超卖 |
+| **订单履约链**（订单→库存→物流→通知）| **Saga** | 流程长、可补偿、容忍中间状态 |
+| **微服务事件驱动**（任意业务变化触发下游）| **Outbox + Kafka** | 通用、解耦、性能好 |
+| **同一 DB 内多表**（账户余额 + 流水）| **本地事务** | 不要过度设计 |
+| **跨多个 DB 的强一致** | 重新设计或上 **TiDB / OceanBase** | 2PC over 多 DB 实际很难用 |
+| **遗留单体拆服务**，过渡期 | **本地事务 + 事件最终一致** | 拆得快、改造小 |
+
+::: warning ⚠️ 反模式：见过的最严重错误
+
+1. **任何业务一上来就上 TCC** → 99% 的场景用不上，徒增 3 倍开发量
+2. **手写 2PC 跨 DB** → 没考虑协调者宕机的恢复，等出事故再补丁
+3. **"先调 MQ 再写 DB"防丢消息** → 写顺序反了，DB 失败后消息已发，会引发幽灵消息
+
+:::
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1：分布式事务有哪些方案？怎么选？

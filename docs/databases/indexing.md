@@ -170,6 +170,114 @@ WHERE phone = '13812345678'
 4. **尽量使用覆盖索引**减少回表
 5. **组合索引把选择性高的列放前面**，且考虑查询语句的最左前缀
 
+## EXPLAIN 实战：怎么用 EXPLAIN 调优
+
+**EXPLAIN 是 MySQL 调优的第一工具**，2025-2026 年面试**必问**"看 EXPLAIN 怎么定位慢查询"。下面是必背字段速查：
+
+### 关键列含义
+
+| 列 | 含义 | 优化关注点 |
+|----|------|----------|
+| **type** | 访问类型，**性能从好到坏**：`system > const > eq_ref > ref > range > index > ALL` | **见到 ALL 必须优化**，至少要到 range |
+| **possible_keys** | 可能用到的索引 | 为空说明该 WHERE 没合适索引 |
+| **key** | 实际选中的索引 | 与 possible_keys 不符时考虑 `FORCE INDEX` |
+| **key_len** | 索引使用长度（字节）| 越短越好；**判断联合索引用了几列** |
+| **rows** | 估算扫描行数 | 与实际差距大时 → `ANALYZE TABLE` 刷统计 |
+| **filtered** | 过滤后剩余比例 | `rows × filtered/100` = 实际处理行 |
+| **Extra** | 额外信息 | **黄金信号**（见下） |
+
+### Extra 字段必背速查
+
+::: tip 💡 看到这些 Extra 立刻判断性能
+
+| Extra 值 | 含义 | 判断 |
+|---------|------|------|
+| **Using index** | **覆盖索引**，无需回表 | ✅ 最佳 |
+| **Using index condition** | **索引下推 ICP**，引擎层过滤 | ✅ 好 |
+| **Using where** | Server 层过滤 | ⚠️ 可能没用上 ICP |
+| **Using temporary** | 用了临时表 | ❌ 通常是 GROUP BY / DISTINCT 排序触发，要优化 |
+| **Using filesort** | 文件排序（内存/磁盘）| ❌ ORDER BY 没走索引顺序，要建组合索引 |
+| **Using join buffer** | JOIN 没用上索引 | ❌ 给关联字段加索引 |
+| **Using index for group-by** | GROUP BY 用了索引 | ✅ 好 |
+
+:::
+
+### type 进阶解读（最高频）
+
+```
+ALL          → 全表扫描（最差）
+index        → 全索引扫描（比 ALL 略好，但仍扫整个索引）
+range        → 范围查询（BETWEEN / >, < / IN）
+ref          → 普通索引等值
+eq_ref       → 唯一索引 + JOIN 时一对一
+const/system → 主键/唯一索引常量查询（最佳）
+```
+
+### 典型调优场景
+
+#### 场景 1：`SELECT *` + `ORDER BY` 慢
+
+```sql
+EXPLAIN SELECT * FROM orders WHERE user_id = 1 ORDER BY created_at DESC;
+-- Extra: Using filesort  ← 文件排序
+
+-- 优化：建组合索引 (user_id, created_at)
+-- 二级索引的 (user_id, created_at) 自带顺序，无需 filesort
+```
+
+#### 场景 2：分页深翻页慢
+
+```sql
+-- 慢：偏移大时要扫 100020 行
+SELECT * FROM orders ORDER BY id LIMIT 100000, 20;
+
+-- 快：用"延迟关联"
+SELECT * FROM orders o
+  INNER JOIN (
+    SELECT id FROM orders ORDER BY id LIMIT 100000, 20
+  ) t ON o.id = t.id;
+-- 子查询只走索引（覆盖索引）→ 不回表，再 JOIN 取数据
+```
+
+#### 场景 3：COUNT(*) 慢
+
+```sql
+SELECT COUNT(*) FROM orders WHERE status = 1;
+-- 如果 status 有索引：走索引扫描
+-- 如果没索引：全表扫描
+
+-- MySQL 8.0+ 的 COUNT 优化：COUNT(*) 和 COUNT(1) 现在等价
+-- COUNT(列名) 仍然要逐行判断 NULL，性能略差
+```
+
+### 索引选型决策树
+
+```mermaid
+graph TD
+    Q["要查什么？"] --> A{"WHERE / JOIN ON 列？"}
+    A -->|主键查询| K1["主键索引（聚簇）"]
+    A -->|单列等值| K2["单列普通索引"]
+    A -->|多列 WHERE / 多条件| K3["组合索引<br/>选择性高的列放前面"]
+    A -->|包含 ORDER BY| K4["组合索引 (WHERE 列, ORDER 列)<br/>避免 filesort"]
+    A -->|包含 GROUP BY| K5["组合索引覆盖 GROUP 列"]
+    A -->|只取少量列| K6["覆盖索引<br/>把 SELECT 列加进索引"]
+    Q --> B{"列特征？"}
+    B -->|全文检索| K7["FULLTEXT 索引 / Elasticsearch"]
+    B -->|JSON 字段| K8["MySQL 8.0 多值索引 / 虚拟列"]
+    B -->|向量| K9["MySQL 8.0+ 暂不原生支持<br/>用 pgvector / Milvus"]
+```
+
+::: warning ⚠️ 索引不是越多越好
+
+**生产经验**：单表索引超过 **5-7 个**就要警觉，超过 10 个几乎必有问题。每多一个索引：
+- **写入性能下降**：INSERT/UPDATE/DELETE 都要维护所有索引
+- **占用磁盘空间**：单索引可能比表数据本身还大
+- **优化器选错索引概率上升**：候选索引多了选错更频繁
+
+定期用 `sys.schema_unused_indexes` 删除从不使用的索引。
+
+:::
+
 ## 常见误区
 
 ::: warning 易错点
