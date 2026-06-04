@@ -133,6 +133,108 @@ String sql = "SELECT * FROM users WHERE id = " + userId;
 Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
+## SSRF（服务端请求伪造）
+
+**SSRF（Server-Side Request Forgery）** 是 OWASP 2021 Top 10 **新晋第一**——AI / 云原生时代漏洞最普遍的攻击。
+
+### 攻击原理
+
+```
+应用提供"URL 预览 / 图片代理 / Webhook"等功能:
+
+  用户输入 url=http://example.com/image.png
+  服务端: fetch(url) → 返回内容给用户
+                ↓ 攻击者改成:
+  url=http://169.254.169.254/latest/meta-data/iam/security-credentials/
+      ↑ AWS 元数据服务，拿到云服务器临时凭证 → 控制整个云账号
+
+  url=http://127.0.0.1:6379/  → 攻击内网 Redis（未授权）
+  url=http://10.0.0.5:8500/    → Consul 配置中心
+  url=file:///etc/passwd        → 读本地文件
+  url=gopher://...              → Redis/MySQL 协议攻击
+```
+
+### 防御清单（5 层防线）
+
+| 防线 | 做法 |
+|------|------|
+| **协议白名单** | 只允许 http/https，禁止 file/gopher/dict/ftp |
+| **DNS 解析后再校验 IP** | 防止 `evil.com` 解析到 127.0.0.1 / 169.254.169.254 / RFC1918 内网 |
+| **禁止重定向到内网** | curl 跟随重定向时再次校验目标 |
+| **元数据服务 IMDSv2** | AWS IMDSv2 强制要求 PUT + token，SSRF GET 拿不到 |
+| **网络层隔离** | 应用 Pod 出向防火墙白名单（K8s NetworkPolicy）|
+
+::: warning ⚠️ 黑名单 IP 一定会被绕过
+
+> 攻击者会用 `127.1`、`0x7f.0x0.0x0.0x1`、十进制 IP、DNS rebinding 等手段绕过黑名单。**生产必须用 DNS 解析后逐 IP 白名单 + 限制协议**。
+
+:::
+
+## XXE（XML 外部实体注入）
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<foo>&xxe;</foo>      ← 解析后 &xxe; 被替换为 /etc/passwd 内容
+```
+
+**防御**：所有 XML 解析器**禁用外部实体**：
+
+```java
+// Java DocumentBuilderFactory
+DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+dbf.setXIncludeAware(false);
+dbf.setExpandEntityReferences(false);
+```
+
+**现代趋势**：直接换 JSON / Protobuf 替代 XML。
+
+## 反序列化漏洞（Java/PHP）
+
+**Java 反序列化** 曾是 2015-2020 年最严重的漏洞类别（Apache Struts、Fastjson 著名 CVE）。
+
+### Java 反序列化漏洞原理
+
+```java
+ObjectInputStream ois = new ObjectInputStream(networkInput);
+Object o = ois.readObject();   // ← 攻击点
+
+// 攻击者发送精心构造的字节流 → 反序列化时
+// 触发 readObject() 中的恶意逻辑（如 Runtime.exec("rm -rf /")）
+```
+
+**经典攻击链**：CommonsCollections（Apache Commons Collections 库）、Fastjson（autoType 漏洞）、Shiro（默认密钥）。
+
+### 防御
+
+| 方案 | 说明 |
+|------|------|
+| **不要反序列化不可信数据** | 最根本的防御 |
+| **白名单类**（JEP 290 ObjectInputFilter）| JDK 9+ 提供过滤 API |
+| **换用 JSON**（Jackson/Gson）| 不要用 ObjectInputStream / fastjson autoType |
+| **Fastjson 升级到 v2** | autoType 默认禁用 |
+
+## JWT 攻击专题
+
+详见 [Spring Security — JWT 顶门 5 大坑](../web-and-frameworks/spring-security#jwt-顶门-5-大坑)。
+
+## 攻击类型横向速查
+
+| 攻击 | 攻击点 | 核心防御 |
+|------|------|---------|
+| **XSS** | 浏览器执行未过滤的脚本 | 输出编码 + CSP + HttpOnly Cookie |
+| **CSRF** | 浏览器自动带上身份凭证 | CSRF Token + SameSite Cookie |
+| **SQL 注入** | 字符串拼接 SQL | **参数化查询**（PreparedStatement）|
+| **SSRF** | 服务端代用户访问任意 URL | 协议白名单 + IP 校验 |
+| **XXE** | XML 解析器解析外部实体 | 禁用 doctype 和外部实体 |
+| **反序列化** | readObject 触发恶意代码 | 不反序列化不可信数据 |
+| **MITM** | 网络中间人窃听/篡改 | HTTPS + HSTS + 证书钉扎 |
+| **DDoS** | 大流量打挂服务 | CDN + WAF + 限流 + 弹性扩容 |
+| **暴力破解** | 暴力试密码 | 限流 + 验证码 + 密码强度 |
+| **撞库** | 用其他网站泄露的账号试 | MFA + 异常登录告警 |
+
 ## CORS（跨域资源共享）
 
 ### 同源策略

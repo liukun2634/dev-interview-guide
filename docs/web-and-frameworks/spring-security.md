@@ -142,6 +142,144 @@ spring:
 
 核心流程：用户点击"GitHub 登录" → 重定向到 GitHub 授权页 → 用户授权 → GitHub 回调携带 code → Spring Security 用 code 换取 access_token → 获取用户信息 → 创建本地认证。
 
+## OAuth2 四种授权模式（必背）
+
+**OAuth2 是 2025-2026 年面试中第三方登录、开放平台、统一鉴权场景的必问题**。能讲清楚四种 grant_type 的区别 + 谁用谁，立刻显出深度。
+
+### 四种模式速查
+
+| 模式 | grant_type | 适用 | 是否需要 client_secret | 是否需要用户参与 |
+|------|-----------|------|---------------------|----------------|
+| **授权码模式** | `authorization_code` | **Web 应用**（最安全、最常用）| ✅ | ✅ |
+| **客户端凭证** | `client_credentials` | **服务端 → 服务端**（机器调机器，无用户）| ✅ | ❌ |
+| **密码模式** | `password` | **可信第一方应用**（如官方 APP）| ✅ | ✅ |
+| **隐式授权** | `implicit` | **纯前端 SPA**（已被 OAuth 2.1 弃用）| ❌ | ✅ |
+
+### 授权码模式完整流程（最重要）
+
+```
+用户                浏览器              第三方应用（Client）         OAuth Server (如 GitHub)
+                     ↓
+                  点击"GitHub 登录"
+                     ↓
+   ←─────  302 重定向: GET /authorize?response_type=code&client_id=...&redirect_uri=...&scope=...
+                     ↓
+                                                                       用户登录 + 同意授权
+                     ←──────────────  302 重定向到 redirect_uri?code=xxx
+                                          ↓
+                                    后端用 code 换 token:
+                                    POST /token  body={code, client_id, client_secret, redirect_uri}
+                                                                       ←── 验证 code + 颁发 token
+                                          ↓
+                                    返回 access_token + refresh_token
+                                          ↓
+                                    后端用 token 调 API: GET /api/user
+                                                                       ←── 返回用户信息
+                                          ↓
+                                    本地创建 Session / 颁发自己的 JWT
+```
+
+::: tip 💡 为什么不直接给 token，要换两步？
+
+> 1. **token 不能经过浏览器**（URL 历史、Referer 头会泄露）→ code 经浏览器，token 走后端 POST
+> 2. **client_secret 保密**：服务端才有，浏览器不应触碰
+> 3. **可撤销性**：code 一次性使用 + 短期失效（10 分钟）
+
+:::
+
+### PKCE：移动端 / SPA 的安全升级
+
+**PKCE（Proof Key for Code Exchange）** 是 OAuth 2.1 强制要求的扩展，**专门替代危险的隐式授权**：
+
+```
+1. Client 生成随机 code_verifier (43-128 字符)
+2. 计算 code_challenge = BASE64URL(SHA256(code_verifier))
+3. 授权请求: /authorize?code_challenge=xxx&code_challenge_method=S256&...
+4. 换 token 请求: /token?code=...&code_verifier=原始字符串
+5. 服务端验证 SHA256(code_verifier) == code_challenge
+```
+
+**关键安全收益**：即使攻击者拦截到 code，**没有 code_verifier 也换不到 token**。
+
+### 客户端凭证：服务端到服务端
+
+```
+后端服务 A 想调用后端服务 B 的 API（没有用户参与）
+
+POST /token
+  grant_type=client_credentials
+  client_id=service-a
+  client_secret=xxxx
+
+→ 返回 access_token，A 用它调 B 的 API
+```
+
+适合**微服务间鉴权**、**OpenAPI 平台调用**。Spring Security 用 `ClientCredentialsOAuth2AuthorizedClientProvider`。
+
+## JWT 顶门 5 大坑（必背）
+
+JWT 是 2025-2026 年最容易被深挖的话题，**能讲出 5 大坑** 立刻区分初级和中级：
+
+### 坑 1：算法混淆攻击（algorithm confusion）
+
+```
+攻击者把 JWT header 改为 {"alg": "none"}  → 服务端可能跳过验签
+攻击者把 RS256 改为 HS256  → 用公钥当对称密钥伪造签名
+```
+
+**防御**：
+- **强制指定 algorithm 白名单**（如 `setAllowedAlgorithms("RS256")`）
+- 永远拒绝 `alg: none`
+
+### 坑 2：JWT 不能主动撤销
+
+> JWT 是**无状态自包含的**——签发后服务端无法让它在过期前失效。这与 Session 的"服务端删除即失效"形成鲜明对比。
+
+**生产解决方案**：
+
+| 方案 | 原理 | 代价 |
+|------|------|------|
+| **短期 token + Refresh Token** | access_token 15 分钟过期，refresh_token 7 天 | 增加一次刷新调用 |
+| **黑名单（Redis）** | 登出/重置密码时把 jti 写入 Redis，验签后查 | 失去无状态优势 |
+| **版本号** | User 表存 jwt_version，token 中带 version，不匹配则拒绝 | 改密码后所有 token 失效 |
+
+::: warning ⚠️ 永远不要让 JWT 过期时间 > 1 小时
+
+> 长 JWT + 无法撤销 = 灾难。**最佳实践：access_token 15 分钟 + refresh_token 滚动续期**。
+
+:::
+
+### 坑 3：敏感信息泄露
+
+JWT payload 是 **Base64 编码（不是加密）** —— 任何人都能解码看到。
+
+```
+错误: JWT payload = {"userId": 123, "password": "xxx", "ssn": "..."}
+            ↓ 任何拿到 token 的人都能解码看到
+正确: payload 只放 userId、roles 这类可公开标识符
+```
+
+### 坑 4：客户端存储位置
+
+| 存储位置 | 安全性 | XSS 风险 | CSRF 风险 |
+|---------|-------|---------|----------|
+| **localStorage** | 低 | **JS 可读 → 易被 XSS 偷** | 无 |
+| **HttpOnly Cookie** | 高 | JS 读不到 | 有 → 配 SameSite |
+| **内存（Vuex/Redux）** | 中 | 关闭页面就丢 | 无 |
+
+**推荐**：access_token 内存 + refresh_token HttpOnly Secure SameSite=Strict Cookie。
+
+### 坑 5：refresh token 自身的安全
+
+```
+refresh_token 一旦泄露 = 7 天的 access_token 工厂
+```
+
+**防护**：
+- **Refresh Token Rotation**：每次刷新都换新 refresh_token，旧的失效
+- **检测重放**：旧 refresh_token 再被使用 = token 被盗 → 全部撤销
+- **绑定客户端指纹**（IP / User-Agent）
+
 ## 授权模型
 
 ### URL 级别授权

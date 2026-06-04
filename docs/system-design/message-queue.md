@@ -347,6 +347,158 @@ Rebalance 前：                    Rebalance 后（Consumer 3 离开）：
 - 增大 `session.timeout.ms` 和 `heartbeat.interval.ms`，减少误判消费者离线
 - 使用 Kafka 2.3+ 的 **Cooperative Sticky Assignor**，支持增量 Rebalance，减少影响范围
 
+#### Rebalance 协议演进（Eager → Cooperative）
+
+**Cooperative Rebalance（Kafka 2.4+）是消费者面试的硬通货**——能讲清楚和 Eager 模式的区别立刻显出对 Kafka 深度。
+
+| 协议 | 行为 | STW 时间 |
+|------|------|---------|
+| **Eager**（早期默认）| 所有消费者**先全部放弃**所有分区 → 重新分配 → 拉新分配 | **整组 STW 数秒到几十秒** |
+| **Cooperative**（推荐）| **只放弃发生变化的分区**，其他继续消费 | **STW 几乎为 0** |
+
+```
+场景：3 消费者 9 分区，加入一个新消费者
+
+Eager 模式:
+  step 1: C1, C2, C3 全部 revoke 自己的 3 个分区  ← 整组停止消费
+  step 2: 等所有人 revoke 完，coordinator 重新分配
+  step 3: C1, C2, C3, C4 每人拿 2-3 个新分区
+  → 消费停顿 5-30 秒
+
+Cooperative 模式:
+  step 1: coordinator 决定 C1 -> C4 转移 1 个分区
+  step 2: 只让 C1 revoke 那个分区
+  step 3: C4 拿到那个分区开始消费
+  → 其他人完全不受影响，整体 STW < 100ms
+```
+
+```properties
+# 启用 Cooperative
+partition.assignment.strategy=org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+```
+
+::: tip 💡 4 种分区分配策略对比
+
+| Assignor | 行为 | 局限 |
+|----------|------|------|
+| **Range**（默认旧）| 按分区范围分配 | 数据倾斜（前面消费者拿多）|
+| **RoundRobin** | 轮询 | 不保证 sticky |
+| **Sticky** | 尽量保留原分配 | 仍是 Eager 协议 |
+| **CooperativeSticky** | Sticky + 增量 Rebalance | **生产首选** |
+
+:::
+
+### Consumer Offset 提交策略（Top 1 易错点）
+
+**Offset 自动 vs 手动提交是 Kafka 面试 Top 1 容易丢分的点**——很多人不知道为什么不能用自动提交。
+
+#### 自动提交的 3 个致命问题
+
+```properties
+enable.auto.commit=true
+auto.commit.interval.ms=5000   # 每 5 秒自动提交
+```
+
+```
+问题 1: 消息丢失
+  poll() 拿到 100 条 → 5 秒后自动提交 offset 100
+  但消费者其实只处理了 50 条就崩了 → 重启后从 100 开始 → 丢 50 条
+
+问题 2: 消息重复
+  poll() 拿到 100 条 → 处理到第 50 条 → 还没到 5 秒 → 崩溃
+  → 重启后从上次 commit 处开始 → 50 条重复
+
+问题 3: Rebalance 期间 offset 不一致
+  自动提交可能在 Rebalance 触发前刚提交，新消费者读到不准的 offset
+```
+
+#### 三种手动提交模式
+
+```java
+props.put("enable.auto.commit", "false");
+KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+
+while (true) {
+    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+    for (ConsumerRecord<String, String> record : records) {
+        process(record);
+    }
+
+    // 方式 1：同步提交（最安全，最慢）
+    consumer.commitSync();
+
+    // 方式 2：异步提交（快但失败不重试）
+    consumer.commitAsync();
+
+    // 方式 3：异步 + 关闭时同步（生产推荐）
+    consumer.commitAsync();
+    // 在 shutdown hook 中:
+    //   try { consumer.commitSync(); } finally { consumer.close(); }
+}
+```
+
+#### 高级：按消息粒度提交
+
+```java
+// 每处理 100 条提交一次（控制提交频率）
+Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+int count = 0;
+for (ConsumerRecord<String, String> record : records) {
+    process(record);
+    offsets.put(
+        new TopicPartition(record.topic(), record.partition()),
+        new OffsetAndMetadata(record.offset() + 1)
+    );
+    if (++count % 100 == 0) {
+        consumer.commitAsync(offsets, null);
+    }
+}
+```
+
+### 死信队列（DLQ）：消费失败的最后防线
+
+**消费失败必须有兜底**，否则一条毒消息会无限重试卡住整个 Topic。
+
+#### Kafka DLQ 模式
+
+```
+正常 Topic: orders
+重试 Topic: orders-retry (delay 30s)
+死信 Topic: orders-dlq
+
+消费失败:
+  Retry 3 次 → 进 orders-retry（带 retry-count header）
+  从 orders-retry 消费 → 失败 5 次 → 进 orders-dlq → 人工告警
+```
+
+```java
+@KafkaListener(topics = "orders")
+public void consume(ConsumerRecord<String, String> record) {
+    int retryCount = Integer.parseInt(
+        Optional.ofNullable(record.headers().lastHeader("retry-count"))
+            .map(h -> new String(h.value())).orElse("0")
+    );
+    try {
+        process(record.value());
+    } catch (RetryableException e) {
+        if (retryCount < 3) {
+            sendToRetryTopic(record, retryCount + 1);
+        } else {
+            sendToDeadLetterQueue(record, e);
+            alertOps(record, e);
+        }
+    } catch (NonRetryableException e) {
+        sendToDeadLetterQueue(record, e);  // 业务错误直接 DLQ
+    }
+}
+```
+
+::: warning ⚠️ 永远不要"抛异常然后让框架自动重试"
+
+> Spring Kafka 的 `ErrorHandler` 默认行为 = 卡在当前消息无限重试 → **一条毒消息把整个 partition 卡死几小时**。生产必须显式配 DLQ + 限制重试次数。
+
+:::
+
 ### 消息顺序性
 
 Kafka 保证**同一 Partition 内的消息是有序的**。要保证某类消息的顺序，需要将它们路由到同一个 Partition。
