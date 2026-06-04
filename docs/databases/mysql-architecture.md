@@ -188,6 +188,186 @@ Buffer Pool 是 InnoDB 在内存中维护的**数据页缓存**，默认页大�
 
 ---
 
+## Buffer Pool：MySQL 性能的心脏
+
+Buffer Pool 是 InnoDB **最重要的内存结构**——所有数据页都在它里面读写。**2025-2026 年面试要能讲清它的 LRU 改进、change buffer、预读机制**这三个核心。
+
+### 整体结构
+
+```
+┌────────────────────────────────────────────┐
+│            Buffer Pool（默认 128MB）         │
+├────────────────────────────────────────────┤
+│  Free List   ← 空闲页链表                   │
+│  LRU List    ← 数据页 + 索引页（按访问排序） │
+│  Flush List  ← 脏页（待刷盘）                │
+│  Change Buffer ← 二级索引写缓冲              │
+│  Adaptive Hash Index ← 自适应哈希索引       │
+└────────────────────────────────────────────┘
+```
+
+### InnoDB 的"分代 LRU"：解决全表扫描污染
+
+::: tip 💡 经典 LRU 在 MySQL 里行不通
+
+> **场景**：执行一次大表扫描，所有热点页都被刷出 LRU → **下次正常查询全部 cache miss** → 系统抖动。
+
+InnoDB 的解法：**分代 LRU**——把 LRU 链表分成 **Young** 和 **Old** 两段：
+
+```
+       LRU 链表（从新到老）
+┌─────────────────┬─────────────────┐
+│   Young (5/8)    │   Old (3/8)     │
+│   真正的热数据    │   "试用区"       │
+└─────────────────┴─────────────────┘
+       ↑                  ↑
+     最新被        全表扫描进来的页
+     高频访问的页   先放这里
+```
+
+**关键规则**：
+- 新读入的页**先放 Old 头部**（不直接污染 Young）
+- 只有页在 Old 区**停留 > 1 秒后再次被访问**，才能晋升到 Young
+- 配置参数：`innodb_old_blocks_pct=37`（默认 3/8）、`innodb_old_blocks_time=1000ms`
+
+:::
+
+### Change Buffer：二级索引写优化
+
+```
+INSERT INTO t VALUES (1, 'a');
+  ↓
+主键页在内存 → 直接写主键 B+Tree
+  ↓
+二级索引页不在内存？
+  → 普通索引: 写入 change buffer（不读磁盘）
+  → 唯一索引: 必须读磁盘验证唯一性，不能用 change buffer
+  ↓
+等下次该页被读入内存时，合并（merge）change buffer
+```
+
+**收益**：把多次随机 IO 合并为一次顺序 IO，**对"写多读少"的表**（如日志表）写入性能可提升数倍。
+
+**配置**：
+- `innodb_change_buffer_max_size=25`（默认占 Buffer Pool 25%）
+- `innodb_change_buffering=all`（缓存所有 DML）
+
+::: warning ⚠️ 用唯一索引就用不上 change buffer
+
+这是面试黄金考点：**唯一索引必须读取数据页才能验证"是否已存在相同值"**，所以**无法走 change buffer**。如果业务上能用普通索引（无重复风险），不要无脑加 UNIQUE。
+
+:::
+
+### 预读（Read-Ahead）
+
+InnoDB 会**预测即将要访问的页并提前加载**，减少 IO 等待：
+
+| 预读类型 | 触发条件 | 说明 |
+|---------|---------|------|
+| **线性预读** | 顺序访问完一个 extent 的 ≥ 56 个页 | 异步加载下一个 extent |
+| **随机预读**（已默认关闭）| 一个 extent 内有 13 个页在 Buffer Pool | 加载剩余页 |
+
+---
+
+## 索引下推（ICP）与 MRR：MySQL 5.6+ 关键优化
+
+### Index Condition Pushdown（ICP）
+
+**索引下推**让 WHERE 条件中"涉及索引列的部分"在**存储引擎层**就过滤，避免回表无效行。
+
+#### 没有 ICP（MySQL 5.6 前）
+
+```sql
+SELECT * FROM users WHERE name LIKE '张%' AND age > 25;
+-- 联合索引 (name, age)
+
+执行流程:
+1. 引擎层根据 name LIKE '张%' 走索引 → 拿到所有"张姓"的主键
+2. 引擎层逐行回表读完整数据  ← 大量回表！
+3. Server 层用 age > 25 过滤  ← 在这里才过滤，前面回表全白做
+```
+
+#### 有 ICP（MySQL 5.6+ 默认开启）
+
+```sql
+执行流程:
+1. 引擎层根据 name LIKE '张%' 走索引
+2. **引擎层** 直接用 age > 25 过滤（索引里就有 age 字段！）
+3. 只回表读真正命中的行
+```
+
+**收益**：**回表次数大幅减少**，复杂 WHERE 条件场景性能可提升 2-10×。
+
+#### 怎么确认走了 ICP
+
+```sql
+EXPLAIN SELECT * FROM users WHERE name LIKE '张%' AND age > 25;
+-- Extra 列出现 "Using index condition" → 走了 ICP
+-- 出现 "Using where" → 仅 Server 层过滤，没用 ICP
+```
+
+### Multi-Range Read（MRR）
+
+**MRR** 优化"通过二级索引大量回表"的场景：
+
+```
+没有 MRR:
+  二级索引按 name 排序 → 回表的主键是乱序的 → 大量随机 IO
+
+有 MRR:
+  二级索引扫完后 → **先按主键排序** → 再回表 → 顺序 IO
+```
+
+**配置**：
+```sql
+SET optimizer_switch='mrr=on,mrr_cost_based=off';
+```
+
+**典型场景**：范围查询 + 大量回表（如 `WHERE age BETWEEN 20 AND 30`）。
+
+### Index Merge：多列各自有索引时
+
+当 WHERE 涉及多个有**独立索引**的列时，MySQL 可以**合并多个索引的结果**：
+
+```sql
+-- 假设 phone、email 各有索引（无联合索引）
+SELECT * FROM users WHERE phone = '...' OR email = '...';
+
+EXPLAIN 显示 type=index_merge
+执行: 分别走两个索引 → 取结果 union/intersect → 回表
+```
+
+**面试要点**：**`OR` 条件能用 Index Merge，`AND` 条件优先用联合索引**。如果你看到 `type=index_merge`，往往意味着**应该建一个联合索引**来替代两个单列索引。
+
+---
+
+## redo log / undo log / binlog 三大日志关系
+
+**MySQL 三种日志**是面试黄金高频题（详见 [MySQL 日志体系](./mysql-logs)），这里给出一个**横向对比速查**：
+
+| 日志 | 所在层 | 作用 | 写入时机 | 是否循环 |
+|------|-------|------|---------|---------|
+| **redo log** | InnoDB 引擎层 | **崩溃恢复**（保证持久性 D）| 事务执行中 | 是（环形）|
+| **undo log** | InnoDB 引擎层 | **回滚 + MVCC 读历史版本** | 事务执行中 | 否（按版本管理）|
+| **binlog** | Server 层 | **主从复制 + 数据恢复** | 事务提交时 | 否（按文件名递增）|
+
+### 两阶段提交（2PC）保证 redo log 与 binlog 一致
+
+```
+1. 写 redo log（prepare 状态）
+2. 写 binlog
+3. 提交 redo log（commit 状态）
+
+崩溃恢复:
+  ① redo prepare + binlog 完整 → 提交
+  ② redo prepare + binlog 缺失 → 回滚
+  → 永远保证 redo 和 binlog 内容一致
+```
+
+详见 [MySQL 日志 — 两阶段提交](./mysql-logs)。
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：一条 SQL 语句在 MySQL 中是怎么执行的？**

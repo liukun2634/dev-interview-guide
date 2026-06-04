@@ -167,6 +167,93 @@ RTO 动态计算：`RTO = SRTT + 4 * DevRTT`（基于历史 RTT 平滑值和偏�
 | **快速重传** | 收到 3 个重复 ACK 立即重传 | 无需等待 RTO 超时 |
 | **快速恢复** | ssthresh = cwnd/2，cwnd = ssthresh | 从拥塞中快速恢复 |
 
+#### 拥塞控制算法演进：Reno → CUBIC → BBR
+
+**2025-2026 年面试高频追问点**：拥塞控制算法不止经典 Reno 一种，**Linux 内核默认从 2.6 的 Reno → 2.6.19 的 CUBIC → 4.9 引入 BBR**，每一代都是面试加分点。
+
+| 算法 | 策略 | 触发降速的信号 | 适用 |
+|------|------|--------------|------|
+| **Reno**（教科书）| AIMD（加性增、乘性减）| **丢包** | 入门理解，已不用于生产 |
+| **CUBIC**（Linux 默认）| 三次函数曲线增长 | **丢包** | 通用高带宽网络（默认）|
+| **BBR**（Google）| **建模瓶颈带宽 + RTT**，不再依赖丢包 | **拥塞前的延迟上升** | **跨国 / 高丢包链路**（CDN、视频）|
+
+#### 为什么 BBR 是革命
+
+::: tip 💡 BBR 的核心洞察
+
+> 传统拥塞控制（Reno/CUBIC）**等到丢包才降速**——但在现代网络中，**丢包不等于拥塞**：
+> - 跨国链路有概率性丢包（< 1%），CUBIC 会误判降速，**白白浪费带宽**
+> - 路由器深 buffer（Bufferbloat）能掩盖丢包，等到真丢包时**延迟已经飙升**
+
+**BBR 改为**：主动测量"瓶颈带宽 BtlBw"和"最小 RTT"，**把发送速率精确控制在 BtlBw**——既不浪费带宽，也不灌满 buffer。
+
+**实际效果**：YouTube 全球启用 BBR 后吞吐量 **+4-14%**，重传率显著下降。
+
+:::
+
+#### 一键切换 BBR
+
+```bash
+# 检查当前算法
+sysctl net.ipv4.tcp_congestion_control
+# 启用 BBR (Linux 4.9+)
+echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+sysctl -p
+```
+
+### 6. Nagle 算法 与 Delayed ACK：必须一起讲
+
+**Nagle 算法**和 **Delayed ACK** 是面试中经常**单独提一个、合在一起追问**的细节——两者各自合理，**叠加在一起就会卡顿 200ms**。
+
+#### Nagle 算法
+
+```
+目的: 合并小包，避免"40 字节包头 + 1 字节数据"的浪费
+规则: 如果有未确认的小包在飞 → 后续小数据先缓存，凑大后再发
+关闭: setsockopt TCP_NODELAY = 1
+```
+
+#### Delayed ACK
+
+```
+目的: 减少 ACK 数量（"反向凑包"）
+规则: 收到数据不立刻 ACK → 等 ~40ms 看是否有响应数据可以捎带 ACK
+关闭: setsockopt TCP_QUICKACK = 1
+```
+
+#### **Nagle + Delayed ACK 的经典死锁**
+
+```
+应用 A 发送 "请求"（小包）→ Nagle 等凑包
+应用 B 收到请求 → Delayed ACK 等捎带响应
+                   ↓ 等待 40-200ms
+最坏情况: 双方互相等 → 延迟突增 200ms
+```
+
+::: warning ⚠️ 何时一定要关闭 Nagle
+
+- **RPC / 数据库客户端**：每个请求都希望立刻发出
+- **HTTP/2、gRPC**：协议自己控制批量，不需要 OS 帮忙
+- **实时游戏 / 行情推送**：每毫秒都重要
+- **MySQL 客户端 / Redis 客户端**：默认都开了 `TCP_NODELAY`
+
+:::
+
+### 7. 零窗口（Zero Window）与持续定时器
+
+接收方处理不过来时会发送 `Window Size = 0` 让发送方停止。但**如果接收方恢复后的窗口更新通知丢了，双方会永远等下去**。
+
+**解法：持续定时器（Persist Timer）**——发送方收到零窗口后定时发送 **窗口探测包（Window Probe）**，强制接收方回复当前窗口。
+
+### 8. SYN Flood 与 SYN Cookie
+
+经典 DDoS 攻击：**只发 SYN 不发 ACK**，让服务端半连接队列爆满。
+
+**SYN Cookie 防御**：服务端**不分配资源**，把状态编码到 SYN-ACK 的序列号里；只有真实客户端回 ACK 时再分配。Linux 默认开启 `tcp_syncookies=1`。
+
+---
+
 ## 常见误区
 
 ::: warning 易错点

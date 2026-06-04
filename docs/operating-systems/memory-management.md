@@ -266,6 +266,171 @@ Linux 内核用于管理**物理页框**的分配算法：
 
 ---
 
+## CPU 缓存与并发底层
+
+理解 CPU 缓存层级、**MESI 协议**、**伪共享**、**内存屏障**是 2025-2026 年中高级面试**区分候选人深度**的硬核话题——尤其在写并发库、做性能优化时是绕不开的基本功。
+
+### CPU 缓存层级
+
+现代 CPU 普遍是 **3 级缓存 + 主存** 的层级结构：
+
+```
+┌──────────────────────────────┐
+│  寄存器 (Register)            │  延迟 < 1 ns
+├──────────────────────────────┤
+│  L1 Cache  (32-64 KB / 核)    │  延迟 ~1 ns      ← 每核独占
+│  └─ L1d 数据 + L1i 指令       │
+├──────────────────────────────┤
+│  L2 Cache  (256 KB-1 MB / 核) │  延迟 ~3 ns      ← 每核独占
+├──────────────────────────────┤
+│  L3 Cache  (8-64 MB / CPU)    │  延迟 ~10 ns     ← 多核共享
+├──────────────────────────────┤
+│  主存 DRAM (GB 级)            │  延迟 ~100 ns
+└──────────────────────────────┘
+                    ↓
+           "**100 倍**"延迟差距是
+           所有性能优化的根本动机
+```
+
+::: tip 💡 一个不能忘的数字
+
+> **L1 命中 vs 主存访问，延迟差 100 倍**。这就是为什么"减少 cache miss"是高性能代码的核心目标——不是优化算法常数，而是优化**内存访问模式**。
+
+:::
+
+### Cache Line：缓存的最小单位
+
+CPU 不会一字节一字节读内存，而是**按 cache line（缓存行）整块读写**——**通常是 64 字节**。
+
+```
+读 1 字节 a → 实际读了 a 所在的整个 64 字节 cache line
+读相邻字节 b → 命中 L1，仅 ~1 ns
+读 128 字节后的 c → cache miss，又一次主存访问
+```
+
+**核心含义**：
+- **连续内存访问极快**（顺序遍历数组 vs 链表的关键区别）
+- **不同核心修改同一 cache line 上的不同变量也会冲突** → 伪共享
+
+### MESI 缓存一致性协议
+
+多核 CPU 都有自己的 L1/L2 缓存，如何保证**多个核同时缓存的同一个变量值是一致的**？答案是 MESI 协议（Modified / Exclusive / Shared / Invalid）。
+
+#### 四个状态
+
+| 状态 | 含义 | 何时进入 |
+|------|------|---------|
+| **M (Modified)** | 数据已被本核修改，主存未同步，**只此一份** | 本核写入 |
+| **E (Exclusive)** | 数据未修改，**只此一份**（其他核没缓存）| 本核首次读 |
+| **S (Shared)** | 数据未修改，**多核共享**这份缓存 | 其他核也读了同一行 |
+| **I (Invalid)** | 数据已失效，必须重新从主存/其他核获取 | 其他核写入了同一行 |
+
+#### 状态转换关键流程
+
+```
+核 A 读 x:           Cache A 状态 = E (独占)
+核 B 读 x:           Cache A 变 S, Cache B 变 S (共享)
+核 A 写 x:           Cache A 变 M, 同时广播 invalidate 给所有共享者
+                     → Cache B 变 I (失效)
+核 B 再读 x:         Cache B = I → 必须从 Cache A (M) 或主存重新读
+                     → 强制 Cache A 把数据写回 → 两个核重新进 S
+```
+
+**关键代价**：**核间通信（cache coherence traffic）很贵**——这就是为什么"多线程改同一变量"在物理上就比"各改各的"慢得多。
+
+### 伪共享（False Sharing）：最隐蔽的性能杀手
+
+> **不同线程修改的变量在内存上无关，但因为落在同一个 cache line，导致 MESI 协议反复让对方的 cache 失效**。
+
+#### 经典案例
+
+```java
+class Counter {
+    long count1;   // 8 字节
+    long count2;   // 8 字节
+}
+// 同一个 Counter 对象的 count1 和 count2 大概率在同一 cache line (64 字节)
+
+// 线程 A 高频写 counter.count1
+// 线程 B 高频写 counter.count2
+// 表面上无共享 → 实际 MESI 互相 invalidate → 性能下降 10-100×
+```
+
+#### 解决：Padding / @Contended
+
+```java
+// 方式 1: 手动填充
+class PaddedCounter {
+    long count1;
+    long p1, p2, p3, p4, p5, p6, p7;  // 7 个 long 填满 64 字节
+    long count2;
+}
+
+// 方式 2: JDK 8+ 的 @Contended (推荐)
+import sun.misc.Contended;
+
+class PaddedCounter {
+    @Contended long count1;
+    @Contended long count2;
+}
+// 需要 JVM 参数: -XX:-RestrictContended
+```
+
+::: warning ⚠️ 哪些场景必须考虑伪共享
+
+1. **高频并发计数器**（监控埋点、统计）—— `LongAdder` 内部就用了 `@Contended` 的 `Cell`
+2. **生产者-消费者队列的 head / tail 指针** —— Disruptor 的 Sequence 对象就用 Padding
+3. **线程本地数据数组** —— 不要用相邻索引存不同线程的数据
+
+:::
+
+### 内存屏障（Memory Barrier）
+
+CPU 为了性能会**乱序执行**指令；编译器也会做指令重排。**内存屏障是一种特殊 CPU 指令，告诉硬件/编译器"这里不能重排"**。
+
+#### 四种屏障
+
+| 屏障 | 含义 | 何时插入 |
+|------|------|---------|
+| **LoadLoad** | 屏障前的 Load 必须完成才能执行屏障后的 Load | volatile 读后 |
+| **LoadStore** | 屏障前的 Load 必须完成才能执行屏障后的 Store | volatile 读后 |
+| **StoreStore** | 屏障前的 Store 必须**对其他核可见**才能执行屏障后的 Store | volatile 写前 |
+| **StoreLoad** | **最全能、最贵**：前面的写对其他核可见后才能执行后面的读 | volatile 写后 / `Unsafe.fullFence()` |
+
+#### Java volatile 的本质
+
+Java 的 `volatile` 关键字底层就是**靠 StoreStore + StoreLoad 屏障**实现可见性：
+
+```java
+volatile int x;
+
+x = 1;
+// JVM 在这里插入 StoreStore + StoreLoad
+// → 确保 x=1 立刻刷到主存 + 其他核 cache 失效
+
+int y = x;
+// JVM 在这里插入 LoadLoad + LoadStore
+// → 确保读到最新的 x
+```
+
+详见 [JVM 内部原理 — Java 内存模型](../programming-languages/jvm-internals#java-内存模型-jmm)。
+
+#### 内存屏障的硬件实现
+
+- **x86**：内存模型较强（TSO），大多数操作天然有序，**只需 `mfence` 实现 StoreLoad**
+- **ARM / Power**：弱内存模型，需要更多屏障指令（`dmb` / `dsb`），但**性能更好**
+- 这就是为什么"在 x86 上跑得好的并发代码，移植到 ARM 上可能出现奇怪的并发 bug"
+
+### 面试黄金回答模板
+
+> **"CPU 缓存按 64 字节的 cache line 为单位读写，L1 比主存快 100 倍。多核之间靠 MESI 协议保持一致——但任何核修改某 cache line，都会让其他核的同行缓存全部 Invalid，强制重读。这导致两个看起来无关的变量如果落在同一 cache line，会出现伪共享性能塌方，解法是 padding 或 @Contended。**
+> 
+> **CPU 还会乱序执行指令，需要内存屏障显式禁止重排。Java 的 volatile 关键字本质就是 JVM 在读写处插入了 LoadLoad / StoreStore / StoreLoad 这些屏障，保证可见性和有序性。**
+> 
+> **这套机制是 LongAdder、Disruptor、ConcurrentHashMap 高性能的物理基础。"**
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1：什么是虚拟内存？为什么需要它？
