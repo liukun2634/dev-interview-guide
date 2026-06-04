@@ -294,6 +294,193 @@ spec:
 # kubectl rollout undo deployment/my-app --to-revision=2
 ```
 
+### 场景 5：Pod 调度与亲和性
+
+**Pod 调度**是 2025-2026 年 K8s 面试**深度题**，能讲清楚 nodeSelector / Affinity / Taints / Topology 四个概念的层次关系，是一线大厂 SRE/平台岗位的硬通货。
+
+#### 调度机制总览
+
+```
+新 Pod 创建
+    ↓
+kube-scheduler 调度阶段:
+  ┌───────────────────────┐
+  │  Filter（过滤）         │  → 找出"能放"的节点（资源够 / 端口不冲突 / nodeSelector 匹配）
+  └───────────────────────┘
+              ↓
+  ┌───────────────────────┐
+  │  Score（打分）         │  → 给每个节点打分（亲和性 / 资源平衡 / 镜像本地化）
+  └───────────────────────┘
+              ↓
+  ┌───────────────────────┐
+  │  Bind（绑定）          │  → 选分数最高的节点
+  └───────────────────────┘
+```
+
+#### 四种调度控制对比
+
+| 机制 | 用途 | 谁主动 | 一句话理解 |
+|------|-----|-------|-----------|
+| **nodeSelector** | 简单标签匹配 | Pod 选节点 | "我只去打了 X 标签的节点" |
+| **Node Affinity** | 复杂表达式 + 软/硬约束 | Pod 选节点 | "尽量去 SSD 节点，没有也凑合" |
+| **Pod Affinity / AntiAffinity** | Pod 之间关系 | Pod 选 Pod | "和 Redis 部署到同节点 / 和自己副本分散到不同节点" |
+| **Taints + Tolerations** | 节点驱逐 Pod | 节点选 Pod | "我这节点有污点，只有能容忍的 Pod 才能来" |
+
+#### 实战配置
+
+```yaml
+spec:
+  # 硬约束：必须满足
+  nodeSelector:
+    disktype: ssd
+
+  affinity:
+    # 软约束：优先 GPU 节点，没有也行
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: gpu-type
+                operator: In
+                values: [a100]
+
+    # Pod 反亲和：自己的副本要分散到不同节点（高可用）
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: my-app
+          topologyKey: kubernetes.io/hostname    # 按主机名分散
+        # topologyKey: topology.kubernetes.io/zone   # 按可用区分散
+
+  # 容忍节点污点（专用节点）
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: gpu
+      effect: NoSchedule
+```
+
+::: tip 💡 生产高可用必备配置
+
+> **任何重要应用的 Pod 都要加 `podAntiAffinity + topologyKey: kubernetes.io/hostname`**——保证多副本不会被调度到同一节点，节点宕机时不会全挂。
+
+:::
+
+### 场景 6：startupProbe + Pod 优雅终止
+
+#### startupProbe 解决"启动慢"应用
+
+Java 应用、大模型推理服务等**启动慢**（30 秒以上）。如果只用 livenessProbe：
+
+```
+错误配置:
+  livenessProbe: initialDelaySeconds=10, periodSeconds=10
+  ↓
+  10 秒后开始探活，但 Spring Boot 还在初始化 → 失败
+  ↓
+  连续失败 → kubelet 重启 Pod → 死循环
+```
+
+**正确做法**：用 `startupProbe` 接管启动阶段，**它通过后** liveness/readiness 才开始：
+
+```yaml
+startupProbe:
+  httpGet: { path: /healthz, port: 8080 }
+  failureThreshold: 30      # 最多重试 30 次
+  periodSeconds: 10         # 每 10 秒一次 → 总共 5 分钟启动窗口
+livenessProbe:
+  httpGet: { path: /healthz, port: 8080 }
+  periodSeconds: 10         # startupProbe 通过后才开始
+```
+
+#### Pod 优雅终止流程
+
+**面试加分点**：能讲清"`kubectl delete pod` 后到底发生了什么"。
+
+```
+1. Pod 状态变为 Terminating
+2. **同时并发**:
+   ├─ 从 Service Endpoints 移除（不再接受新流量）
+   └─ 触发 preStop Hook（如果有）
+3. preStop 执行完后，发 SIGTERM 给容器主进程
+4. 等待 terminationGracePeriodSeconds（默认 30s）
+5. 仍未退出 → 强制 SIGKILL
+```
+
+::: warning ⚠️ 优雅终止的常见坑
+
+**问题**：Service 移除 Endpoints 是**异步**的，可能 Pod 已发 SIGTERM 但 kube-proxy 还在转发流量 → 502 错误。
+
+**解决**：preStop 中 `sleep 5`，等 Endpoints 同步完再开始关闭：
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["sh", "-c", "sleep 5"]
+terminationGracePeriodSeconds: 60
+```
+
+:::
+
+### 场景 7：Operator 模式
+
+**Operator** 是 K8s **最重要的扩展模式**，把"运维知识"编码成 Kubernetes 控制器，让有状态服务（DB / MQ / 监控）也能像无状态应用一样**声明式管理**。
+
+#### CRD + Controller = Operator
+
+```
+传统部署 MySQL 主从:
+  → 手动 helm install + 配 backup CronJob + 配主从切换脚本 + ...
+  → 几百行 yaml + 一份运维手册
+
+Operator 部署:
+  apiVersion: mysql.example.com/v1
+  kind: MySQLCluster
+  metadata:
+    name: my-db
+  spec:
+    replicas: 3              # 主 + 2 个从
+    storageSize: 100Gi
+    backup:
+      schedule: "0 2 * * *"
+      retention: 7
+  → Operator Controller 自动:
+    ① 创建 StatefulSet
+    ② 配置主从复制
+    ③ 创建定时备份
+    ④ 主挂了自动 failover
+    ⑤ 升级时滚动 + 数据迁移
+```
+
+#### Operator vs Helm
+
+| 维度 | Helm | **Operator** |
+|------|------|-----------|
+| **定位** | 模板渲染 + 一次性部署 | **持续协调**（reconcile loop）|
+| **生命周期管理** | 部署/升级/卸载 | **+ 备份 / 故障恢复 / 扩容 / 版本升级** |
+| **Day 2 运维** | 无 | **核心价值** |
+| **适合** | 无状态应用 | **有状态服务**（DB / MQ / 监控）|
+
+#### 主流 Operator 生态
+
+| 服务 | 知名 Operator |
+|------|--------------|
+| **数据库** | MySQL Operator、Postgres Operator (Zalando)、TiDB Operator |
+| **MQ** | Strimzi (Kafka)、RabbitMQ Cluster Operator |
+| **缓存** | Redis Operator (OT)、Spotahome Redis Operator |
+| **监控** | Prometheus Operator |
+| **CI/CD** | ArgoCD、Tekton |
+| **AI 推理** | KServe、KubeRay |
+
+::: tip 💡 面试黄金回答
+
+> **"Operator 把'运维专家的知识'编码进 Kubernetes Controller——通过自定义资源 CRD 让用户声明式描述'我要什么'，Operator 用 reconcile loop 持续把现实拉到期望状态。它和 Helm 的本质区别是 Helm 只管一次性部署，Operator 还管 Day 2 运维（备份、failover、扩缩容）。Prometheus、TiDB、Kafka 这些复杂服务在 K8s 上的事实标准都是用 Operator 部署。"**
+
+:::
+
 ---
 
 ## 面试常问 & 怎么答

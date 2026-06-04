@@ -227,6 +227,104 @@ acks=all                     # 等待所有 ISR
 - `false`：只允许 ISR 中的副本成为新 Leader，避免数据丢失，但若 ISR 为空则分区不可用
 - `true`：允许落后的副本（不在 ISR 中）成为 Leader，牺牲一致性换取可用性，**生产环境强烈建议保持 false**
 
+#### 高水位（HW）与 LEO：Kafka 数据可见性的核心
+
+**HW（High Watermark）和 LEO（Log End Offset）是 Kafka 副本机制最容易被深挖的细节**——能讲清楚这两个，立刻显出对 Kafka 有真正的理解。
+
+```
+                          Leader Partition
+  ┌────┬────┬────┬────┬────┬────┬────┬────┐
+  │ m0 │ m1 │ m2 │ m3 │ m4 │ m5 │ m6 │ m7 │
+  └────┴────┴────┴────┴────┴────┴────┴────┘
+                          ▲              ▲
+                          │              │
+                          HW=5           LEO=8
+              消费者只能看到 < HW         Leader 自己写到 LEO
+              的数据 (m0..m4)           （还未被所有 ISR 复制）
+
+  Follower 1 (in ISR):  m0..m6   LEO=7  ← 比 Leader 落后 1 条
+  Follower 2 (in ISR):  m0..m5   LEO=6  ← 比 Leader 落后 2 条
+
+  → HW = min(所有 ISR 的 LEO) = min(8, 7, 6) = 6  (写错了，应该是 5)
+  → 等所有 ISR 都同步到 m6, HW 才推到 6
+```
+
+| 术语 | 含义 | 影响 |
+|------|------|------|
+| **LEO（Log End Offset）** | 每个副本各自的"最新位移+1" | 每写一条消息 +1 |
+| **HW（High Watermark）** | **所有 ISR 中最小的 LEO** | **消费者只能消费到 HW-1** |
+| **ISR 全部确认** | 一条消息写入到所有 ISR 副本 | HW 才会推进 |
+
+**为什么消费者只能消费到 HW**：保证已经被消费者读到的数据**就算 Leader 挂了，新 Leader 上也一定有**——避免"读到了又消失了"的灾难。
+
+::: warning ⚠️ HW 截断引发的丢消息坑（Leader Epoch 解决）
+
+旧版 Kafka 在 Leader 切换时，新 Leader 会让 Follower **截断到自己的 HW** → 可能丢数据。Kafka 0.11+ 引入 **Leader Epoch**：每次 Leader 变更 epoch +1，截断时查询 epoch 对应的位移，避免误截。**面试加分点**：能说出"HW 截断 + Leader Epoch 修复"。
+
+:::
+
+#### 幂等 Producer 与事务 API
+
+**幂等 Producer（idempotent producer）** 是 Kafka 0.11+ 的关键特性，解决"网络抖动重试导致重复消息"：
+
+```
+关键机制:
+  ① Producer 启动时分配唯一 PID（Producer ID）
+  ② 每条消息带 <PID, Partition, SequenceNumber>
+  ③ Broker 端按 <PID, Partition> 维护期望的 sequence
+  ④ 收到 sequence == expected → 接受
+     收到 sequence < expected → **去重丢弃**（这就是幂等保证）
+     收到 sequence > expected → 拒绝（OutOfOrderSequence）
+```
+
+**配置**：
+```properties
+enable.idempotence=true       # 启用幂等
+acks=all                       # 必须配合
+retries=Integer.MAX_VALUE      # 安全重试
+max.in.flight.requests.per.connection=5  # ≤ 5 才能保证有序
+```
+
+::: tip 💡 幂等 Producer ≠ 跨分区幂等
+
+> **幂等 Producer 只保证"同一 Producer、同一 Partition 内"消息不重复**。要做到跨分区、跨会话的精确一次（exactly-once）必须用**事务 API**。
+
+:::
+
+**事务 API**（exactly-once 语义关键）：
+```java
+producer.initTransactions();
+producer.beginTransaction();
+producer.send(new ProducerRecord<>("orders", order));
+producer.send(new ProducerRecord<>("inventory", deduct));
+producer.commitTransaction();   // 全部成功才可见
+// 或 producer.abortTransaction();
+```
+
+#### 为什么 Kafka 这么快：零拷贝 + 顺序 IO
+
+**Kafka 单机几十万 TPS 的核心三招**：
+
+| 技术 | 收益 |
+|------|------|
+| **顺序写磁盘** | 顺序写性能 ≈ 内存随机写（~600 MB/s 机械盘）|
+| **PageCache** | 操作系统页缓存，**所有读写先走内存** |
+| **零拷贝 sendfile** | 消费时数据从 PageCache 直接到网卡，**省 4 次拷贝 + 2 次上下文切换**（详见 [OS — 零拷贝](../operating-systems/io-model#_4-零拷贝-zero-copy)）|
+
+```
+传统模式（4 次拷贝）:
+  磁盘 → 内核 PageCache → 用户态 buffer → 内核 socket buffer → 网卡
+
+零拷贝模式（sendfile）:
+  磁盘 → 内核 PageCache → 网卡    ← 全程不出内核态
+```
+
+::: tip 💡 面试黄金回答
+
+> **"Kafka 的吞吐能到几十万 TPS，靠的是三件事：① 顺序写磁盘（不是随机写），机械盘的顺序写都能跑到 600MB/s；② 充分利用 OS PageCache 而非自建缓存；③ 消费用 sendfile 零拷贝，数据从内核 PageCache 直接到网卡。"**
+
+:::
+
 **Consumer Group Rebalance**
 
 当 Consumer Group 中的成员数量发生变化时（消费者加入或离开），Kafka 会触发 **Rebalance（重平衡）**，重新分配 Partition 与 Consumer 的绑定关系。

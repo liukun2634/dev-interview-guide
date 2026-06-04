@@ -118,6 +118,148 @@ CGLIB 通过继承实现代理，final 类无法被继承，final 方法无法�
 
 内部类通常不由 Spring 直接管理，AOP 不会生效。
 
+## @Transactional 深度：AOP 应用的"王者"
+
+`@Transactional` 是 AOP 在 Spring 中**最常见、最容易踩坑**的应用。2025-2026 年大厂 Java 面试**几乎必问**事务传播行为和失效场景。
+
+### 7 种事务传播行为（必背）
+
+| 传播行为 | 含义 | 典型场景 |
+|---------|------|---------|
+| **REQUIRED**（默认）| 当前有事务则加入，没有则新建 | **99% 的业务方法** |
+| **REQUIRES_NEW** | 总是新建独立事务，挂起当前事务 | **写日志、发通知**（即使主事务回滚也要保留）|
+| **NESTED** | 在当前事务中开 savepoint 子事务 | 部分失败可回滚到 savepoint 而不影响外层 |
+| **SUPPORTS** | 有事务就加入，没有就以非事务运行 | 工具方法 |
+| **NOT_SUPPORTED** | 总是非事务执行，挂起当前事务 | 长查询不需要事务开销 |
+| **NEVER** | 必须无事务，否则抛异常 | 强制无事务的场景 |
+| **MANDATORY** | 必须有事务，否则抛异常 | 强制要求被事务调用 |
+
+#### REQUIRES_NEW 关键场景
+
+```java
+@Service
+public class OrderService {
+    @Autowired private LogService logService;
+
+    @Transactional   // 默认 REQUIRED
+    public void createOrder(Order o) {
+        orderRepo.save(o);
+        try {
+            logService.writeAudit(o);   // 即使日志失败也不要影响订单
+        } catch (Exception e) {
+            log.error("audit failed", e);
+        }
+        // ...
+    }
+}
+
+@Service
+public class LogService {
+    @Transactional(propagation = REQUIRES_NEW)   // 独立事务！
+    public void writeAudit(Order o) {
+        auditRepo.save(...);
+    }
+}
+```
+
+::: warning ⚠️ NESTED ≠ REQUIRES_NEW
+
+- **NESTED**：savepoint 子事务，**和外层共享数据库连接**，外层回滚则子事务一定回滚
+- **REQUIRES_NEW**：**完全独立的新连接 + 新事务**，互不影响
+
+很多人混淆这两个，面试官最爱在这里设陷阱。
+
+:::
+
+### @Transactional 失效场景（高频追问）
+
+**6 种最常见的失效场景**，每种都要能讲出原因 + 修复：
+
+| 失效场景 | 原因 | 修复 |
+|---------|------|------|
+| **1. 同类内部方法调用** | this.xxx() 不走代理 | 自注入 / 拆 Bean / `AopContext.currentProxy()` |
+| **2. 方法不是 public** | Spring AOP 只代理 public | 改为 public |
+| **3. 异常被 catch 吃掉** | 没有异常抛出 → 不会回滚 | `catch` 后**主动 rethrow** 或 `setRollbackOnly()` |
+| **4. 抛出 checked 异常**（如 IOException）| 默认只回滚 RuntimeException | `@Transactional(rollbackFor = Exception.class)` |
+| **5. 数据库引擎不支持事务** | MyISAM 不支持 | 改 InnoDB |
+| **6. 多线程调用** | 事务绑定线程，新线程不在事务中 | 不要在事务方法里开异步 |
+
+#### 同类调用失效（最经典）
+
+```java
+@Service
+public class OrderService {
+    public void createOrder(Order o) {
+        this.save(o);          // ❌ 走的是原始对象，不走代理
+    }
+    @Transactional
+    public void save(Order o) { /* ... */ }
+}
+```
+
+```java
+// ✅ 修复方案 1: 拆 Bean（推荐）
+@Service
+public class OrderFacade {
+    @Autowired private OrderService orderService;
+    public void create(Order o) {
+        orderService.save(o);   // 走代理
+    }
+}
+
+// ✅ 修复方案 2: 自注入
+@Service
+public class OrderService {
+    @Autowired private OrderService self;   // 注入的是代理
+    public void createOrder(Order o) {
+        self.save(o);
+    }
+    @Transactional
+    public void save(Order o) { /* ... */ }
+}
+```
+
+#### 异常吞噬失效（生产 Top 1 事故）
+
+```java
+// ❌ 错误：catch 后没有抛出 → 事务不回滚
+@Transactional
+public void transfer(Long from, Long to, BigDecimal amount) {
+    try {
+        accountRepo.debit(from, amount);
+        accountRepo.credit(to, amount);
+    } catch (Exception e) {
+        log.error("transfer failed", e);   // 吞了异常，事务正常提交！
+    }
+}
+
+// ✅ 修复 1：rethrow
+} catch (Exception e) {
+    log.error("transfer failed", e);
+    throw new RuntimeException(e);
+}
+
+// ✅ 修复 2：主动标记回滚
+} catch (Exception e) {
+    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+}
+```
+
+### @Transactional 的"小问号"答疑
+
+::: tip 💡 三个高频细节
+
+**Q：@Transactional 默认隔离级别？**
+> 跟随数据库默认（MySQL 是 RR）。可以用 `isolation = Isolation.READ_COMMITTED` 显式指定。
+
+**Q：@Transactional 默认超时？**
+> -1（无超时）。生产应该显式设置 `timeout=30`（秒），防止长事务持有连接和锁。
+
+**Q：readOnly = true 真的能优化吗？**
+> 能。MySQL 会跳过 MVCC 的某些开销；Hibernate 会跳过 dirty check；**对长查询/报表方法务必加** `@Transactional(readOnly = true)`。
+
+:::
+
 ## 面试常问 & 怎么答
 
 ### Q1: JDK 动态代理和 CGLIB 的区别？

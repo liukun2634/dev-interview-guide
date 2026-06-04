@@ -69,6 +69,81 @@ MySQL 重启后，InnoDB 会扫描 redo log，将 checkpoint 之后所有已提�
 
 **生产环境推荐设置为 1**，以保证事务的持久性。
 
+#### 组提交（Group Commit）：高并发写性能的关键
+
+**组提交是 MySQL 5.6+ 突破写性能瓶颈的关键技术**。如果每个事务都独立 fsync，**高并发下磁盘 IO 是绝对瓶颈**——10k TPS 就需要 10k 次 fsync。
+
+##### BLGC（Binary Log Group Commit）三阶段
+
+```
+传统 (每事务都 fsync):
+  T1: prepare → write redo → fsync redo → write binlog → fsync binlog → commit redo
+  T2: prepare → write redo → fsync redo → write binlog → fsync binlog → commit redo
+  → 高并发下 fsync 排队，TPS 上不去
+
+组提交 (Group Commit):
+  ┌─── Flush 阶段 ───┐   把多个事务的 binlog 一起写到内核缓存
+  ┌─── Sync 阶段 ────┐   一次 fsync 把多个事务的 binlog 一起刷盘
+  ┌── Commit 阶段 ──┐   一次性 commit 所有事务
+  → 一次 fsync 处理 N 个事务 → TPS 提升 5-10x
+```
+
+#### 双写缓冲（Double Write Buffer）
+
+**MySQL 解决"部分写失效"（partial page write）问题的核心机制**。
+
+**问题**：MySQL 页 16KB，OS 页 4KB。一次刷脏页 = 4 次 OS 写。如果中间崩溃 → **页损坏**（部分新、部分旧）→ redo log 也救不回来（redo 假设页是完整的）。
+
+```
+解法 — Double Write Buffer:
+  1. 脏页先复制到内存的 Double Write Buffer (2MB)
+  2. Double Write Buffer 顺序写入磁盘的 Double Write 区域（共享表空间）
+  3. 再把脏页写入数据文件的实际位置
+  4. 崩溃恢复时:
+     ├─ 数据文件页损坏 → 从 Double Write 区域恢复
+     └─ 再用 redo log 前滚到最新状态
+```
+
+::: warning ⚠️ Double Write 是必开的，不要关闭！
+
+> 网上有"关闭 doublewrite 提升 5% 性能"的说法，**生产环境严禁关闭**——丢一次数据的代价 >> 5% 性能。配置：`innodb_doublewrite=ON`（默认）。
+
+:::
+
+#### binlog 三种格式深度
+
+| 格式 | 记录内容 | 大小 | 主从一致性 | 适用 |
+|------|---------|------|---------|------|
+| **STATEMENT** | 原始 SQL 语句 | 小 | **可能不一致**（`NOW()` / 自增 ID / 触发器）| 已不推荐 |
+| **ROW**（默认 5.7+）| **每行**修改前后的镜像 | 大（UPDATE 1000 行写 1000 条）| **强一致** | **生产首选** |
+| **MIXED** | 自动选择：默认 STATEMENT，遇到不确定函数切换 ROW | 中 | 比 STATEMENT 好 | 兼容旧版 |
+
+#### 为什么 ROW 比 STATEMENT 强
+
+::: tip 💡 经典坑：STATEMENT 主从不一致
+
+```sql
+-- 主库
+INSERT INTO orders (id, created_at) VALUES (NULL, NOW());
+
+-- STATEMENT binlog 记录: INSERT ... VALUES (NULL, NOW())
+-- 从库 5 分钟后回放 → NOW() 返回不同值！
+--                  → 自增 ID 也可能不同（如果有并发）
+-- ROW binlog 记录: INSERT INTO orders SET id=1234, created_at='2026-06-04 10:00:01'
+-- 从库回放 → 完全一致
+```
+
+:::
+
+#### ROW 格式的体积爆炸问题
+
+ROW 格式下，**`UPDATE orders SET status=1 WHERE shop_id=999`** 如果影响 100 万行，binlog 会写入 100 万条行变更记录 → **binlog 文件爆炸 / 主从延迟**。
+
+**缓解**：
+- 大批量操作**手动分批**（每批 1000 行）
+- 配置 `binlog_row_image=MINIMAL`（只记录主键 + 变更列，省 50% 体积）
+- 大表更新走专门的归档/数据库任务，不走主从
+
 ---
 
 ### 2. undo log（回滚日志）

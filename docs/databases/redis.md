@@ -143,9 +143,116 @@ AOF 将每条写命令以文本形式追加到日志文件，重启时重放命�
 - 对恢复速度要求高 → RDB
 - 生产推荐 → **混合持久化**（两者兼顾）
 
+#### 持久化生产配置黄金标准
+
+::: tip 💡 三种业务场景的标准配置
+
+| 业务类型 | 推荐配置 | 数据丢失上限 |
+|---------|---------|------------|
+| **纯缓存**（数据可重建）| 关闭 AOF，RDB 每小时 1 次 | 1 小时 |
+| **半持久化**（业务可容忍秒级丢失）| 混合持久化 + AOF `everysec` | **1 秒** |
+| **强持久化**（金融、订单）| 混合持久化 + AOF `always` + 主从 + Sentinel | 单条事务 |
+
+**Redis 不是数据库**：即使配置 `always`，单机也可能丢——掉电瞬间的 fsync 还未返回。**真正零丢失需要 Redis + DB 双写**。
+
+:::
+
+### 4. Redis 分布式锁：从 SETNX 到 Redlock
+
+**分布式锁是 Redis 面试 Top 3 高频题**，2025-2026 年要能讲清"为什么 SETNX 不够、Redlock 为什么有争议、生产到底怎么选"。
+
+#### 演进路线
+
+| 版本 | 方案 | 问题 |
+|------|------|------|
+| **v1** | `SETNX key 1`（无过期）| **持锁进程崩溃 → 死锁** |
+| **v2** | `SETNX key 1` + `EXPIRE`（两步）| **两步不原子**，SETNX 后崩溃仍死锁 |
+| **v3** | `SET key value NX EX`（原子）| **锁可能被别人误删**（A 超时但还在执行，B 拿到锁，A 完成后误删 B 的锁）|
+| **v4** | `SET key uuid NX EX` + Lua 校验删除 | **锁过期后业务还没结束**仍然是问题 |
+| **v5** | **Redisson 看门狗（watchdog）** | **主从切换可能丢锁** |
+| **v6** | **Redlock 算法**（多 Master 5 节点）| **学术界质疑安全性** |
+
+#### 正确实现（90% 业务足够用）
+
+```java
+// 加锁：SET 原子操作 + 唯一 token
+String token = UUID.randomUUID().toString();
+Boolean locked = redis.set("lock:order", token,
+    SetParams.setParams().nx().ex(30));   // 30 秒过期防死锁
+
+// 业务...
+
+// 解锁：Lua 脚本保证"检查 + 删除"原子
+String LUA = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+    else
+      return 0
+    end
+    """;
+redis.eval(LUA, List.of("lock:order"), List.of(token));
+```
+
+#### Redisson 看门狗（生产首选）
+
+```java
+RLock lock = redissonClient.getLock("lock:order");
+lock.lock();                    // 默认 30 秒过期
+try {
+    // 业务... 看门狗每 10 秒自动续期
+    // 不会出现"业务没做完锁就过期"的情况
+} finally {
+    lock.unlock();
+}
+```
+
+**看门狗机制**：每 `leaseTime/3`（默认 10s）自动续期到 30s，**只要持锁线程还活着，锁就不会过期**。**进程崩溃时看门狗停止，锁 30 秒后自动释放**。
+
+#### Redlock 算法（争议焦点）
+
+Redis 作者 antirez 提出，需要 **N 个（通常 5 个）独立的 Redis Master**：
+
+```
+加锁流程:
+  1. 当前时间 T1
+  2. 用相同 key + token 依次向 N 个 Master 发 SET NX EX
+  3. 等待响应；超过 N/2+1 个成功 → 加锁成功
+  4. 实际持锁时间 = TTL - (T2 - T1)
+  5. 若实际持锁时间 ≤ 0，认为加锁失败
+解锁：
+  向所有 N 个 Master 发解锁脚本（即使失败也要发）
+```
+
+#### Redlock 的著名争议（Martin Kleppmann vs antirez）
+
+::: warning ⚠️ Redlock 为什么有争议
+
+**Martin Kleppmann（《设计数据密集型应用》作者）质疑**：
+1. **GC pause / 系统暂停** → 持锁进程"卡"30 秒，锁已过期但进程不知道，仍执行业务
+2. **时钟漂移** → 不同节点时钟不一致，TTL 判断错误
+3. **网络分区** → 5 个节点分布在 2 个机房，分区时可能"双主"
+
+**antirez 反驳**：以上问题对**所有分布式锁**都存在（包括 ZooKeeper、etcd），Redlock 并不更差，且性能优势明显。
+
+:::
+
+#### 真实生产选型
+
+| 场景 | 推荐 |
+|------|------|
+| **互斥即可，可容忍偶尔失败**（缓存击穿、防重提交）| **单 Redis + Redisson 看门狗** |
+| **强一致性要求**（金融、订单兜底）| **不要用 Redis 锁** —— 用 ZooKeeper / etcd（Raft + 临时节点）|
+| **特殊场景 + 性能优先** | Redlock，但要清楚它的边界 |
+
+::: tip 💡 一句话面试黄金
+
+> **"分布式锁的本质是分布式共识——Redis 的最大问题是没有强一致协议（主从异步复制），所以严格意义上不适合做严格互斥；Redisson 看门狗够用 90% 场景，真正需要强一致就上 ZooKeeper / etcd。Redlock 提供更高安全保证但增加复杂度，业界争议较大。"**
+
+:::
+
 ---
 
-### 3. 内存淘汰策略（8 种）
+### 5. 内存淘汰策略（8 种）
 
 当内存达到 `maxmemory` 上限时，Redis 根据配置的策略淘汰键。
 
