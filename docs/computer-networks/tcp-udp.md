@@ -121,6 +121,111 @@ net.ipv4.tcp_fin_timeout = 30
 net.ipv4.ip_local_port_range = 1024 65535
 ```
 
+### 生产排查：大量 TIME_WAIT vs CLOSE_WAIT（高频追问）
+
+**面试常给场景**："netstat 显示大量 TIME_WAIT/CLOSE_WAIT，怎么办？"——能区分两者并讲出根因，立刻显出运维实战经验。
+
+#### 步骤 1：先看哪种状态
+
+```bash
+# 看各状态连接数
+netstat -nt | awk '{print $6}' | sort | uniq -c | sort -rn
+
+# 典型输出:
+# 8642 TIME_WAIT       ← 主动关闭方堆积
+# 234  CLOSE_WAIT      ← 被动关闭方代码 bug
+# 512  ESTABLISHED
+```
+
+#### 大量 TIME_WAIT 的根因 + 解决
+
+```
+✅ 正常: 主动关闭方在等 2MSL（60 秒）→ 短期堆积合理
+❌ 异常: 持续 > 1 万，连接耗尽
+```
+
+| 根因 | 排查 | 解决 |
+|------|------|------|
+| **HTTP 客户端没用连接池** | 看是不是每次请求新建短连接 | **客户端开启 Keep-Alive + 连接池** |
+| **客户端调用第三方 API 无连接复用** | RestTemplate / OkHttp 没配连接池 | **OkHttp / Apache HttpClient + PoolingHttpClientConnectionManager** |
+| **数据库/Redis 连接没池化** | 每次 SQL 都新连接 | **HikariCP / JedisPool** |
+| **服务作为客户端调用太多** | 服务端到下游的连接关闭 | 调整内核参数 + 复用 |
+
+**Linux 内核参数终极方案**：
+
+```bash
+# 1. 开启 TIME_WAIT 重用（最有效）
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_timestamps = 1   # 必须开启时间戳
+
+# 2. 缩短 TIME_WAIT 时长（不推荐，违反协议）
+# tcp_tw_recycle 已在 Linux 4.12 后移除（NAT 环境下危险）
+
+# 3. 增大可用端口范围
+net.ipv4.ip_local_port_range = 1024 65535
+```
+
+::: warning ⚠️ TIME_WAIT 是**主动关闭方**的状态
+
+> ① 谁 close() 谁出现 TIME_WAIT；② **服务端出现大量 TIME_WAIT = 服务端主动关闭**（如 HTTP 短连接、`Connection: close`）；③ **客户端出现大量 TIME_WAIT = 客户端短连接**（最常见）。
+>
+> 解法核心：**改用长连接 / Keep-Alive / 连接池**——根治问题，参数只是辅助。
+
+:::
+
+#### 大量 CLOSE_WAIT 的根因 + 解决（更严重）
+
+```
+CLOSE_WAIT 是被动关闭方收到 FIN 后等待应用 close() 的状态
+    ↓ 长期不消失 = 应用代码没调 close()
+    ↓
+"明显的应用 bug，比 TIME_WAIT 严重得多"
+```
+
+| 根因 | 表现 |
+|------|------|
+| **忘记 close()** | 资源没释放，连接泄漏直到进程重启 |
+| **try-catch 漏 close** | 异常路径下没关闭 |
+| **第三方库 bug** | 客户端 SDK 用完不调 close |
+| **死循环阻塞** | 业务卡死，永远走不到 close |
+
+**典型 Java 代码示例**：
+
+```java
+// ❌ 错误：异常时连接泄漏
+Socket socket = new Socket(host, port);
+process(socket.getInputStream());   // 抛异常 → 没人 close()
+socket.close();
+
+// ✅ 正确：try-with-resources
+try (Socket socket = new Socket(host, port)) {
+    process(socket.getInputStream());
+}   // 自动 close，即使异常
+```
+
+#### 排查命令完整套路
+
+```bash
+# 1. 看哪个进程有最多 CLOSE_WAIT
+ss -nt state close-wait | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | sort -rn
+netstat -anp | grep CLOSE_WAIT | awk '{print $7}' | sort | uniq -c | sort -rn
+
+# 2. 看连接的对端
+ss -nt state close-wait
+
+# 3. 用 lsof 看进程持有的 fd
+lsof -i :8080 | grep CLOSE_WAIT
+
+# 4. jstack 看 Java 线程在干嘛（多半阻塞在某处）
+jstack <pid> | grep -A 30 "RUNNABLE\|BLOCKED"
+```
+
+::: tip 💡 面试黄金一句
+
+> **"TIME_WAIT 是协议正常态，主动关闭方的；CLOSE_WAIT 是应用代码 bug，忘 close()。生产看到 CLOSE_WAIT > 100 立即查代码，绝不该靠内核参数解决——必须用 try-with-resources 或 finally close。"**
+
+:::
+
 ## TCP 可靠传输机制
 
 TCP 通过以下几个机制保证传输可靠性：
