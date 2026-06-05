@@ -222,6 +222,75 @@ binlog 属于 **MySQL Server 层**，与存储引擎无关，所有引擎（Inno
 3. 主库将 binlog 发送给从库，从库写入 **relay log（中继日志）**。
 4. 从库的 **SQL 线程**读取 relay log，逐条回放，完成数据同步。
 
+#### 三种主从复制模式（必背）
+
+| 模式 | 主库何时返回成功 | 数据安全性 | 性能 | 适用 |
+|------|---------------|---------|------|------|
+| **异步复制**（默认）| 主库 commit 立刻返回，不等从库 | **可能丢数据** | 最快 | 通用 |
+| **半同步复制**（5.5+ `rpl_semi_sync`）| 主库等**至少 1 个从库**写入 relay log 才返回 | **几乎不丢**（除非全部从库都挂）| 中 | **生产推荐** |
+| **组复制 / MGR**（5.7+ Group Replication）| 多副本 Paxos 共识 | 强一致 | 最慢 | 金融、强一致场景 |
+
+::: warning ⚠️ 异步复制的"幽灵数据"问题
+
+> 主库 commit 后立刻挂掉 → 还未发到从库 → 从库被切为新主库 → **旧主库恢复后会有"超前数据"** 必须丢弃，否则脑裂。
+>
+> **生产标配**：`rpl_semi_sync_master_enabled=ON` + `rpl_semi_sync_master_timeout=1000`（1 秒等不到从库就退化为异步）。
+
+:::
+
+#### 并行复制演进（高频追问）
+
+**主从延迟最常见的根因 = SQL 线程单线程回放**。MySQL 多版本演进了多种并行回放方案：
+
+| 版本 | 策略 | 并行度 |
+|------|------|------|
+| **5.6** | **按库（Schema）并行** | 多库才有效，单库无用 |
+| **5.7** | **基于组提交的 LOGICAL_CLOCK** | 同一组提交的事务可并行（默认）|
+| **8.0** | **WRITESET 并行**（最先进）| 基于写集合冲突检测，并行度最大 |
+
+```sql
+-- MySQL 8.0+ 生产推荐配置
+SET GLOBAL binlog_transaction_dependency_tracking = WRITESET;
+SET GLOBAL slave_parallel_type = LOGICAL_CLOCK;
+SET GLOBAL slave_parallel_workers = 8;   -- 通常等于 CPU 核数
+```
+
+#### 主从延迟实战排查（生产 Top 1 问题）
+
+```bash
+# 1. 看延迟程度
+mysql> SHOW SLAVE STATUS\G
+  Seconds_Behind_Master: 1234     ← 单位:秒
+  Slave_SQL_Running_State: ...
+
+# 2. seconds_behind_master 不准！
+# 当 IO 线程跟不上时，这个值反映的是已收到 binlog 的延迟，
+# 真实的"从库落后主库多少"可能远超此值
+# 真实指标:
+mysql> SELECT * FROM performance_schema.replication_applier_status_by_worker;
+
+# 3. 看慢事务
+mysql> SHOW PROCESSLIST;     # 看 SQL 线程在执行什么
+mysql> SHOW ENGINE INNODB STATUS\G    # 看锁等待
+```
+
+#### 主从延迟根因 + 解决速查
+
+| 根因 | 表现 | 解决 |
+|------|------|------|
+| **大事务**（一次更新 100 万行）| SQL 线程长时间执行一条 | 业务侧拆批量更新 |
+| **缺索引** | 从库执行 UPDATE/DELETE 全表扫描 | 从库也要建相同索引 |
+| **从库硬件弱** | CPU/IO 满 | 升级从库 / 用相同规格 |
+| **SQL 线程单线程**（5.6 之前）| 即使并发主库，从库串行 | 升级 + 并行复制 WRITESET |
+| **大表无主键的 ROW 格式更新** | binlog 中每行变更要全表扫描定位 | **所有表必须有主键** |
+| **网络抖动 / 跨机房** | I/O 线程读 binlog 慢 | 改异步、就近从库 |
+
+::: tip 💡 面试黄金回答
+
+> **"主从延迟的本质有两层：① IO 线程拉 binlog 慢（通常是网络问题）；② SQL 线程回放慢（最常见原因——大事务、缺索引、单线程）。优化优先级：① 升级 MySQL 8.0 用 WRITESET 并行复制；② 业务拆大事务；③ 从库建相同索引；④ 所有表必须有主键（ROW 格式下无主键 = 全表扫描）。Seconds_Behind_Master 不准，真实延迟看 performance_schema.replication_applier_status。"**
+
+:::
+
 #### 数据恢复
 
 使用 `mysqlbinlog` 工具可以将 binlog 解析为可执行的 SQL，用于**基于时间点的数据恢复（PITR）**：

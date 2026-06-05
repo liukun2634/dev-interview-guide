@@ -199,6 +199,201 @@ public ListNode detectCycle(ListNode head) {
 - **时间**：O(n)，检测环最多走 O(n)，找入口再走 O(n)
 - **空间**：O(1)，只用常数个指针
 
+### Floyd 判圈定理推导（必背）
+
+**面试经常追问"为什么 fast/slow 相遇后从头再走会停在环入口"**——能完整推导，立刻显出底子扎实。
+
+```
+设:
+  头到环入口距离 = a
+  环入口到相遇点距离 = b
+  相遇点到环入口距离 = c (即环长 - b)
+
+第一次相遇时:
+  slow 走过: a + b
+  fast 走过: a + b + n(b + c)   ← fast 多绕了 n 圈
+
+因为 fast 速度是 slow 的 2 倍:
+  2(a + b) = a + b + n(b + c)
+  → a = n(b + c) - b
+  → a = (n-1)(b + c) + c
+  
+解读: 从头走 a 步, 等价于从相遇点走 c + (n-1) 圈
+→ 一个指针从头出发, 另一个从相遇点出发, 同速前进
+→ 必然在环入口相遇 ✓
+```
+
+---
+
+## 必背手撕题：K 个一组翻转链表（LeetCode 25）
+
+**这道题是大厂面试 Top 1 链表手撕题**——能现场写出干净版本，立刻区分初级和中高级。
+
+### 思路
+
+```
+分两步:
+  1. 用 dummy 节点统一边界
+  2. 循环:
+     ① 找到这一组的尾节点 (k 步)，找不到则保持原样
+     ② 记录下一组的起点
+     ③ 反转 [start, end] 这一段
+     ④ prevTail.next = newHead
+     ⑤ prevTail = oldHead (反转后变成尾)
+```
+
+### 完整模板
+
+```java
+public ListNode reverseKGroup(ListNode head, int k) {
+    ListNode dummy = new ListNode(0, head);
+    ListNode prevTail = dummy;          // 上一组反转后的尾节点
+
+    while (true) {
+        // 1. 找这一组的尾节点
+        ListNode tail = prevTail;
+        for (int i = 0; i < k; i++) {
+            tail = tail.next;
+            if (tail == null) return dummy.next;   // 不够 k 个，保持原样
+        }
+
+        // 2. 记录下一组起点
+        ListNode start = prevTail.next;
+        ListNode nextGroupStart = tail.next;
+
+        // 3. 反转 [start, tail]
+        tail.next = null;
+        prevTail.next = reverse(start);
+
+        // 4. 反转后 start 变成尾
+        start.next = nextGroupStart;
+        prevTail = start;
+    }
+}
+
+private ListNode reverse(ListNode head) {
+    ListNode prev = null, curr = head;
+    while (curr != null) {
+        ListNode next = curr.next;
+        curr.next = prev;
+        prev = curr;
+        curr = next;
+    }
+    return prev;
+}
+```
+
+::: tip 💡 面试经验
+
+> **现场写时按"四步固定顺序"**：dummy → 数 k 个 → 反转一段 → 接回去。写错最常见的地方是**忘记 `tail.next = null` 切断子链表** → 反转会越界。
+
+:::
+
+## 必背手撕题：LRU 缓存（LeetCode 146）
+
+**LRU 是 Java 后端面试 Top 1 数据结构手撕题**——大厂几乎必考。
+
+### 思路：哈希表 + 双向链表
+
+```
+HashMap<Key, Node>  → O(1) 查找
+DoublyLinkedList    → O(1) 插入/删除任意节点
+
+       head (虚拟) ←→ Node1 ←→ Node2 ←→ Node3 ←→ tail (虚拟)
+                     最新                          最旧
+
+get(key):
+  1. HashMap 找节点
+  2. 把节点移到 head 后面（最近使用）
+
+put(key, value):
+  1. 已存在 → 更新值 + 移到 head 后
+  2. 不存在 → 创建节点放 head 后 → 容量超限则删 tail 前节点
+```
+
+### 完整模板（必背）
+
+```java
+public class LRUCache {
+    private final int capacity;
+    private final Map<Integer, Node> map = new HashMap<>();
+    private final Node head = new Node(0, 0);    // dummy
+    private final Node tail = new Node(0, 0);    // dummy
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) return -1;
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;
+            moveToHead(node);
+            return;
+        }
+        node = new Node(key, value);
+        map.put(key, node);
+        addToHead(node);
+        if (map.size() > capacity) {
+            Node last = tail.prev;
+            removeNode(last);
+            map.remove(last.key);
+        }
+    }
+
+    private void addToHead(Node node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    static class Node {
+        int key, value;
+        Node prev, next;
+        Node(int k, int v) { key = k; value = v; }
+    }
+}
+```
+
+::: warning ⚠️ Java 偷懒方案：LinkedHashMap
+
+> Java 标准库的 **`LinkedHashMap` 重写 `removeEldestEntry` 就是 LRU**——但**大厂面试要求手写双向链表版本**，用 LinkedHashMap 会被认为没真正理解。
+>
+> ```java
+> // 偷懒版（生产可用，面试不行）
+> Map<Integer, Integer> lru = new LinkedHashMap<>(16, 0.75f, true) {
+>     protected boolean removeEldestEntry(Map.Entry e) { return size() > capacity; }
+> };
+> ```
+
+:::
+
+### LRU vs LFU 一句话
+
+> **LRU 看"最近"，LFU 看"频次"**。LRU 适合时间局部性强（最近用过的可能再用）；LFU 适合热点稳定（被多次用过的是真热点）。**Redis 4.0+ 用 LFU 替代 LRU 作为内存淘汰策略**，因为 LRU 容易被"偶发扫描"污染（一次冷查询挤掉真热数据）。
+
+详见 [Redis 内存淘汰策略](../../databases/redis#_5-内存淘汰策略-8-种)。
+
 ---
 
 ## 延伸题目

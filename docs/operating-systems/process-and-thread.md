@@ -283,6 +283,186 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 - **破坏循环等待：** 规定资源申请顺序，按序申请
 - **银行家算法：** 动态检测资源分配是否会导致不安全状态
 
+## 经典并发题模板（必背手撕）
+
+**这三道经典并发题是大厂面试 Top 3**：生产者-消费者、读者-写者、哲学家就餐。能讲清原理 + 现场写 Java 模板，立刻显出并发底子。
+
+### 题 1：生产者-消费者（必背）
+
+**核心问题**：缓冲区有界，多生产者多消费者，写满 / 读空时阻塞。
+
+#### 方案 A：BlockingQueue（生产首选）
+
+```java
+class ProducerConsumer {
+    BlockingQueue<Integer> queue = new ArrayBlockingQueue<>(10);
+
+    void produce() throws InterruptedException {
+        for (int i = 0; ; i++) queue.put(i);     // 满了自动阻塞
+    }
+
+    void consume() throws InterruptedException {
+        while (true) {
+            Integer item = queue.take();          // 空了自动阻塞
+            process(item);
+        }
+    }
+}
+```
+
+#### 方案 B：ReentrantLock + Condition（面试要会手撕）
+
+```java
+class BoundedBuffer {
+    final Lock lock = new ReentrantLock();
+    final Condition notFull = lock.newCondition();
+    final Condition notEmpty = lock.newCondition();
+    final Object[] items = new Object[100];
+    int putIdx, takeIdx, count;
+
+    public void put(Object x) throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == items.length) notFull.await();    // ← 必须 while 不能 if
+            items[putIdx] = x;
+            if (++putIdx == items.length) putIdx = 0;
+            count++;
+            notEmpty.signal();
+        } finally { lock.unlock(); }
+    }
+
+    public Object take() throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == 0) notEmpty.await();
+            Object x = items[takeIdx];
+            if (++takeIdx == items.length) takeIdx = 0;
+            count--;
+            notFull.signal();
+            return x;
+        } finally { lock.unlock(); }
+    }
+}
+```
+
+::: warning ⚠️ 经典坑：必须用 while 而不是 if
+
+> **`while (count == 0) wait()`** —— 即使被唤醒，还要**再次检查条件**：
+> ① **虚假唤醒（spurious wakeup）**——OS 可能无原因唤醒；
+> ② **被通知后才能拿锁**——通知到拿锁之间，另一个线程可能已把数据消费完。
+
+:::
+
+#### 三种实现性能对比
+
+| 方案 | 性能 | 代码量 | 适用 |
+|------|------|-------|------|
+| **synchronized + wait/notify** | 一般 | 短 | 简单场景、面试基础 |
+| **ReentrantLock + Condition** | 好 | 中 | 需要多条件区分（满 vs 空）|
+| **BlockingQueue** | **最好** | **极短** | **生产首选**，封装好 |
+| **Disruptor**（无锁）| 最快 | 长 | 单机百万 TPS（详见 [现代并发工具](../programming-languages/java-concurrency#disruptor)）|
+
+### 题 2：读者-写者问题
+
+**核心问题**：读读并发、读写互斥、写写互斥。
+
+```java
+class ReadWriteCounter {
+    private int count;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final Lock readLock = lock.readLock();
+    private final Lock writeLock = lock.writeLock();
+
+    public int read() {
+        readLock.lock();
+        try { return count; }
+        finally { readLock.unlock(); }
+    }
+
+    public void write(int delta) {
+        writeLock.lock();
+        try { count += delta; }
+        finally { writeLock.unlock(); }
+    }
+}
+```
+
+#### 读写锁的"读者优先" vs "写者优先"
+
+| 策略 | 行为 | 风险 |
+|------|------|------|
+| **读者优先**（默认）| 只要有读者，新读者立刻进入 | **写者饥饿**（永远等不到）|
+| **写者优先** | 有写者等待时，新读者排队 | 读者偶发性饥饿 |
+| **公平锁**（构造时 `new ReentrantReadWriteLock(true)`）| 按 FIFO 排队 | 性能下降 |
+
+::: tip 💡 StampedLock 是新选择
+
+> Java 8 的 **StampedLock 支持"乐观读"**——读时不上锁，读完后校验是否有写发生，没有就直接用。**适合读远多于写的场景**（如配置中心）。详见 [现代并发 — StampedLock](../programming-languages/java-concurrency#stampedlock-读多写少的乐观读神器)。
+
+:::
+
+### 题 3：哲学家就餐问题
+
+**核心问题**：5 个哲学家围成一圈，左右各有 1 个筷子，必须拿到两支才能吃 → 全部同时拿左筷子 = 死锁。
+
+#### 4 种经典解法
+
+| 解法 | 思路 |
+|------|------|
+| **资源分级**（最常考）| 给筷子编号 0-4，**每人必须先拿低号再拿高号** → 第 5 个人会先拿 0 号 → 破坏循环等待 |
+| **服务员仲裁** | 任何人拿筷子前要先问服务员（信号量）批准 |
+| **拿不到放回**（活锁）| 拿到一支后如果拿不到第二支就放回 → 可能活锁 |
+| **奇偶分离** | 奇数号先拿左，偶数号先拿右 → 同样破坏循环 |
+
+#### Java 解法（资源分级）
+
+```java
+class Philosopher implements Runnable {
+    private final Object leftFork, rightFork;
+    private final int id;
+    Philosopher(int id, Object left, Object right) {
+        this.id = id;
+        // 资源分级: 先拿编号小的
+        if (System.identityHashCode(left) < System.identityHashCode(right)) {
+            this.leftFork = left; this.rightFork = right;
+        } else {
+            this.leftFork = right; this.rightFork = left;
+        }
+    }
+    public void run() {
+        while (true) {
+            synchronized (leftFork) {
+                synchronized (rightFork) {
+                    eat();
+                }
+            }
+        }
+    }
+}
+```
+
+### 信号量 vs 互斥锁
+
+| 维度 | **Mutex（互斥锁）** | **Semaphore（信号量）** |
+|------|------------------|----------------------|
+| **本质** | 二值锁（0/1）| **N 值计数器** |
+| **谁可释放** | 必须是加锁者 | **任意线程都可 V 操作** |
+| **能否 0** | 锁 = 不可用 | 信号量 = 0 表示资源耗尽 |
+| **典型用途** | 临界区互斥 | **资源池**（连接池/线程池容量控制）|
+
+```java
+// Semaphore 经典用法：限流当前并发数 = 10
+Semaphore sem = new Semaphore(10);
+public void handleRequest() throws InterruptedException {
+    sem.acquire();        // 减 1，>= 0 则获取，否则阻塞
+    try {
+        // 业务...
+    } finally {
+        sem.release();    // 加 1
+    }
+}
+```
+
 ## 常见误区
 
 ::: warning 易错点

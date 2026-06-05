@@ -340,6 +340,183 @@ public class Singleton {
 
 **注意：** volatile 不能保证原子性，`i++` 仍然是非线程安全的（需要 `AtomicInteger`）。
 
+## 反射 / 注解 / 动态代理：Java 三件套
+
+**反射、注解、动态代理是 Java 框架的"三件套"** —— Spring AOP、MyBatis、JUnit、Lombok 全部依赖它们。**2025-2026 年中高级 Java 面试每场必问 1-2 个**。
+
+### 反射（Reflection）核心 API
+
+```java
+// 1. 获取 Class 对象（三种方式）
+Class<?> c1 = User.class;                       // 编译期获得
+Class<?> c2 = user.getClass();                  // 运行期获得
+Class<?> c3 = Class.forName("com.example.User"); // 字符串获得（最灵活）
+
+// 2. 反射创建对象
+Constructor<?> ctor = c3.getDeclaredConstructor(String.class);
+ctor.setAccessible(true);                       // 突破 private
+User u = (User) ctor.newInstance("Alice");
+
+// 3. 反射调用方法
+Method m = c3.getDeclaredMethod("setName", String.class);
+m.setAccessible(true);
+m.invoke(u, "Bob");
+
+// 4. 反射读写字段
+Field f = c3.getDeclaredField("age");
+f.setAccessible(true);
+f.set(u, 25);
+int age = (int) f.get(u);
+```
+
+### 反射的代价（必背）
+
+| 维度 | 普通调用 | 反射调用 | 倍数 |
+|------|---------|---------|------|
+| **简单方法调用** | 1 ns | **~100 ns** | **100×** |
+| **创建对象** | 5 ns | **~200 ns** | 40× |
+| **field 读写** | 1 ns | **~50 ns** | 50× |
+
+::: tip 💡 反射为什么慢
+
+> ① **无法 JIT 内联**——反射调用是 native 间接调用；② **类型检查**——每次调用都校验参数类型；③ **访问检查**——除非缓存 + `setAccessible(true)` 否则每次都查访问权限；④ **包装拆箱**——基本类型必须装箱传 Object[]。
+> 
+> **优化**：① 缓存 `Method` / `Field` 对象；② 用 `MethodHandle`（JDK 7+，比反射快 2-3×）；③ JDK 17+ 用 `VarHandle` / Record。
+
+:::
+
+### 注解（Annotation）原理
+
+```java
+// 1. 元注解定义
+@Target(ElementType.METHOD)             // 注解能用在哪
+@Retention(RetentionPolicy.RUNTIME)     // 保留到运行期才能反射读
+@Documented
+public @interface MyLog {
+    String value() default "";
+    int level() default 0;
+}
+
+// 2. 使用
+public class UserService {
+    @MyLog(value = "create-user", level = 1)
+    public void create(User u) { ... }
+}
+
+// 3. 反射读取注解
+Method m = UserService.class.getMethod("create", User.class);
+MyLog ann = m.getAnnotation(MyLog.class);
+if (ann != null) {
+    System.out.println(ann.value());     // "create-user"
+}
+```
+
+#### 4 种 RetentionPolicy（高频追问）
+
+| Policy | 保留到哪 | 用途 | 反射可读？ |
+|--------|---------|------|----------|
+| **SOURCE** | 编译后被丢弃 | `@Override` 编译期检查 | ❌ |
+| **CLASS**（默认） | 编译到 .class 但不加载到 JVM | 字节码增强（Lombok）| ❌ |
+| **RUNTIME** | 加载到 JVM | **Spring / JUnit / Validation** | **✅** |
+
+**面试黄金一句**：**"想用反射读注解，必须 `@Retention(RUNTIME)`"** —— 这是 90% 候选人会忘记的细节。
+
+#### 注解处理器（APT）— Lombok 的秘密
+
+```
+Lombok @Data 的工作方式（不是运行期反射）:
+  1. 编译时 javac 调用 Annotation Processor
+  2. Lombok 处理器 扫描 @Data 注解
+  3. 直接修改 AST → 生成 getter/setter 字节码
+  4. 编译输出的 .class 已经有 getter/setter
+  → 运行期零开销！
+```
+
+**对比**：Spring 的 `@Autowired` 是**运行期反射**（有开销），Lombok 的 `@Data` 是**编译期 APT**（零开销）。
+
+### 动态代理：JDK Proxy vs CGLIB
+
+```java
+// === JDK 动态代理（基于接口）===
+public interface UserService {
+    void save(User u);
+}
+
+UserService proxy = (UserService) Proxy.newProxyInstance(
+    UserService.class.getClassLoader(),
+    new Class[]{UserService.class},
+    (proxyObj, method, args) -> {
+        System.out.println("Before: " + method.getName());
+        Object result = method.invoke(target, args);
+        System.out.println("After: " + method.getName());
+        return result;
+    }
+);
+
+// === CGLIB（基于继承）===
+Enhancer enhancer = new Enhancer();
+enhancer.setSuperclass(UserServiceImpl.class);
+enhancer.setCallback((MethodInterceptor) (obj, method, args, methodProxy) -> {
+    System.out.println("Before: " + method.getName());
+    Object result = methodProxy.invokeSuper(obj, args);
+    System.out.println("After: " + method.getName());
+    return result;
+});
+UserServiceImpl proxy = (UserServiceImpl) enhancer.create();
+```
+
+#### JDK Proxy vs CGLIB 全面对比
+
+| 维度 | **JDK Proxy** | **CGLIB** |
+|------|------------|---------|
+| **底层** | `java.lang.reflect.Proxy` | ASM 字节码生成（继承）|
+| **必须接口** | **是** | 否（任何类皆可）|
+| **不能代理** | 无接口的类 | **final 类 / final 方法** |
+| **创建速度** | 快（不生成字节码）| 慢（要生成子类字节码）|
+| **调用速度** | JDK 17+ 持平 / 略快 | **JDK 11- 时比 JDK 快 2-3×**（JDK 17+ MethodHandle 后差距缩小）|
+| **Spring 默认** | 有接口走 JDK | **Boot 2.x+ 默认全用 CGLIB**（避免接口注入问题）|
+
+#### 三件套结合：自定义 @Cacheable 实现
+
+**面试加分案例**——能完整写出一个用注解+反射+动态代理实现的"简化版 @Cacheable" 立刻能拿到 offer 加分：
+
+```java
+// 1. 定义注解
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MyCacheable {
+    String key();
+    int ttl() default 60;
+}
+
+// 2. 动态代理拦截
+public class CacheableProxy implements InvocationHandler {
+    private final Object target;
+    private final Map<String, Object> cache = new ConcurrentHashMap<>();
+
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        MyCacheable ann = method.getAnnotation(MyCacheable.class);
+        if (ann == null) return method.invoke(target, args);
+
+        String key = parseKey(ann.key(), args);
+        return cache.computeIfAbsent(key, k -> {
+            try { return method.invoke(target, args); }
+            catch (Exception e) { throw new RuntimeException(e); }
+        });
+    }
+}
+
+// 3. 使用：和 Spring @Cacheable 一模一样的开发体验
+@MyCacheable(key = "user:#0", ttl = 300)
+public User findById(Long id) { return db.find(id); }
+```
+
+::: tip 💡 面试黄金回答模板
+
+> **"反射 + 注解 + 动态代理是 Java 框架的三件套。注解必须配 RUNTIME 才能反射读；反射比直接调用慢 100× 但很灵活（要缓存 Method 对象）；动态代理 JDK 基于接口、CGLIB 基于继承且能代理无接口类。Spring AOP 默认用 CGLIB 统一行为，MyBatis Mapper 用 JDK 代理。"**
+
+:::
+
 ## 常见误区
 
 ::: warning 易错点
