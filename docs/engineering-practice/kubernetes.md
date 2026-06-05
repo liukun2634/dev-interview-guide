@@ -481,6 +481,115 @@ Operator 部署:
 
 :::
 
+### 场景 8：容器网络与 CNI
+
+**K8s 网络模型是高级运维/SRE 面试的硬通货**，能讲清 CNI、Service 流量路径、CNI 插件选型，立刻显出深度。
+
+#### K8s 网络模型四大铁律
+
+```
+1. 每个 Pod 一个 IP，Pod 内所有容器共享网络命名空间（共用 localhost）
+2. 所有 Pod 不经 NAT 即可互通（跨节点也是）
+3. 节点不经 NAT 可与 Pod 互通
+4. Pod 看到的自己的 IP == 其他 Pod 看它的 IP
+```
+
+**关键含义**：K8s **不实现网络**，只**定义规范**——具体网络由 CNI 插件实现。
+
+#### 主流 CNI 插件对比
+
+| 插件 | 模式 | 性能 | 网络策略 | 适用 |
+|------|------|------|---------|------|
+| **Flannel** | **Overlay**（VXLAN）| 中（有封装开销）| ❌ 简单不支持 NetworkPolicy | 入门、测试集群 |
+| **Calico** | **BGP**（无封装）/ IPIP | **高**（接近裸网络）| ✅ 强（NetworkPolicy + Felix）| **生产首选**、强网络隔离 |
+| **Cilium** | **eBPF + BGP** | **最高**（绕开 iptables/conntrack）| ✅✅ 极强（L3-L7 策略 + Hubble 观测）| **现代云原生首选**（GKE/AKS 默认）|
+| **Weave** | Overlay | 中 | ✅ | 小规模、简单部署 |
+| **AWS VPC CNI** | VPC ENI 直挂 | **极高**（用 VPC 原生）| Calico for policy | AWS EKS |
+
+#### 三种网络模式深度对比
+
+```
+1. Overlay 模式（VXLAN/IPIP）:
+   Pod A 包 → 节点封装一层 UDP/VXLAN → 跨节点 → 解封装 → Pod B
+   优势: 不依赖底层网络配置，配置简单
+   劣势: +5-15% CPU + 包大小膨胀
+
+2. BGP 模式（Calico 推荐）:
+   Pod A 包 → 节点路由表（BGP 学到 Pod B 所在节点）→ 直接发 → Pod B
+   优势: 无封装开销、性能接近裸网络
+   劣势: 需要交换机/路由器支持 BGP
+
+3. eBPF 模式（Cilium）:
+   绕过 iptables/conntrack → 直接 eBPF 程序在 socket 层路由
+   优势: 性能最高、可见性最好、支持 L7 策略
+   劣势: 需要较新内核（5.10+）
+```
+
+#### Service 流量路径（必背）
+
+```
+ClusterIP Service 流量:
+  Pod A → Service ClusterIP
+            ↓
+  kube-proxy 写入的 iptables / IPVS 规则
+            ↓
+  DNAT 到某个 Pod IP（按 sessionAffinity 选择）
+            ↓
+  CNI 网络层把包送到目标 Pod 所在节点
+            ↓
+  Pod B 接收
+
+NodePort Service 流量:
+  外部客户端 → 任意节点:NodePort
+                  ↓
+  kube-proxy iptables DNAT
+                  ↓
+  转发到任意节点的 Pod B（可能不在本节点）→ 跨节点跳转
+
+LoadBalancer Service 流量:
+  外部 → 云厂商 LB（如 AWS ELB / 阿里 SLB）
+              ↓
+  → 任意节点:NodePort → 后续同 NodePort
+```
+
+#### kube-proxy 三种模式
+
+| 模式 | 数据结构 | 大规模性能 | 状态 |
+|------|--------|-----------|------|
+| **userspace**（已淘汰）| 用户态代理 | 极差 | 不再使用 |
+| **iptables**（默认）| iptables 规则 | 大集群下规则增多，**O(N) 匹配** | 通用 |
+| **IPVS** | LVS 内核哈希表 | **O(1) 匹配**，支持 RR/LC 等算法 | **大规模集群推荐** |
+| **eBPF**（Cilium） | eBPF Map | 最高 | 云原生新趋势 |
+
+::: warning ⚠️ iptables 模式的瓶颈
+
+> 当集群 Service 数 > 5000 / Pod 数 > 1 万时，**每个节点的 iptables 规则会膨胀到几十万条**，包匹配延迟显著上升，且更新规则会阻塞数秒。**生产集群必须切换 IPVS 或 Cilium**。
+
+:::
+
+#### NetworkPolicy 隔离策略
+
+```yaml
+# 只允许 frontend pod 访问 backend pod 的 8080 端口
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: backend-allow-frontend, namespace: prod }
+spec:
+  podSelector: { matchLabels: { app: backend } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: frontend }}}]
+      ports: [{ port: 8080, protocol: TCP }]
+```
+
+::: tip 💡 面试黄金回答
+
+> **"K8s 不实现网络，只定义 CNI 规范——所有 Pod 互通、Pod 不经 NAT、Pod IP 一致是四大铁律。主流 CNI 三种模式：Flannel Overlay（简单但性能损失 10%）、Calico BGP（生产标配、接近裸性能）、Cilium eBPF（最现代、绕开 iptables、支持 L7 策略）。**
+>
+> **大集群必看 kube-proxy 模式：默认 iptables 在 5000+ Service 后会因为 O(N) 匹配变慢，必须切 IPVS 或 Cilium。NetworkPolicy 实现 Pod 间网络隔离，是云原生安全的底线。"**
+
+:::
+
 ---
 
 ## 面试常问 & 怎么答

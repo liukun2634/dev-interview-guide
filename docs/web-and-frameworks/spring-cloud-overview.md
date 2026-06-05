@@ -165,6 +165,139 @@ public class ConfigController {
 
 **原理：** Nacos 客户端长轮询监听配置变更 → 检测到变化 → 发布 RefreshEvent → Spring 销毁 @RefreshScope 的 Bean 并重新创建。
 
+#### Nacos 长轮询：HTTP 实现"实时推送"的秘密
+
+::: tip 💡 配置中心怎么做到"秒级感知"
+
+> Nacos **没有用 WebSocket / TCP 长连接**，只用 HTTP，但能秒级感知配置变化——核心是**长轮询（Long Polling）**：
+>
+> ```
+> 客户端 → Nacos: GET /listener   (超时 30 秒)
+>          ↓
+>   Nacos 服务端 hold 住请求, 不立刻返回
+>          ↓
+>   ① 30 秒内有变更 → 立刻 return 200 + 变更通知
+>   ② 30 秒内无变更 → 超时返回，客户端立刻再发起下一次长轮询
+> ```
+>
+> 优势：兼容企业防火墙（只允许 HTTP）、服务端无需维护连接、客户端断网自愈。Apollo / Nacos / etcd watch 本质都是长轮询变种。
+
+:::
+
+## Seata：阿里开源的分布式事务框架
+
+**Seata 是 2025-2026 年 Spring Cloud Alibaba 面试必问**——能讲清 AT / TCC / Saga / XA 四种模式的差异和适用场景，立刻区分初级和中高级。
+
+### Seata 整体架构
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│  Service A   │    │  Service B   │    │  Service C   │
+│ (RM 资源管理) │    │ (RM)         │    │ (RM)         │
+└──────┬───────┘    └──────┬───────┘    └──────┬───────┘
+       │                   │                   │
+       └──────┬────────────┴───────────────────┘
+              ↓
+       ┌─────────────────┐
+       │ TC 事务协调器     │  ← 独立部署的 Seata Server
+       │ (Transaction    │
+       │  Coordinator)   │
+       └─────────────────┘
+
+TM (Transaction Manager): 全局事务发起者，标记 @GlobalTransactional 的服务
+RM (Resource Manager):    业务服务，管理本地资源（DB/MQ）
+TC (Transaction Coord):   全局事务的"裁判"，独立部署
+```
+
+### 四种事务模式深度对比
+
+| 模式 | 一致性 | 性能 | 业务侵入 | 适用 |
+|------|-------|------|---------|------|
+| **AT**（默认）| **最终一致** | 高 | 极低（注解即可）| **80% 场景首选**，关系型数据库 |
+| **TCC** | **强一致** | 中 | 高（需实现 Try/Confirm/Cancel）| 金融、严格强一致 |
+| **Saga** | 最终一致 | 高 | 中（需实现补偿）| 长流程、跨多个服务调用链 |
+| **XA** | 强一致 | 低 | 低 | 必须 XA 兼容 DB（少用）|
+
+### AT 模式工作原理（最常考）
+
+**AT = Automatic Transaction**，本质是 **"两阶段提交 + 自动回滚 SQL"**：
+
+```
+@GlobalTransactional       ← TM 注解触发
+public void placeOrder() {
+    orderService.create();   ← RM A
+    stockService.deduct();   ← RM B  ← 任一失败 → 全局回滚
+    couponService.use();     ← RM C
+}
+
+第 1 阶段（业务 SQL 执行）:
+  ① TM 向 TC 申请全局事务 XID
+  ② RM 拦截业务 SQL:
+     ├─ 解析 SQL → 算出"前镜像"（UPDATE 前的数据）
+     ├─ 执行业务 SQL
+     ├─ 算出"后镜像"（UPDATE 后的数据）
+     ├─ 把前后镜像写入 undo_log 表（同一本地事务）
+     └─ 本地事务提交（业务 SQL + undo_log 一起提交）
+  ③ RM 向 TC 注册分支事务
+
+第 2 阶段:
+  分支全部成功 → TC 通知 RM 异步删除 undo_log
+  任何分支失败 → TC 通知 RM 用 undo_log 反向生成回滚 SQL → 执行
+```
+
+::: warning ⚠️ AT 模式"读已提交"陷阱
+
+> AT 是**异步两阶段**——第 1 阶段已经提交本地事务，**其他事务可以读到中间状态**！如果业务需要严格"读已提交不回退"，必须用 `SELECT ... FOR UPDATE` 走 Seata 的全局锁。
+
+:::
+
+### TCC 模式：金融场景的强一致方案
+
+```java
+@TwoPhaseBusinessAction(name = "deductStock", commitMethod = "commit", rollbackMethod = "rollback")
+public boolean tryDeduct(@BusinessActionContextParameter String userId, int qty) {
+    // Try: 冻结库存（preFreeze += qty）
+    stockRepo.preFreeze(userId, qty);
+    return true;
+}
+
+public boolean commit(BusinessActionContext ctx) {
+    // Confirm: 真正扣库存
+    stockRepo.confirmDeduct(...);
+    return true;
+}
+
+public boolean rollback(BusinessActionContext ctx) {
+    // Cancel: 释放冻结
+    stockRepo.releasePreFreeze(...);
+    return true;
+}
+```
+
+**TCC 必须解决的 3 个工程问题**：
+1. **空回滚**：Try 还没执行就回滚 → Cancel 收到全局事务 ID 但没业务记录 → 必须能识别"未执行过 Try"直接返回成功
+2. **悬挂**：Cancel 比 Try 先到（网络抖动）→ Try 后到时要识别"已 Cancel 过"直接放弃
+3. **幂等**：Confirm/Cancel 都可能被重试 → 必须实现幂等
+
+### 选型决策
+
+::: tip 💡 一句话定位
+
+> **"AT 是 80% 项目首选"**（关系型 DB、注解即可、自动生成回滚）；**"TCC 用在金融"**（强一致 + 资源冻结，但开发量 3×）；**"Saga 用在长流程"**（多服务长链路，配合状态机）；**"XA 几乎不用"**（性能差、DB 支持差）。
+
+:::
+
+### Seata vs 本地消息表 vs RocketMQ 事务消息
+
+| 方案 | 实现复杂度 | 性能 | 跨多服务 | 适用 |
+|------|---------|------|-------|------|
+| **Seata AT** | **低**（注解）| 高 | ✅ | 通用首选 |
+| **本地消息表** | 中 | 高 | ❌ 只单服务事件投递 | 简单事件驱动 |
+| **RocketMQ 事务消息** | 中 | 高 | ❌ 同上 | RocketMQ 用户 |
+| **TCC** | 高 | 中 | ✅ | 金融强一致 |
+
+详见 [分布式事务](../system-design/distributed-transaction)。
+
 ## 服务调用
 
 ### OpenFeign

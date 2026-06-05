@@ -304,6 +304,156 @@ logging.level.com.example.mapper=DEBUG
 
 :::
 
+## MyBatis 执行原理深度
+
+**MyBatis 内部源码是 Java 后端面试 Top 5 高频追问点**——能讲清"Mapper 接口怎么变成 SQL 执行的"立刻显出对 MyBatis 的真正理解。
+
+### Mapper 接口的实现：JDK 动态代理
+
+```
+@Mapper UserMapper          ← 只是接口，没有实现类！
+
+那 userMapper.findById(1) 怎么执行的？
+
+Spring 启动时:
+  ① MapperScannerConfigurer 扫描 @Mapper 接口
+  ② 为每个 Mapper 用 JDK 动态代理生成代理对象
+  ③ 把代理对象注册为 Spring Bean
+
+运行时调用 userMapper.findById(1):
+  → MapperProxy.invoke(method, args)
+    ↓
+  → 根据 method 找到对应的 MappedStatement (含 SQL)
+    ↓
+  → SqlSession.selectOne(statementId, args)
+    ↓
+  → Executor.query() (走缓存或 DB)
+    ↓
+  → StatementHandler 准备 PreparedStatement
+    ↓
+  → ParameterHandler 绑定参数
+    ↓
+  → JDBC 执行 SQL
+    ↓
+  → ResultSetHandler 把 ResultSet 映射回 Java 对象
+```
+
+### 四大核心组件
+
+| 组件 | 职责 |
+|------|------|
+| **Executor**（执行器）| 顶层入口，控制缓存、事务、批处理 |
+| **StatementHandler** | 负责 JDBC PreparedStatement 的创建和参数绑定 |
+| **ParameterHandler** | 把 Java 参数填到 `?` 占位符 |
+| **ResultSetHandler** | 把 JDBC ResultSet 转换为 Java 对象（按 resultMap）|
+
+### MyBatis 一级缓存 vs 二级缓存
+
+| 缓存 | 范围 | 默认 | 生命周期 | 推荐生产用法 |
+|------|------|------|---------|-----------|
+| **一级缓存（Session/SqlSession）** | 单个 SqlSession | **默认开启** | SqlSession 关闭即销毁 | **保留默认**（同一事务内重复查询有用）|
+| **二级缓存（Namespace/Mapper）** | 整个应用，按 Mapper namespace 划分 | 关闭 | 应用启动到关闭 | **生产建议关闭**，用 Redis 替代 |
+
+#### 一级缓存的关键陷阱（生产 Top 1 踩坑）
+
+```java
+// 同一事务内
+User u1 = userMapper.findById(1);   // 走 DB → 缓存
+// ... 中间没有写操作
+User u2 = userMapper.findById(1);   // 命中缓存 ✓
+
+// 但只要发生任何 INSERT/UPDATE/DELETE → 一级缓存全部清空
+userMapper.updateXXX();              // 清缓存
+User u3 = userMapper.findById(1);   // 又走 DB
+```
+
+::: warning ⚠️ 为什么二级缓存生产慎用
+
+> ① **分布式部署下不同步**——N 个节点 N 份独立缓存；② **侵入业务**——所有 update 必须经过同一 namespace，跨表更新无法感知；③ **替代方案明显更好**——直接用 Redis 做分布式缓存，可控且一致性更好。
+>
+> **生产实践**：`mybatis.configuration.cache-enabled=false` + 业务层显式用 `@Cacheable` + Redis。
+
+:::
+
+### MyBatis Plugin（拦截器）机制
+
+**面试 Top 3 追问**：能用 Plugin 实现什么？答出**分页 / 数据脱敏 / 多租户 / SQL 监控 / 加密** 立刻加分。
+
+#### 4 个可拦截点
+
+```java
+@Intercepts({
+    @Signature(type = Executor.class,         method = "update", args = {...}),  // 增删改
+    @Signature(type = Executor.class,         method = "query",  args = {...}),  // 查询
+    @Signature(type = StatementHandler.class, method = "prepare", args = {...}), // SQL 准备
+    @Signature(type = ParameterHandler.class, method = "setParameters", args = {...}),
+    @Signature(type = ResultSetHandler.class, method = "handleResultSets", args = {...})
+})
+```
+
+| 拦截对象 | 典型用法 |
+|---------|---------|
+| **Executor** | PageHelper 分页、二级缓存增强 |
+| **StatementHandler** | **改写 SQL**（多租户、敏感字段脱敏、SQL 监控）|
+| **ParameterHandler** | 参数加密（如手机号、身份证）|
+| **ResultSetHandler** | 结果集解密、字段脱敏 |
+
+#### 实战：分页插件原理（PageHelper）
+
+```java
+@Intercepts(@Signature(type = Executor.class, method = "query", args = {...}))
+public class PaginationInterceptor implements Interceptor {
+    public Object intercept(Invocation invocation) throws Throwable {
+        // 1. 从 ThreadLocal 取出 PageHelper.startPage(1, 10) 设置的分页参数
+        Page page = PageContext.getLocalPage();
+        if (page == null) return invocation.proceed();    // 没设分页 → 原样执行
+
+        // 2. 拦截原 SQL，加上 LIMIT
+        BoundSql boundSql = ...;
+        String pageSql = boundSql.getSql() + " LIMIT " + page.getOffset() + "," + page.getSize();
+
+        // 3. 再查一次 SELECT COUNT(*) 算总数
+        long total = countQuery(...);
+        page.setTotal(total);
+
+        // 4. 用 pageSql 真正执行
+        return executeWithSql(pageSql);
+    }
+}
+```
+
+::: tip 💡 多租户实战
+
+> 用 StatementHandler Plugin **自动给所有 SQL 加上 `WHERE tenant_id = ?`** → 业务代码完全感知不到多租户。这是 SaaS 公司必备技巧。
+
+:::
+
+### MyBatis 与 MyBatis-Plus
+
+| 维度 | **MyBatis** | **MyBatis-Plus** |
+|------|----------|---------|
+| **CRUD** | 手写 SQL | **`BaseMapper` 内置 CRUD** |
+| **分页** | 需 PageHelper 插件 | 内置 `IPage` |
+| **条件构造** | 拼字符串 / 动态 SQL | **`LambdaQueryWrapper` 类型安全** |
+| **代码生成** | 无 | 内置生成器（Entity/Mapper/Service）|
+| **租户/字段加密/逻辑删除** | 自己写 | 内置 |
+| **生产推荐** | 老项目 | **新项目首选** |
+
+```java
+// MyBatis-Plus LambdaQueryWrapper（编译期检查字段名）
+LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<User>()
+    .eq(User::getStatus, 1)
+    .gt(User::getAge, 18)
+    .orderByDesc(User::getCreatedAt);
+List<User> users = userMapper.selectList(wrapper);
+```
+
+::: warning ⚠️ MyBatis-Plus 也有坑
+
+> ① 复杂 JOIN 仍要手写 XML；② 默认乐观锁、逻辑删除注解要全局配置；③ Wrapper 滥用会让 SQL 难追踪——生产建议给关键模块开启 SQL 日志。
+
+:::
+
 ## 面试常问 & 怎么答
 
 ### Q1: JPA 和 MyBatis 怎么选？
