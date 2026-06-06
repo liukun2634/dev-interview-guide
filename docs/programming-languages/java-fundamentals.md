@@ -270,6 +270,173 @@ c.equals(d);  // true
 
 **Integer 缓存范围**：`-128 ~ 127`（可通过 `-XX:AutoBoxCacheMax=N` 调大上限）。**面试黄金一句**："Integer == 比较只在 -128 ~ 127 才可靠，业务代码永远用 equals。"
 
+## 集合三大金刚：ArrayList / LinkedList / CopyOnWriteArrayList
+
+**Java 集合面试 Top 3 必问**——能讲清扩容算法、真实性能、并发场景，立刻区分初级和中高级。
+
+### ArrayList 扩容算法（必背）
+
+```java
+// JDK 17 ArrayList.grow() 简化版
+private Object[] grow(int minCapacity) {
+    int oldCapacity = elementData.length;
+    int newCapacity = ArraysSupport.newLength(
+        oldCapacity,
+        minCapacity - oldCapacity,    // minimum growth
+        oldCapacity >> 1              // ★ 1.5 倍扩容 (oldCapacity / 2)
+    );
+    return elementData = Arrays.copyOf(elementData, newCapacity);
+}
+```
+
+#### 关键细节
+
+| 维度 | 值 |
+|------|---|
+| **默认初始容量** | **10**（首次 add 时才创建数组，懒初始化）|
+| **扩容倍数** | **1.5 倍**（`oldCapacity + oldCapacity >> 1`）|
+| **添加性能** | 摊还 O(1)，扩容时 O(n) |
+| **空间浪费** | 平均 25%（1.5 倍扩容数学期望）|
+
+::: tip 💡 一个能记一辈子的细节
+
+> **`new ArrayList<>()` 的初始容量不是 10**，而是 **0**（指向共享的 `EMPTY_ELEMENTDATA`）。**首次 `add()`** 才扩容到 10——这是 Java 8+ 的延迟初始化优化，避免大量空 ArrayList 占内存。
+
+:::
+
+#### 为什么是 1.5 倍而不是 2 倍
+
+```
+2 倍扩容（如 C++ vector）:
+  ✅ 简单，移位 1 位
+  ❌ 每次新数组大小 > 历史已释放空间之和 → 永远无法复用旧内存
+
+1.5 倍扩容（Java ArrayList）:
+  ✅ N + 1.5N + 2.25N + ... 可能从堆某个位置复用
+  ❌ 略复杂、内存增长慢
+```
+
+**一句话**：Java 选 1.5× 是为了**潜在的内存复用**，让 GC/分配器更可能找到合适的空闲块。
+
+### LinkedList 真的快吗？（高频陷阱题）
+
+**面试官最爱问**："增删快、查询慢，所以高频增删用 LinkedList 对吗？" → **大错特错**。
+
+#### ArrayList vs LinkedList 真实性能（基准测试）
+
+| 操作 | ArrayList | LinkedList | 真相 |
+|------|----------|----------|------|
+| **末尾 add** | 摊还 O(1) | O(1) | 持平 |
+| **末尾 remove** | O(1) | O(1) | 持平 |
+| **按 index 访问** | **O(1)** | O(n/2) | ArrayList 完胜 |
+| **中间插入**（已知 index）| O(n)（拷贝）| **O(1)**（理论）| 但**找到 index 要 O(n)**！|
+| **中间删除**（已知 element）| O(n) | O(n)（要先找到）| 持平 |
+| **迭代器遍历** | **极快**（CPU 缓存友好）| 慢（指针跳跃）| ArrayList 完胜 |
+
+::: warning ⚠️ LinkedList 几乎从不使用
+
+> **Java 核心库作者 Stuart Marks 在 2020 年明确说**："I don't use LinkedList. **Hardly anyone does**. ArrayList is faster in almost every case."
+>
+> **唯一推荐 LinkedList 的场景**：用作 **Deque**（双端队列）的简单实现。但即使这个场景，**`ArrayDeque` 也更快**——它基于循环数组，缓存友好。
+>
+> **生产经验**：见到 LinkedList 90% 是历史代码，**新代码一律用 ArrayList 或 ArrayDeque**。
+
+:::
+
+#### 为什么 ArrayList 比 LinkedList 快（即使理论上 LinkedList 中间插入更快）
+
+```
+1. ArrayList 数据连续 → CPU 每次预取 64 字节 cache line → 顺序遍历极快
+2. LinkedList 每个节点对象散落 → 大量 cache miss → 慢 5-10×
+3. LinkedList 每节点要存 prev + next 指针 → 内存开销 2-3×
+4. LinkedList 没有 random access → 用 get(i) 要从头遍历 O(n)
+```
+
+### CopyOnWriteArrayList 适用场景
+
+**Java 并发集合的"特殊用法"**——读极多、写极少的场景。理解它的核心权衡，是高级 Java 面试加分点。
+
+#### 工作原理
+
+```java
+public boolean add(E e) {
+    final ReentrantLock lock = this.lock;
+    lock.lock();
+    try {
+        Object[] elements = getArray();
+        int len = elements.length;
+        Object[] newElements = Arrays.copyOf(elements, len + 1);   // ★ 完整复制
+        newElements[len] = e;
+        setArray(newElements);
+        return true;
+    } finally { lock.unlock(); }
+}
+
+public E get(int index) {
+    return get(getArray(), index);    // 读完全无锁
+}
+```
+
+**核心思想**：
+- **读完全无锁**——直接返回 volatile 数组引用
+- **写复制整个数组**——加锁 + 复制 + 修改 + 替换引用
+- **读不到最新数据**——弱一致性（eventually consistent）
+
+#### 适用 vs 不适用
+
+| 场景 | 推荐？ |
+|------|------|
+| **配置缓存、白名单、监听器列表**（读 99%，写 < 1%）| ✅ **完美** |
+| **事件总线的订阅者列表** | ✅ |
+| **频繁写入**（每秒 > 100 次写）| ❌ **灾难**（每次写都 O(n) 复制）|
+| **大数组**（> 10000 元素）| ❌（每次写都复制 GB 级数据）|
+| **需要立刻看到写入** | ❌（弱一致）|
+
+### 三大集合面试 5 连问
+
+::: tip 💡 高频追问 5 连击
+
+**Q1: ArrayList 默认初始容量？**
+> **0**（懒初始化），首次 add 扩容到 **10**。
+
+**Q2: ArrayList 扩容多少倍？**
+> **1.5 倍**（`oldCapacity + oldCapacity >> 1`）。
+
+**Q3: ArrayList 和 Vector 区别？**
+> Vector 方法都是 `synchronized` → 线程安全但慢；ArrayList 无锁。**Vector 已淘汰**，需要线程安全用 `Collections.synchronizedList()` 或 `CopyOnWriteArrayList`。
+
+**Q4: 遍历 ArrayList 时删除会怎样？**
+> 抛 `ConcurrentModificationException`（fail-fast）。正确做法：**用 `Iterator.remove()`** 或用 `removeIf()`。
+
+**Q5: ArrayList 如何避免扩容？**
+> **构造时指定初始容量**：`new ArrayList<>(预计大小)`。大批量插入前用 `ensureCapacity(n)` 一次性扩容。
+
+:::
+
+#### fail-fast 与 fail-safe
+
+| 机制 | 实现 | 行为 | 代表集合 |
+|------|------|------|---------|
+| **fail-fast** | 维护 `modCount`，遍历时检查 | **立刻抛 CME** | `ArrayList` / `HashMap`（标准集合）|
+| **fail-safe** | 遍历快照副本 / CoW | **不抛异常，但读不到最新** | `CopyOnWriteArrayList` / `ConcurrentHashMap` |
+
+```java
+// fail-fast 触发 CME
+List<Integer> list = new ArrayList<>(List.of(1, 2, 3));
+for (Integer i : list) {
+    if (i == 2) list.remove(i);     // ❌ ConcurrentModificationException
+}
+
+// 正确写法 1: Iterator.remove()
+Iterator<Integer> it = list.iterator();
+while (it.hasNext()) {
+    if (it.next() == 2) it.remove();
+}
+
+// 正确写法 2: removeIf (Java 8+, 推荐)
+list.removeIf(i -> i == 2);
+```
+
 ## 并发：synchronized vs ReentrantLock
 
 | 特性 | `synchronized` | `ReentrantLock` |

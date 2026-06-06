@@ -69,6 +69,98 @@ struct sdshdr {
   - skiplist 支持范围查询（`ZRANGE`、`ZRANGEBYSCORE`）
   - hashtable 支持 O(1) 单点查找（`ZSCORE`）
 
+#### 高级数据结构：HyperLogLog / Bitmap / GEO（必背场景）
+
+**Redis 不止 5 种基本类型**，这 3 个高级数据结构是面试加分项，能解决"看似超大内存但用极少 KB" 的场景。
+
+##### HyperLogLog：概率基数统计
+
+**场景**：统计 UV（独立访客数）、独立 IP、独立设备数。
+
+```bash
+PFADD ip:20260606 1.1.1.1 2.2.2.2 3.3.3.3
+PFADD ip:20260606 1.1.1.1                    # 重复添加，基数不变
+PFCOUNT ip:20260606                          # 返回估算值: 3
+
+# 多个 key 合并
+PFMERGE ip:202606 ip:20260601 ip:20260602 ...
+PFCOUNT ip:202606                            # 月度 UV
+```
+
+**核心数字**（必背）：
+
+| 维度 | 值 |
+|------|---|
+| **每个 key 占用** | **最多 12 KB**（不论你存了多少元素！）|
+| **统计能力** | 最多 **2^64 个不同元素** |
+| **误差** | **约 0.81%**（标准误差）|
+
+::: tip 💡 12 KB 干掉 Set 几 GB
+
+> 用 `SET` 统计 1 亿独立 IP → 大约 **2-3 GB**；用 HyperLogLog → **12 KB**。**1 万倍空间差距**，只要业务能接受 < 1% 误差。
+
+:::
+
+##### Bitmap：位图操作（核心是省内存）
+
+**场景**：用户签到、活跃统计、布隆过滤器、权限位。
+
+```bash
+# 用户 1 在 6 月 6 日签到（用户ID作key，日期作offset）
+SETBIT signin:user:1 5 1           # 第 6 天签到（offset 从 0 开始）
+
+# 查询用户 1 在 6 月 6 日是否签到
+GETBIT signin:user:1 5             # → 1
+
+# 统计某用户本月签到天数
+BITCOUNT signin:user:1             # → N 天
+
+# 多用户求交集（同时在 A 和 B 日签到的用户）
+BITOP AND result signin:20260606 signin:20260607
+BITCOUNT result
+```
+
+**空间估算**：1 亿用户的"日活" Bitmap = **12.5 MB**（1 亿 bit / 8 = 1.25 千万 byte）。
+
+##### GEO：地理位置（基于 ZSet 实现）
+
+**场景**：附近的人 / 附近商家 / 打车定位。
+
+```bash
+# 添加位置
+GEOADD shops 116.404 39.915 "故宫"
+GEOADD shops 116.397 39.908 "天安门"
+
+# 查询距离
+GEODIST shops "故宫" "天安门" km          # → 0.79
+
+# 查附近 5 km 内的商家
+GEOSEARCH shops FROMLONLAT 116.4 39.91 BYRADIUS 5 km ASC COUNT 10
+
+# 按矩形范围查
+GEOSEARCH shops FROMLONLAT 116.4 39.91 BYBOX 10 10 km ASC
+```
+
+**底层原理**：**GeoHash 编码 + ZSet**。
+- 经纬度通过 GeoHash 编码为一个 52-bit 整数 score
+- 用 ZSet 存储，**地理位置相近的 GeoHash 整数也相近** → ZRANGEBYSCORE 范围查询即可
+
+##### 三大高级数据结构选型
+
+| 需求 | 选什么 | 内存优势 |
+|------|------|---------|
+| **UV / 去重计数**（允许 1% 误差）| **HyperLogLog** | 12 KB / key |
+| **精确去重**（如月活用户列表）| **Set** + Redis Cluster 分片 | 大 |
+| **签到 / 在线状态 / 权限位** | **Bitmap** | 1 亿用户 12 MB |
+| **布隆过滤器** | **Bitmap + 多 hash**（或 RBloomFilter）| 1 亿元素 120 MB（1% 误差）|
+| **附近的人 / 商家** | **GEO** | 基于 ZSet，性能好 |
+
+::: tip 💡 面试金句
+
+> **"用 Set 存 1 亿 UV 要 2GB，HyperLogLog 只要 12KB——这就是为什么大数据 UV 统计永远用 HLL。"**
+
+:::
+
 ---
 
 ### 2. 持久化机制
