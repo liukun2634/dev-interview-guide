@@ -265,6 +265,159 @@ Reactor 是基于 I/O 多路复用的事件驱动设计模式：用一个或多�
 
 ---
 
+## Netty 实战深度 — 必背追问
+
+**面试必考"**为什么用 Netty 而不直接用 NIO**"**——能答出 4 大底层优势 + 经典坑，直接证明实战经验。
+
+### Netty 核心组件 5 件套
+
+```java
+EventLoopGroup boss = new NioEventLoopGroup(1);        // ① Main Reactor
+EventLoopGroup worker = new NioEventLoopGroup();        // ② Sub Reactor（默认 CPU*2）
+
+ServerBootstrap b = new ServerBootstrap();
+b.group(boss, worker)
+ .channel(NioServerSocketChannel.class)                 // ③ Channel 抽象
+ .childHandler(new ChannelInitializer<SocketChannel>() {
+     protected void initChannel(SocketChannel ch) {
+         ChannelPipeline p = ch.pipeline();              // ④ Pipeline 责任链
+         p.addLast(new LengthFieldBasedFrameDecoder(...)); // ⑤ Codec
+         p.addLast(new BusinessHandler());
+     }
+ });
+```
+
+| 组件 | 角色 | 关键设计 |
+|------|------|---------|
+| **EventLoop** | 单线程绑定 Channel | **同一 Channel 的所有事件由同一线程处理 → 无锁** |
+| **Channel** | 网络连接抽象 | NioSocketChannel / EpollSocketChannel / KQueueChannel |
+| **Pipeline** | 责任链 | 双向链表，入站从 head→tail，出站从 tail→head |
+| **ChannelHandler** | 事件处理器 | Inbound / Outbound 分离 |
+| **ByteBuf** | 字节缓冲 | **读写双指针 + 引用计数 + 池化** |
+
+### Netty 4 大底层优势
+
+#### 优势 1：零拷贝（Zero-Copy）— 5 个层面
+
+| 层面 | 实现 | 节省 |
+|------|------|------|
+| **OS 层：sendfile / mmap** | `FileRegion` 用 `transferTo` | 用户态↔内核态拷贝 |
+| **ByteBuf 切片** | `slice()` / `duplicate()` 共享底层数组 | 数据拷贝 |
+| **CompositeByteBuf** | 逻辑合并多个 Buf，不真复制 | 合包拷贝 |
+| **DirectByteBuf** | 直接内存，绕过 JVM 堆 | JVM→Native 拷贝 |
+| **池化 PooledByteBufAllocator** | jemalloc 风格的内存池 | 频繁分配/GC |
+
+```java
+// CompositeByteBuf 合并 header + body 不复制
+CompositeByteBuf composite = Unpooled.compositeBuffer();
+composite.addComponents(true, header, body);   // ★ 逻辑合并
+
+// FileRegion 用零拷贝发送大文件
+ctx.write(new DefaultFileRegion(file.getChannel(), 0, file.length()));
+```
+
+#### 优势 2：内存池（PooledByteBufAllocator）
+
+**问题**：每次 New ByteBuf → 频繁 GC，DirectBuffer 还要进系统调用申请直接内存。
+
+**Netty 4.1+ 默认池化**：基于 jemalloc 的 PoolArena → PoolChunk(16MB) → PoolPage(8KB) → PoolSubpage 四级管理，分配 O(1)。
+
+```java
+// 默认配置（4.1+）
+-Dio.netty.allocator.type=pooled
+
+// 申请池化 ByteBuf
+ByteBuf buf = ctx.alloc().directBuffer(1024);
+try {
+    // ... 使用
+} finally {
+    buf.release();   // ★ 必须释放，否则内存泄漏！
+}
+```
+
+::: warning ⚠️ ByteBuf 引用计数必踩坑
+
+> Netty ByteBuf 是**引用计数**对象（`ReferenceCounted`），用完必须 `release()`，否则内存池耗尽 → OOM。Pipeline 中 **入站消息默认由最后一个 handler 释放**；如果中间 handler 没传递（吃掉了消息），必须自己释放。
+>
+> **排查**：JVM 加 `-Dio.netty.leakDetection.level=PARANOID` 打开泄漏检测。
+
+:::
+
+#### 优势 3：高效线程模型（无锁串行化）
+
+**核心设计**：**同一 Channel 的所有事件保证由同一个 EventLoop 线程处理**，业务 handler 内部**无需加锁**。
+
+```
+Channel-1 ──绑定──→ EventLoop-1 ──┐
+Channel-2 ──绑定──→ EventLoop-2  ├─→ NioEventLoopGroup(Worker)
+Channel-3 ──绑定──→ EventLoop-1 ──┘  (一个 EventLoop 可处理多个 Channel)
+```
+
+| Group | 推荐线程数 |
+|-------|---------|
+| **boss**（Main Reactor）| `1`（HTTP 单端口监听够用）|
+| **worker**（Sub Reactor）| `CPU * 2`（默认）|
+| **业务 EventExecutor**（耗时业务）| 独立 `DefaultEventExecutorGroup` |
+
+::: tip 💡 业务为什么要拆出独立线程池
+
+> 耗时业务（DB / RPC）放在 worker EventLoop 里执行 → **阻塞 I/O 线程** → 其他 Channel 全部卡住。必须 `pipeline.addLast(businessExecutor, handler)` 把业务下沉到独立线程池。
+
+:::
+
+#### 优势 4：编解码框架 — 解决拆包粘包
+
+**面试 Top 题**："TCP 拆包粘包怎么解决？"——Netty 提供 5 个 Decoder 解决：
+
+| Decoder | 用途 | 适用协议 |
+|---------|------|---------|
+| **FixedLengthFrameDecoder** | 固定长度切包 | 定长协议（如登录消息）|
+| **LineBasedFrameDecoder** | 按 `\n` 切包 | 文本协议（HTTP、Redis）|
+| **DelimiterBasedFrameDecoder** | 自定义分隔符 | 自定义文本协议 |
+| **LengthFieldBasedFrameDecoder** | **长度字段 + 消息体**（★ 最常用）| TLV 二进制协议（Dubbo、RocketMQ）|
+| **HttpRequestDecoder** | HTTP 报文解码 | HTTP 服务 |
+
+```java
+// 自定义协议: [4 字节长度][消息体]
+pipeline.addLast(new LengthFieldBasedFrameDecoder(
+    1024 * 1024,  // maxFrameLength
+    0,            // lengthFieldOffset
+    4,            // lengthFieldLength
+    0,            // lengthAdjustment
+    4             // initialBytesToStrip（跳过长度头）
+));
+pipeline.addLast(new ProtobufDecoder(MyMessage.getDefaultInstance()));
+```
+
+### Netty 实战 5 大坑（必背）
+
+| 坑 | 后果 | 解决 |
+|----|------|------|
+| **ByteBuf 没 release** | DirectMemory OOM | finally 释放 + leakDetection=PARANOID |
+| **业务在 EventLoop 跑** | 卡住 I/O 线程 | `addLast(businessExecutor, handler)` |
+| **没处理拆包粘包** | 消息错位 | 用 LengthFieldBasedFrameDecoder |
+| **boss 线程数过多** | 浪费（单端口只有 1 个监听 socket）| boss=1 |
+| **writeAndFlush 不加 future 监听** | 写失败不知道 | 加 `ChannelFutureListener` |
+
+### Netty vs 原生 NIO 对比速查
+
+| 维度 | 原生 Java NIO | Netty |
+|------|-------------|-------|
+| **epoll bug**（CPU 100%）| 需手动重建 Selector | **自动重建** |
+| **零拷贝** | 仅 transferTo | **5 层零拷贝** |
+| **内存管理** | 手动管理 ByteBuffer | **池化 + 引用计数** |
+| **拆包粘包** | 自己写 | **5 种 Decoder 开箱即用** |
+| **协议支持** | 都自己写 | **HTTP/HTTPS/WebSocket/SMTP/MQTT/Redis** 全有 |
+| **API 易用度** | 复杂 | 责任链 + Future/Promise |
+
+### 黄金答题模板（必背）
+
+> **面试官：为什么用 Netty 而不直接用 NIO？**
+>
+> **答**：4 大根本优势：① **解决了 epoll bug**——原生 NIO Selector 在 Linux 下会偶发 CPU 100%（空轮询），Netty 自动检测并重建 Selector；② **5 层零拷贝**——FileRegion 用 sendfile、ByteBuf slice、CompositeByteBuf 逻辑合并、DirectBuffer、PooledByteBufAllocator 内存池；③ **无锁线程模型**——同一 Channel 绑定同一 EventLoop，handler 内无需加锁；④ **完整生态**——拆包粘包 5 种 Decoder、HTTP/WebSocket/Protobuf 协议栈开箱即用。生产中最容易踩的坑是 ByteBuf 没 release 导致 DirectMemory OOM，必须加 `-Dio.netty.leakDetection.level=PARANOID` 检测；以及耗时业务必须放独立 EventExecutorGroup，不能阻塞 worker 线程。
+
+---
+
 ## io_uring 深度解析
 
 `io_uring` 是 Linux 5.1（2019）引入的**异步 I/O 框架**，2023-2025 年已经从"前沿技术"变成**高并发后端面试必问**——尤其是数据库、网关、存储类岗位。

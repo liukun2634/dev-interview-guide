@@ -580,6 +580,147 @@ SOLID 五原则 + 迪米特法则（最少知道原则：一个对象应当对�
 
 ---
 
+## 过度设计反例 5 大典型 — 必背警示
+
+**面试高频追问**："你见过什么设计模式滥用的反例？"——能讲出真实反例，比背 23 种模式更**有说服力**。简洁直接的代码 > 学院派的"教科书完美设计"。
+
+### 反例 1：滥用单例 — 全局状态地狱
+
+```java
+// ❌ 反例：把 UserService 做成单例，方便 "随处调用"
+public class UserService {
+    private static UserService instance;
+    private Map<Long, User> userCache = new HashMap<>();   // ★ 全局状态
+
+    public static UserService getInstance() { ... }
+    public void saveUser(User u) { userCache.put(u.getId(), u); }
+}
+
+// 问题：
+// 1. 单元测试无法 mock，每个测试都污染同一份 cache
+// 2. 多线程下 HashMap 并发出 bug
+// 3. 改造成分布式时改不动（每个 JVM 一份）
+```
+
+**正确做法**：用 Spring 容器的"**单例 Bean**"（实际上是 Spring 管理的单实例，不是 GoF 单例），方便依赖注入和测试 mock。**业务代码里不要自己写 `getInstance()`**。
+
+### 反例 2：策略模式只有 1 种实现
+
+```java
+// ❌ 反例：为了"以后可扩展"，给只有 1 种实现的逻辑套策略模式
+public interface PaymentStrategy {
+    void pay(BigDecimal amount);
+}
+
+public class AlipayStrategy implements PaymentStrategy { ... }   // ★ 只有这一个！
+
+@Service
+public class PaymentService {
+    private final PaymentStrategy strategy;   // 永远只注入 Alipay
+    public void pay(BigDecimal amount) { strategy.pay(amount); }
+}
+```
+
+**问题**："以后可能扩展"——这是过度设计的**头号借口**。**YAGNI 原则**：You Aren't Gonna Need It，等真有第 2 种支付方式再重构成策略模式，不要提前设计。
+
+### 反例 3：工厂的工厂的工厂
+
+```java
+// ❌ 反例：抽象工厂 + 工厂方法 + 简单工厂 三层套娃
+provider.getFactoryCreator().createProductFactory().createProduct();
+```
+
+**正确做法**：99% 场景用 Spring `@Bean` + `@Conditional` 或者**简单工厂 + 注入 Map** 一次解决：
+
+```java
+@Service
+public class ProductService {
+    private final Map<String, ProductHandler> handlers;   // ★ Spring 自动注入所有实现
+
+    public ProductService(List<ProductHandler> all) {
+        this.handlers = all.stream()
+            .collect(Collectors.toMap(ProductHandler::getType, Function.identity()));
+    }
+
+    public Product create(String type) {
+        return handlers.get(type).create();
+    }
+}
+```
+
+### 反例 4：本地事件用消息队列重写
+
+```java
+// ❌ 反例：同一 JVM 内的事件通知非要用 Kafka
+@Service
+public class OrderService {
+    @Autowired KafkaTemplate kafka;
+    public void createOrder(Order o) {
+        save(o);
+        kafka.send("order-created", o);   // ★ 5ms 操作变 50ms + 运维成本
+    }
+}
+```
+
+**正确做法**：单进程内用 **Spring `ApplicationEvent` + `@EventListener`**（同步）或 **`@Async`**（异步）；跨服务才上 Kafka。
+
+```java
+publisher.publishEvent(new OrderCreatedEvent(order));
+
+@EventListener
+@Async
+public void handle(OrderCreatedEvent e) { sendEmail(e.getOrder()); }
+```
+
+### 反例 5：装饰器嵌套到看不懂
+
+```java
+// ❌ 反例：5 层装饰器嵌套，出 bug 不知道哪一层抛的
+InputStream in = new BufferedInputStream(
+    new GZIPInputStream(
+        new CipherInputStream(
+            new Base64InputStream(
+                new FileInputStream("data.txt")
+            ), cipher)));
+```
+
+**正确做法**：3 层以内还能接受，更多层就该**抽出独立方法**或者用 **Builder 模式**链式构建。
+
+### 模式滥用 vs 简洁代码 — 决策表
+
+| 场景 | 推荐 | 不推荐 |
+|------|------|------|
+| **只有 1 种实现** | 直接写死 | 策略 / 工厂 |
+| **本地事件** | `@EventListener` | Kafka |
+| **简单对象创建** | new + 构造器 | 抽象工厂 |
+| **参数 < 4 个** | 普通构造器 | Builder |
+| **2-3 种简单分支** | if/else 或 switch | 状态模式 |
+| **类层级 > 3 层** | 组合 over 继承 | 继续套娃 |
+| **可能扩展但还没需求** | 先简单写 | 提前抽象（YAGNI 违反）|
+
+### Spring 官方推荐的"简化模式"
+
+| 替代场景 | 传统 GoF | Spring 简化 |
+|---------|---------|------------|
+| 单例 | 双重检查锁 | `@Component` / `@Service`（Spring 管理）|
+| 工厂 | AbstractFactory | `@Bean` + `@Conditional` + 注入 List/Map |
+| 观察者 | 自定义 Subject/Observer | `ApplicationEventPublisher` + `@EventListener` |
+| 模板方法 | 抽象类 + 子类 | `JdbcTemplate` / `RestTemplate` |
+| 代理 | 手写 JDK / CGLIB | `@Transactional` / `@Async` / `@Cacheable`（AOP）|
+| 责任链 | 自定义链表 | `OncePerRequestFilter` + Filter 链 |
+
+### 黄金答题模板（必背）
+
+> **面试官：你怎么看设计模式？**
+>
+> **答**：设计模式是**沟通工具和经验沉淀**，不是 KPI。我会遵循 3 个原则：
+> ① **YAGNI**：等真有 2 种以上场景再抽象，不要为"以后可能需要"提前设计；
+> ② **优先用框架提供的简化版**：Spring 的 `@EventListener`、`@Bean`、`@Transactional` 已经把 GoF 模式封装好了，业务代码不要自己造轮子；
+> ③ **3 层以内能解决就别套娃**：装饰器、工厂超过 3 层别人就看不懂了。
+> 我见过最严重的反例是：本地事件通知硬上 Kafka，5ms 的操作变 50ms，还增加运维成本；以及为"以后可能支持"建的策略模式接口，半年后那个"可能"也没出现，反而让代码多了一层无意义的间接。**最好的设计模式是没有模式，但读代码的人会自然说"这就是 XX 模式"**。
+
+---
+
 ## 常见陷阱
 
 | 陷阱 | 症状 | 正确做法 |

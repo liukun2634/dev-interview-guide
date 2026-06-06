@@ -276,6 +276,179 @@ SELECT COUNT(remark) FROM orders;  -- remark 为 NULL 的行不计入
 
 ---
 
+## 索引下推 ICP / 覆盖索引 / MRR — 三大优化器加速器（必背）
+
+**面试 Top 追问**："EXPLAIN 里 Extra 出现 Using index condition / Using index / Using MRR 是什么意思？"——这三个**互联网二面必问**，答清楚直接证明你看过执行计划。
+
+### 1. Using index — 覆盖索引（Covering Index）
+
+**定义**：查询只需要的字段**全部在索引里**，**不回表**就能拿到结果。
+
+```sql
+-- 索引：idx_user_status_amount (user_id, status, amount)
+
+-- ❌ 走二级索引 + 回表
+SELECT * FROM orders WHERE user_id = 100 AND status = 'paid';
+
+-- ✅ 覆盖索引，Extra: Using index（不回表）
+SELECT user_id, status, amount FROM orders WHERE user_id = 100 AND status = 'paid';
+```
+
+::: tip 💡 实战价值
+
+> 覆盖索引能把查询性能提升 **5-10×**，因为省去了"二级索引→主键→聚簇索引"的回表过程。优化 `SELECT *` 慢查询的首选方案：**列出实际需要的字段 + 给字段建联合索引**。
+
+:::
+
+### 2. Using index condition — 索引下推 ICP（MySQL 5.6+）
+
+**定义**：把 WHERE 条件中**能用索引判断的部分**下推到存储引擎层过滤，**减少回表次数**。
+
+```sql
+-- 索引：idx_name_age (name, age)
+-- SQL: SELECT * FROM users WHERE name LIKE '张%' AND age = 25;
+```
+
+**没有 ICP（5.5 之前）**：
+```
+存储引擎 → 按 name LIKE '张%' 取出所有匹配的索引记录 → 全部回表 → Server 层再过滤 age=25
+```
+假如有 1000 个"张姓"用户，回表 1000 次。
+
+**有 ICP（5.6+）**：
+```
+存储引擎 → 按 name LIKE '张%' 过滤 → 在引擎层用 age=25 再过滤 → 只回表满足条件的 50 个
+```
+**回表减少到 50 次**，I/O 减少 **20×**。
+
+| 触发条件 | 必须满足 |
+|---------|---------|
+| 使用**联合索引**或**前缀索引** | ✅ |
+| WHERE 条件中**非前导列**能用索引判断 | ✅（如 `age` 在 `(name, age)` 中是第 2 列）|
+| 不能用于聚簇索引（主键索引）| ❌ |
+| `optimizer_switch='index_condition_pushdown=on'`（默认开）| ✅ |
+
+### 3. Using MRR — Multi-Range Read（MySQL 5.6+）
+
+**问题**：范围扫描时，按二级索引顺序回表 → 主键随机 I/O，性能差。
+
+**MRR 思路**：先把二级索引的**主键 ID 攒一批 + 排序**，再按主键顺序去聚簇索引取数据 → 变随机 I/O 为顺序 I/O。
+
+```sql
+-- 索引：idx_age (age)
+EXPLAIN SELECT * FROM users WHERE age BETWEEN 20 AND 30;
+-- Extra: Using index condition; Using MRR
+```
+
+**开启方法**：`SET optimizer_switch='mrr=on,mrr_cost_based=off';`（默认基于代价判断，可能不启用）。
+
+::: warning ⚠️ MRR 实战注意
+
+> MRR 在 SSD 上**收益不大**（SSD 随机 I/O 几乎等于顺序），主要给 HDD 用；MySQL 8.0 默认情况下不一定主动用，需要显式调优。
+
+:::
+
+### 4. 三个加速器对比速查
+
+| Extra 字段 | 中文名 | 触发条件 | 性能收益 |
+|-----------|-------|---------|---------|
+| **Using index** | 覆盖索引 | 查询字段全在索引中 | **5-10×**（省回表）|
+| **Using index condition** | 索引下推 ICP | 联合索引非前导列在 WHERE | **2-20×**（减少回表次数）|
+| **Using MRR** | Multi-Range Read | 二级索引范围扫描 | HDD 上 2-5×，SSD 弱 |
+| **Using where** | Server 层过滤 | WHERE 条件无法下推 | 无优化，警告信号 |
+| **Using filesort** | 文件排序 | ORDER BY 没走索引 | **慢，必须优化** |
+| **Using temporary** | 用临时表 | GROUP BY / DISTINCT 无索引 | **很慢，必须优化** |
+
+---
+
+## 慢 SQL 实战 5 大场景 — 真实生产案例
+
+### 场景 1：深分页（LIMIT 10000000, 10）— 经典杀手
+
+```sql
+-- ❌ 慢：扫描 1000 万 + 10 行
+SELECT * FROM orders ORDER BY id LIMIT 10000000, 10;
+
+-- ✅ 方案 1：游标分页（用上次结果的 id 作为起点）
+SELECT * FROM orders WHERE id > 10000000 ORDER BY id LIMIT 10;
+
+-- ✅ 方案 2：子查询先定位主键
+SELECT * FROM orders WHERE id IN (
+    SELECT id FROM orders ORDER BY id LIMIT 10000000, 10
+);
+```
+
+**面试金句**：深分页慢的根本原因是**回表 1000 万次**，子查询方案让回表只发生在最后 10 行。
+
+### 场景 2：索引失效 7 大坑
+
+| 坑 | 反例 | 修正 |
+|----|------|------|
+| **函数操作索引列** | `WHERE DATE(create_time)='2026-06-06'` | `WHERE create_time >= '2026-06-06' AND create_time < '2026-06-07'` |
+| **隐式类型转换** | `WHERE phone = 13800000000`（phone 是 VARCHAR）| `WHERE phone = '13800000000'` |
+| **前缀通配** | `WHERE name LIKE '%张'` | 改用全文索引或反向存储 |
+| **OR 条件部分无索引** | `WHERE a=1 OR b=2`（b 无索引）| 给 b 建索引或拆 UNION |
+| **联合索引违反最左前缀** | 索引 `(a,b,c)` 但 `WHERE b=1` | 调整索引顺序或 SQL |
+| **NOT IN / != / <>** | `WHERE status != 'paid'` | 改写为 `IN ('pending','cancelled')` |
+| **`IS NOT NULL`** | 不一定走索引（看选择性）| 业务允许的话改为非 NULL 列 + 默认值 |
+
+### 场景 3：JOIN 慢 — 小表驱动大表 + Hash Join (8.0)
+
+```sql
+-- MySQL 8.0+ 自动 Hash Join（不支持等值 JOIN 之外）
+EXPLAIN FORMAT=TREE
+SELECT * FROM small_table s JOIN large_table l ON s.id = l.sid;
+-- 输出: -> Hash join (l.sid = s.id)  cost=1234
+```
+
+**优化原则**：
+- 小表（结果集小）做驱动表（外层循环），大表做被驱动表（内层）
+- 被驱动表的 JOIN 列**必须有索引**，否则退化为 BNL（Block Nested Loop），代价巨大
+- 8.0 引入 Hash Join，不再依赖索引也能跑，但**内存消耗高**
+
+### 场景 4：ORDER BY 走 filesort — 索引排序
+
+```sql
+-- 索引：idx_user_time (user_id, create_time)
+-- ✅ 索引天然有序，Extra 无 filesort
+SELECT * FROM orders WHERE user_id = 100 ORDER BY create_time DESC LIMIT 10;
+
+-- ❌ 排序字段不在索引中，触发 filesort
+SELECT * FROM orders WHERE user_id = 100 ORDER BY amount DESC LIMIT 10;
+```
+
+**ORDER BY 走索引 3 个条件**：① 排序列在索引中；② WHERE 列 + ORDER BY 列符合最左前缀；③ 排序方向一致（或全 ASC 或全 DESC，8.0 支持混合）。
+
+### 场景 5：count(*) 优化
+
+```sql
+-- 不同写法性能对比（InnoDB）
+SELECT COUNT(*)  FROM t;  -- ★ 推荐，优化器会找最小索引扫描
+SELECT COUNT(1)  FROM t;  -- 与 COUNT(*) 等价
+SELECT COUNT(id) FROM t;  -- 略慢，需判断 id 非空
+SELECT COUNT(col) FROM t; -- 最慢，需判断 col 非空（且语义不同）
+
+-- 大表 count 优化方案：
+-- 1. 估算值（够用即可）：SHOW TABLE STATUS LIKE 't';
+-- 2. 维护单独的计数表 + 事务更新
+-- 3. Redis 单独计数（容忍少量误差）
+```
+
+::: warning ⚠️ MyISAM vs InnoDB count(*)
+
+> **MyISAM**：表级别维护 row 数，`COUNT(*)` O(1)；
+> **InnoDB**：因 MVCC 不同事务看到的行数不同，必须实时扫描，所以 InnoDB 大表 `COUNT(*)` 慢。
+
+:::
+
+### 黄金答题模板
+
+> **面试官：你怎么优化一条慢 SQL？**
+>
+> **答**：分 5 步走：① **看慢查询日志**找到目标 SQL；② **EXPLAIN** 看 type（是否 ALL）、key（是否命中）、rows（扫描量）、Extra（filesort/temporary/Using index）；③ **三大优化器加速器**——能用覆盖索引就用，看 ICP 是否触发，范围查询试 MRR；④ **针对场景**：深分页用游标 / 索引失效 7 坑排查 / JOIN 小表驱动大表 + 被驱动表加索引 / ORDER BY 走索引避 filesort；⑤ **架构层兜底**：分表、读写分离、缓存、ES 取代复杂查询。
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1: 如何定位和优化慢查询？**
