@@ -8,6 +8,12 @@ title: Spring Cloud 速查
 
 ## 概念
 
+::: warning ⚠️ 2026 必知
+
+> **Spring Cloud Netflix（Eureka / Zuul 1 / Hystrix / Ribbon）已于 2021 年进入 maintenance mode**，仅社区维护、不再接受新特性。**新项目必选 Spring Cloud Alibaba（Nacos / Gateway / Sentinel）或 Kubernetes Native 方案**。面试提 Netflix 组件需同时说清迁移路径。
+
+:::
+
 - Spring Cloud 是一套微服务基础设施的解决方案，提供服务注册发现、网关、熔断限流、配置中心等能力。
 - 主流技术栈已从 Netflix 全家桶（Eureka、Zuul、Hystrix）迁移到 Alibaba 体系（Nacos、Gateway、Sentinel）。
 - Spring Cloud 本身是规范和抽象，具体实现由 Spring Cloud Netflix、Spring Cloud Alibaba 等提供。
