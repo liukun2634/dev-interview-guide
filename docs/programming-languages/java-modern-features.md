@@ -173,6 +173,118 @@ List<Integer> safe = Stream.of(1, 2, 3)
     .collect(Collectors.toList()); // collect 是线程安全的
 ```
 
+#### Stream 性能陷阱（高频追问）
+
+**面试 Top 1 性能题**："Stream 真的比 for 循环快吗？"——直答**慢 1.5-3 倍**，但能讲清何时该用、何时不该用，立刻显出工程经验。
+
+##### Stream vs for 循环基准对比
+
+| 场景 | for 循环 | Stream | 谁更快 |
+|------|---------|--------|------|
+| **简单遍历**（< 100 元素）| 1× | **1.5-3×** | for 完胜 |
+| **复杂转换链** | 1× | 接近 1× | 持平 |
+| **大数据 + 复杂运算 + parallelStream** | 1× | **0.3-0.5×**（更快）| Stream 完胜 |
+| **基本类型流**（IntStream）| 1× | 接近 1×（避免装箱）| 持平 |
+
+::: warning ⚠️ Stream 性能 3 大坑
+
+> ① **小数据慢**：Stream 创建/lambda 调用本身有开销，元素 < 100 时 for 循环完胜；
+> ② **基本类型装箱**：`list.stream().mapToInt(...).sum()` 比 `list.stream().map(...).reduce(0, Integer::sum)` 快 5-10×（避免 Integer 装箱）；
+> ③ **parallelStream 共享 commonPool**：会被其他 CPU 密集任务拖累。
+
+:::
+
+```java
+// ❌ 慢：每个元素都装箱拆箱
+int sum = list.stream().map(p -> p.getPrice()).reduce(0, Integer::sum);
+
+// ✅ 快 5-10×：用基本类型流
+int sum = list.stream().mapToInt(Product::getPrice).sum();
+```
+
+##### parallelStream 何时用、何时不用
+
+| 场景 | 推荐 |
+|------|------|
+| **数据量 < 1 万** | **❌ 串行 stream**（并行开销超过收益）|
+| **数据量 > 10 万 + CPU 密集**（如加密计算）| ✅ parallel |
+| **IO 密集**（如数据库 / HTTP）| **❌ 严格禁用**（并行 IO 不会更快，反而抢占 commonPool）|
+| **顺序敏感**（findFirst / 累加非交换）| ❌ |
+| **生产代码必须**用独立 ForkJoinPool | 永远不要无脑用 commonPool |
+
+```java
+// ❌ 错误：parallelStream 跑慢 IO，全 JVM 受影响
+list.parallelStream().forEach(this::callRemoteApi);
+
+// ✅ 正确：传入独立 ForkJoinPool
+ForkJoinPool customPool = new ForkJoinPool(20);
+customPool.submit(() -> list.parallelStream().forEach(this::callRemoteApi)).get();
+```
+
+详见 [Java 并发 — ForkJoinPool 陷阱](./java-concurrency#forkjoinpool-cpu-密集型并行计算)。
+
+#### Collectors 高频实战（必背）
+
+**Stream 面试 Top 2 题**："你常用的 Collectors 有哪些？"
+
+```java
+// 1. toList / toSet / toMap
+List<String> names = users.stream().map(User::getName).collect(Collectors.toList());
+
+// Java 16+: 直接 .toList()（不可变 List）
+List<String> names = users.stream().map(User::getName).toList();
+
+// 2. toMap (重复 key 必须显式处理，否则抛 IllegalStateException)
+Map<Long, User> idMap = users.stream()
+    .collect(Collectors.toMap(
+        User::getId,
+        Function.identity(),
+        (existing, replacement) -> existing       // ★ 必须处理冲突
+    ));
+
+// 3. groupingBy (按字段分组)
+Map<String, List<User>> byCity = users.stream()
+    .collect(Collectors.groupingBy(User::getCity));
+
+// 4. groupingBy + counting (分组计数)
+Map<String, Long> countByCity = users.stream()
+    .collect(Collectors.groupingBy(User::getCity, Collectors.counting()));
+
+// 5. groupingBy + mapping (分组 + 取字段)
+Map<String, List<String>> namesByCity = users.stream()
+    .collect(Collectors.groupingBy(
+        User::getCity,
+        Collectors.mapping(User::getName, Collectors.toList())
+    ));
+
+// 6. partitioningBy (二分组：满足条件 / 不满足)
+Map<Boolean, List<User>> partition = users.stream()
+    .collect(Collectors.partitioningBy(u -> u.getAge() >= 18));
+
+// 7. joining (字符串拼接)
+String csv = users.stream()
+    .map(User::getName)
+    .collect(Collectors.joining(", ", "[", "]"));
+```
+
+::: warning ⚠️ toMap 必踩坑
+
+> `Collectors.toMap(keyFn, valueFn)` 二参数版本**遇到重复 key 直接抛 IllegalStateException**——生产代码必须用三参数版本显式处理冲突。这是 toMap 最容易踩的坑。
+
+:::
+
+#### Stream 终端操作完整速查
+
+| 操作 | 返回 | 用途 |
+|------|------|------|
+| `forEach` / `forEachOrdered` | void | 遍历 |
+| `toList` (Java 16+) / `toArray` / `collect` | 集合 | 转回集合 |
+| `count` | long | 计数 |
+| `sum` / `max` / `min` / `average` | 数值 | 数值聚合（基本类型流）|
+| `reduce` | Optional | 自定义聚合 |
+| `findFirst` / `findAny` | Optional | 找第一个 |
+| `anyMatch` / `allMatch` / `noneMatch` | boolean | 判断 |
+
 ---
 
 ### 3. Optional（Java 8）

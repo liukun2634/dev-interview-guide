@@ -21,6 +21,127 @@ public class Application {
 
 **启动类放在根包下的原因：** @ComponentScan 默认扫描启动类所在包及其子包，放在根包下可以自动扫描所有业务代码。
 
+## SpringApplication.run() 启动 7 大阶段
+
+**Spring Boot 启动流程是高级面试 Top 1 源码追问**。能完整说出 7 个阶段 + 关键事件，立刻区分初级和中高级。
+
+### 启动整体流程
+
+```
+1. 创建 SpringApplication 实例
+   ├─ 推断应用类型 (Servlet / Reactive / 普通 Java)
+   ├─ 加载所有 ApplicationContextInitializer (META-INF SPI)
+   ├─ 加载所有 ApplicationListener (META-INF SPI)
+   └─ 推断主类 (Main-Class)
+         ↓
+2. 调用 run(args)
+         ↓
+3. SpringApplicationRunListeners 启动 → starting 事件
+   ├─ 加载 SpringApplicationRunListener (默认 EventPublishingRunListener)
+   └─ 触发: ApplicationStartingEvent
+         ↓
+4. 准备 Environment
+   ├─ 创建 StandardServletEnvironment
+   ├─ 加载 application.yml / application.properties
+   ├─ 加载命令行参数
+   ├─ 加载 @PropertySource
+   └─ 触发: ApplicationEnvironmentPreparedEvent
+         ↓
+5. 创建 ApplicationContext (容器)
+   ├─ AnnotationConfigServletWebServerApplicationContext (Web)
+   ├─ AnnotationConfigApplicationContext (非 Web)
+   └─ 触发: ApplicationContextInitializedEvent
+         ↓
+6. 准备 ApplicationContext
+   ├─ 调用所有 ApplicationContextInitializer.initialize()
+   ├─ 加载主配置类（@SpringBootApplication）作为 BeanDefinition
+   └─ 触发: ApplicationPreparedEvent
+         ↓
+7. refresh() —— Spring 标准启动流程
+   ├─ 加载 BeanDefinition (扫描 + 自动配置)
+   ├─ 调用 BeanFactoryPostProcessor (修改 BeanDefinition)
+   ├─ 注册 BeanPostProcessor
+   ├─ 国际化、事件多播器
+   ├─ ★ onRefresh() —— Web 场景下启动嵌入式 Tomcat
+   ├─ 实例化所有非懒加载 singleton (走 Bean 生命周期 13 步)
+   └─ finishRefresh: 启动 lifecycle，发布 ContextRefreshedEvent
+         ↓
+8. 调用 ApplicationRunner / CommandLineRunner
+   └─ 触发: ApplicationStartedEvent → ApplicationReadyEvent
+```
+
+### 7 大事件（监听 Spring 启动节点必备）
+
+**自定义启动逻辑插入点**——`implements ApplicationListener<XxxEvent>` 或 `@EventListener`：
+
+| 事件 | 何时触发 | 典型用途 |
+|------|---------|---------|
+| **ApplicationStartingEvent** | run() 一开始 | 日志系统初始化 |
+| **ApplicationEnvironmentPreparedEvent** | Environment 准备好但容器没创建 | **动态注入配置**（外部化配置中心）|
+| **ApplicationContextInitializedEvent** | Context 创建但 BeanDefinition 未加载 | 修改 ApplicationContext 配置 |
+| **ApplicationPreparedEvent** | 容器准备好但还没 refresh | 注册自定义 BeanDefinition |
+| **ContextRefreshedEvent** | refresh 完成（**所有 Bean 已创建**）| **常用：业务初始化** |
+| **ApplicationStartedEvent** | Runner 执行前 | 容器启动完成 |
+| **ApplicationReadyEvent** | **完全就绪，可对外服务** | **健康检查、注册服务发现** |
+| **ApplicationFailedEvent** | 启动失败 | 告警 / 清理资源 |
+
+### 启动优化：实战要点
+
+#### 1. 减少自动配置数量
+
+```yaml
+# 排除不需要的自动配置
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+```
+
+#### 2. 懒加载
+
+```yaml
+spring:
+  main:
+    lazy-initialization: true   # 全局懒加载（启动快 30-50%，首次请求慢）
+```
+
+::: warning ⚠️ 懒加载的副作用
+
+> ① **配置错误推迟到首次请求才暴露** → 启动看着 OK 但访问时崩溃；② **首次请求延迟** → P99 抖动；③ 不适合 K8s readinessProbe 检测。**仅用于开发环境加速调试**，生产慎用。
+
+:::
+
+#### 3. 用 Spring Native（GraalVM AOT）
+
+```bash
+# Spring Boot 3 内置 Native 支持
+./mvnw -Pnative native:compile
+./target/myapp
+# 启动时间从 5 秒 → 100 ms，内存从 500 MB → 80 MB
+```
+
+#### 4. 监控启动耗时
+
+```yaml
+# Spring Boot 3.2+
+debug: true
+logging:
+  level:
+    org.springframework.boot.autoconfigure.logging.ConditionEvaluationReportLogger: DEBUG
+```
+
+```bash
+# 启动后看每个 Bean 创建耗时
+curl http://localhost:8080/actuator/startup
+```
+
+### 面试黄金回答模板
+
+> **"SpringApplication.run 大致 7 大阶段：① 推断应用类型并加载 Initializer/Listener；② starting 事件；③ 准备 Environment（加载 yml + 命令行参数）；④ 创建 ApplicationContext；⑤ 准备容器（执行 Initializer + 加载主配置类）；⑥ refresh()（这一步内部又有 12 个子步骤，其中 onRefresh 启动 Tomcat，finishBeanFactoryInitialization 实例化所有 singleton Bean）；⑦ 调用 Runner + 发布 ReadyEvent。**
+>
+> **生产想监听就绪用 ApplicationReadyEvent；启动慢就排除自动配置 + 懒加载；要极致快就上 Spring Native / GraalVM AOT 编译。"**
+
 ## 自动配置加载机制
 
 ### Spring Boot 2.x

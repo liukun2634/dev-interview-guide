@@ -626,6 +626,197 @@ K8s 提供两种服务发现机制：
 
 ---
 
+## Pod 故障 5 大模式排查（生产必备）
+
+**K8s 运维面试 Top 1 题**："Pod 起不来 / 反复重启，怎么排查？"——能讲清 5 大故障模式 + 标准排查命令，立刻显出生产经验。
+
+### 故障 1：Pod 一直 Pending
+
+```
+状态: 0/1 Pending
+原因: 调度失败 / 资源不足 / 节点亲和不匹配
+```
+
+**排查命令套路**：
+
+```bash
+# 1. 看事件
+kubectl describe pod <name> | grep -A 30 Events
+
+# 典型事件:
+# Warning  FailedScheduling   0/3 nodes are available: 3 Insufficient memory.
+# Warning  FailedScheduling   1 node(s) had taints that the pod didn't tolerate.
+```
+
+**根因 + 解决**：
+
+| 根因 | 解决 |
+|------|------|
+| **节点资源不足** | 看 `kubectl top nodes`，扩容节点 / 减小 requests |
+| **nodeSelector / Affinity 无匹配节点** | 检查 label / 调整 affinity |
+| **节点有 Taint 没 Toleration** | Pod 加 toleration / 节点去污 |
+| **PVC 还在 Pending** | 检查 StorageClass / PV 是否就绪 |
+| **节点磁盘压力** | `kubectl describe node` 看 conditions |
+
+### 故障 2：ImagePullBackOff / ErrImagePull
+
+```
+状态: 0/1 ImagePullBackOff
+原因: 镜像拉不下来
+```
+
+```bash
+kubectl describe pod <name> | grep -A 10 Events
+
+# 典型事件:
+# Failed to pull image "registry.example.com/app:v1.0":
+#   rpc error: code = Unknown desc = Error response from daemon:
+#   manifest for app:v1.0 not found
+```
+
+| 根因 | 解决 |
+|------|------|
+| **镜像名/tag 错** | 改镜像 tag |
+| **私有仓库未配置 imagePullSecret** | 创建 secret + Pod 引用 |
+| **镜像仓库不可达** | 检查节点网络 / Registry 防火墙 |
+| **拉取超时**（大镜像 + 慢网络）| 节点预拉镜像 / 用本地 mirror registry |
+
+```yaml
+# 私有仓库示例
+apiVersion: v1
+kind: Secret
+metadata: { name: regcred }
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: <base64-encoded-docker-auth>
+
+# Pod spec
+spec:
+  imagePullSecrets:
+    - name: regcred
+```
+
+### 故障 3：CrashLoopBackOff（最常见）
+
+```
+状态: 0/1 CrashLoopBackOff (Restarts: 87)
+原因: 容器启动后立刻退出，被 kubelet 反复重启
+```
+
+**指数退避**：第 1 次立即重启，第 2 次等 10s，第 3 次 20s... 最长 5 分钟。
+
+```bash
+# 1. 看上次崩溃的日志（关键！）
+kubectl logs <name> --previous
+
+# 2. 看当前日志
+kubectl logs <name>
+
+# 3. 看事件
+kubectl describe pod <name>
+
+# 4. 进入容器排查（如果容器还活着几秒）
+kubectl exec -it <name> -- sh
+
+# 5. 改 entrypoint 为 sleep 调试
+spec:
+  containers:
+    - name: app
+      command: ["sleep", "3600"]    # 临时改成 sleep，进容器手工调试
+```
+
+**根因 5 类**：
+
+| 根因 | 排查 |
+|------|------|
+| **应用代码异常 / 启动失败** | `logs --previous` 看堆栈 |
+| **配置错误**（ConfigMap/Secret 没挂上 / 环境变量缺失）| describe 看挂载 |
+| **依赖未就绪**（DB / Redis 还没启动）| 加 initContainer 等待依赖 |
+| **健康检查路径错误** | livenessProbe 失败被 kubelet 杀掉 |
+| **OOMKilled**（见下）| `describe` 看 Last State |
+
+### 故障 4：OOMKilled
+
+```bash
+kubectl describe pod <name>
+# Last State: Terminated
+#   Reason: OOMKilled
+#   Exit Code: 137  (= 128 + SIGKILL)
+```
+
+| 根因 | 解决 |
+|------|------|
+| **limits 设太小** | 调大 `resources.limits.memory` |
+| **应用真有内存泄漏** | 看 JVM heap dump、Go pprof |
+| **JVM 没识别容器内存**（JDK 8u131 之前）| 升级 JDK / 用 `-XX:MaxRAMPercentage=75` |
+| **缓存无限增长** | 加 LRU 限制 |
+
+::: warning ⚠️ JVM 在 K8s 的经典坑
+
+> **JDK 10+ 才默认识别容器 cgroup 内存**。早期 JDK 看到的是宿主机总内存，导致 -Xmx 设错被 OOMKilled。**生产标配**：
+> ```bash
+> JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport
+> ```
+
+:::
+
+### 故障 5：Pod Running 但服务不通
+
+```
+状态: 1/1 Running   ← 看起来 OK
+现象: kubectl get svc 也 OK，但用户访问 502
+```
+
+**排查 5 步法**：
+
+```bash
+# 1. Pod 内能否自连？
+kubectl exec <pod> -- curl localhost:8080/health
+# 通 → 应用 OK
+
+# 2. 同 Pod 内其他容器能否互通？
+kubectl exec <pod> -- curl <other-pod-ip>:8080/health
+
+# 3. Service Endpoint 是否注册？
+kubectl get endpoints <service-name>
+# 如果是空 → readinessProbe 失败，Pod 没注册到 Service
+
+# 4. kube-proxy 规则是否生效？
+iptables -L -t nat | grep <service-cluster-ip>
+
+# 5. NetworkPolicy 是否阻断？
+kubectl get networkpolicy -A
+```
+
+**最常见根因 Top 3**：
+- ① **readinessProbe 失败** → Pod 没被加入 Endpoints
+- ② **Service selector 与 Pod label 不匹配**
+- ③ **NetworkPolicy 阻断** → 没放行调用方
+
+### 排查命令一图速查
+
+| 命令 | 用途 |
+|------|------|
+| `kubectl get pods -A -o wide` | 看所有 Pod 状态 |
+| `kubectl describe pod <name>` | **看事件 + Last State**（OOMKilled 看这里）|
+| `kubectl logs <name>` | 当前日志 |
+| `kubectl logs <name> --previous` | **上次崩溃的日志（CrashLoop 必看）** |
+| `kubectl logs -f <name> -c <container>` | 跟踪多容器 Pod 的指定容器 |
+| `kubectl exec -it <name> -- sh` | 进容器排查 |
+| `kubectl get events --sort-by=.metadata.creationTimestamp` | 时间倒序看事件 |
+| `kubectl top pod / node` | 资源使用 |
+| `kubectl get endpoints <svc>` | 看 Service 后端是否就绪 |
+
+### 故障排查黄金顺序
+
+::: tip 💡 一句话排查口诀
+
+> **"看状态 → describe 事件 → logs --previous → exec 进容器"**——90% 的 Pod 故障 4 步内能定位。
+
+:::
+
+---
+
 ## 常见陷阱
 
 | 陷阱 | 现象 | 正确做法 |

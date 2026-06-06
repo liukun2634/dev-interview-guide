@@ -420,6 +420,137 @@ ZooKeeper 和 etcd 都是分布式协调服务，提供强一致性的配置存�
 
 ---
 
+## 脑裂（Split-Brain）防御 — 必背追问点
+
+**面试一旦聊到主从、Sentinel、ZK、etcd，必追"脑裂怎么办？"**——这道题问的是**网络分区下两个 Leader 同时存活**的解决方案。
+
+### 脑裂是什么
+
+> **脑裂 = 集群网络分区后，多个分区各自选出 Leader，同时对外写入，导致数据不一致。**
+
+**典型场景**：5 节点集群被网络分成 [3] + [2] 两边，老 Leader 在少数派 [2] 里没察觉自己被孤立，继续接受写请求；多数派 [3] 重新选了新 Leader 也接受写请求 → 两个 Leader 同时存在 → 网络恢复后数据冲突无法合并。
+
+### 防御 4 大武器
+
+#### 武器 1：Quorum（多数派）— 最核心
+
+**公式（Dynamo / Cassandra）**：
+
+$$
+W + R > N
+$$
+
+| 含义 | 解释 |
+|------|------|
+| **N** | 副本总数 |
+| **W** | 写入成功最少节点数 |
+| **R** | 读取最少节点数 |
+
+**为什么 W + R > N 能防脑裂**：任意一次"读"必定与任意一次"写"有**至少 1 个节点重叠**，所以一定能读到最新写入。
+
+::: tip 💡 N=5 时怎么设置
+
+> ① **强一致**：W=3, R=3（任意一次读写都过半数）；
+> ② **读多写少**：W=4, R=2（读快，但写慢）；
+> ③ **写多读少**：W=2, R=4（写快，但读慢）。
+> Raft / ZK 默认 **W = ⌈N/2⌉ + 1**（即过半数），即使被脑裂分割也只有多数派那边能写入。
+
+:::
+
+#### 武器 2：奇数节点 + 过半选举
+
+**为什么集群节点数必须奇数**：
+
+| 节点数 | 能容忍宕机 | 脑裂分区最坏情况 |
+|--------|---------|----------------|
+| 3 | 1 | [2]+[1] → 多数派 [2] 能选主 ✅ |
+| 4 | **1**（和 3 一样！）| [2]+[2] → **没有多数派，无法选主** ❌ |
+| 5 | 2 | [3]+[2] → 多数派 [3] 能选主 ✅ |
+
+> **结论**：4 节点不仅没有比 3 节点容灾更好，反而可能脑裂卡死。**生产部署一律奇数：3、5、7**。
+
+#### 武器 3：Witness（仲裁节点）— 跨机房必备
+
+**问题**：跨机房部署 2 个机房，每个机房 2 节点（共 4），任意一边断网都会脑裂卡死。
+
+**解决方案**：在**第三个机房**部署 **1 个 Witness 节点**（不存数据，只投票），变成 5 节点过半数选举：
+
+```
+机房 A: 2 节点 + 机房 B: 2 节点 + 机房 C: 1 Witness  (共 5 节点)
+
+   网络分区时:
+   - A 断网 → B(2) + C(1) = 3 ≥ 3 → ✅ 能选主
+   - B 断网 → A(2) + C(1) = 3 ≥ 3 → ✅ 能选主
+   - C 断网 → A(2) + B(2) = 4 ≥ 3 → ✅ 能选主
+```
+
+| 中间件 | Witness 名称 |
+|--------|-------------|
+| **MongoDB** | Arbiter（仲裁节点）|
+| **RabbitMQ Quorum Queue** | Tie-breaker |
+| **SQL Server AlwaysOn** | File Share Witness / Cloud Witness |
+| **Galera Cluster** | Garbd（galera arbitrator daemon）|
+
+#### 武器 4：Fencing Token（栅栏令牌）— Martin Kleppmann 提出
+
+**问题**：即使有 Quorum，老 Leader 在被废除后**因 GC 暂停**或网络延迟，依然可能向存储系统提交写请求 → 旧数据覆盖新数据。
+
+**解决方案**：每次选主时，全局递增 token，存储层只接受 token ≥ 当前最大 token 的写请求：
+
+```
+时刻 T1: Leader-A 拿到 token=5，开始写
+时刻 T2: Leader-A GC 暂停 30 秒
+时刻 T3: 集群超时，选出 Leader-B，token=6
+时刻 T4: Leader-B 写入 (token=6) → 存储接受
+时刻 T5: Leader-A 苏醒，写入 (token=5) → 存储拒绝（5 < 6）
+```
+
+**实战中谁支持**：
+
+| 系统 | Fencing 实现 |
+|------|-------------|
+| **ZooKeeper** | `cversion` / `mzxid` 单调递增 |
+| **etcd** | `revision` 单调递增（lease 续约带 revision）|
+| **Redis Redlock** | Martin 批评其**没有 fencing token**，所以不建议用 Redlock 做关键锁 |
+| **HBase** | RegionServer 心跳 + ZK 临时节点 |
+
+### 主流中间件防脑裂手段一览（必背）
+
+| 中间件 | 防脑裂手段 | 推荐部署 |
+|--------|---------|---------|
+| **ZooKeeper** | ZAB 协议 + 过半数选举 + zxid 递增 | 3/5/7 节点奇数 |
+| **etcd** | Raft + 过半数 + revision fencing | 3/5/7 节点奇数 |
+| **Redis Sentinel** | quorum 配置 + min-replicas-to-write | **至少 3 个 Sentinel**，且分散在 3 机房 |
+| **Redis Cluster** | gossip + 16384 slot + 故障转移过半数 | **至少 3 主**（最好 + 3 从）|
+| **Kafka** | Controller 选举走 ZK/KRaft，acks=all + min.insync.replicas | min.insync.replicas ≥ 2 |
+| **MongoDB ReplicaSet** | 过半数选主，Arbiter 凑奇数 | 3 节点 PSS 或 PSA |
+| **MySQL MHA / MGR** | MGR 走 Paxos；MHA 靠 VIP + STONITH | MGR 至少 3 节点 |
+| **Elasticsearch** | `discovery.zen.minimum_master_nodes`（旧） / 7.x+ 自动 quorum | **master 节点至少 3 个** |
+
+::: warning ⚠️ Redis Sentinel 经典脑裂场景
+
+> **场景**：1 主 2 从 + 3 Sentinel。主节点和**所有客户端**在机房 A，2 从 + 3 Sentinel 在机房 B。机房间网络断开 →
+> ① B 中 Sentinel 过半数 → 提升从节点为新主；
+> ② A 中老主仍然接受客户端写入（客户端没切换）；
+> ③ 网络恢复 → 老主成了从，**A 期间的所有写入被丢弃**。
+>
+> **防御**：配置 `min-replicas-to-write 1` + `min-replicas-max-lag 10`——如果**主节点没有至少 1 个从节点在 10 秒内确认**，**主节点拒绝写入**，从源头切断脑裂期间的写入。
+
+:::
+
+### 黄金答题模板（必背）
+
+> **面试官：怎么防脑裂？**
+>
+> **答**：4 大武器组合拳：
+> ① **Quorum**：W + R > N，写入必须过半数节点确认，少数派分区无法写入；
+> ② **奇数节点**：3/5/7 节点部署，避免 4 节点脑裂卡死；
+> ③ **跨机房用 Witness**：第三机房放仲裁节点，避免两机房对等分区；
+> ④ **Fencing Token**：选主时全局单调递增 token，存储层只接受最新 token 的写请求，防止老 Leader 苏醒后写入旧数据；
+> 实战中 ZK/etcd 都是 Quorum + 单调 revision 的标准方案；Redis Sentinel 必须配 `min-replicas-to-write` 才安全；Redlock 因为没有 fencing token，**不建议做关键锁**。
+
+---
+
 ## 面试常问 & 怎么答
 
 ### Q1: CAP 定理是什么？为什么不能同时满足？举例说明 CP 和 AP 系统
