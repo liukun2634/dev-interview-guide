@@ -80,7 +80,7 @@ public class CustomUserDetailsService implements UserDetailsService {
 }
 ```
 
-## JWT 认证实现思路
+## JWT（JSON Web Token）认证实现思路
 
 前后端分离项目不用 Session，用 JWT：
 
@@ -125,7 +125,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 }
 ```
 
-## OAuth2 登录简述
+## OAuth2（Open Authorization 2.0）登录简述
 
 Spring Security OAuth2 Client 支持第三方登录（GitHub、Google 等）：
 

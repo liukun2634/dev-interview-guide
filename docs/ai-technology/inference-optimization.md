@@ -23,7 +23,7 @@ LLM 推理分为两个阶段：
 
 | 指标 | 含义 | 优化方向 |
 |------|------|----------|
-| **延迟（Latency）** | 首 Token 时间（TTFT）+ 每 Token 时间（TPOT） | 模型压缩、推测解码 |
+| **延迟（Latency）** | 首 Token 时间（**TTFT** = Time To First Token）+ 每 Token 时间（**TPOT** = Time Per Output Token） | 模型压缩、推测解码 |
 | **吞吐量（Throughput）** | 每秒生成的 Token 数（tokens/s） | 批处理、并行化 |
 | **成本（Cost）** | 每百万 Token 的计算费用 | 量化、缓存、模型选择 |
 
@@ -31,7 +31,7 @@ LLM 推理分为两个阶段：
 
 ---
 
-## KV Cache
+## KV Cache（Key/Value Cache）
 
 ### 原理
 
