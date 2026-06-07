@@ -715,6 +715,135 @@ export function Layout({ children }) {
 
 ---
 
+### React 19 三大革命性特性（2024.12 GA，2026 必考）
+
+React 19 于 2024.12 正式 GA。面试高频 Top 问题："React 19 最重要的 3 个变化是什么？"——能讲出这三个立刻区分初/中级。
+
+#### 1. React Compiler（自动 memo）—— 告别 useMemo/useCallback
+
+**问题**：以前 React 需要手动治理重渲染，到处 `useMemo` / `useCallback` / `React.memo`——代码丑且容易遗漏。
+
+**React Compiler**（原名 Forget）：编译期自动插入 memo 提示，零运行时开销。
+
+```jsx
+// ⚠️ 传统写法：手动优化
+function TodoList({ todos }) {
+  const completed = useMemo(
+    () => todos.filter(t => t.done).length,
+    [todos]
+  );
+  const handleClick = useCallback(id => toggle(id), []);
+  return <Item count={completed} onClick={handleClick} />;
+}
+
+// ✅ React 19 + Compiler：原始写法即可
+function TodoList({ todos }) {
+  const completed = todos.filter(t => t.done).length;
+  const handleClick = id => toggle(id);
+  return <Item count={completed} onClick={handleClick} />;
+}
+// ↑ Compiler 自动判断依赖、插入 memo。性能同手写或更优。
+```
+
+**开启方式**：
+```js
+// babel.config.js
+module.exports = {
+  plugins: [
+    ['babel-plugin-react-compiler', { compilationMode: 'annotation' }],
+  ],
+};
+```
+
+**面试加分**："Compiler 是 Rules of Hooks 的隆重抢滩——只要代码遵守 Rules of React，编译器能静态分析依赖。不遵守会发警告"。
+
+#### 2. Actions / useOptimistic / useFormStatus
+
+**问题**：表单提交需手写 `useState + fetch + try/catch + loading`，到处重复。
+
+**React 19 的 Actions** + 3 个高阶 hook：
+
+```jsx
+// useOptimistic: 乐观更新
+import { useOptimistic, useTransition } from 'react';
+
+function LikeButton({ initialLikes }) {
+  const [likes, setLikes] = useState(initialLikes);
+  const [optimisticLikes, addOptimistic] = useOptimistic(likes);
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <button onClick={() => {
+      startTransition(async () => {
+        addOptimistic(optimisticLikes + 1);    // ✅ 立即更新 UI
+        const result = await like();           // 背后请求
+        setLikes(result);                      // 最终同步
+      });
+    }}>
+      ❤️ {optimisticLikes}
+    </button>
+  );
+}
+
+// useFormStatus: 子组件中获取表单状态不需透传
+import { useFormStatus } from 'react-dom';
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return <button disabled={pending}>{pending ? '提交中...' : '提交'}</button>;
+}
+
+// useActionState: 表单状态 + Action 绑定
+function Form() {
+  const [error, submitAction, pending] = useActionState(
+    async (prevState, formData) => {
+      const r = await fetch('/api', { body: formData });
+      return r.ok ? null : '提交失败';
+    },
+    null
+  );
+  return <form action={submitAction}>{error && <p>{error}</p>}<SubmitButton /></form>;
+}
+```
+
+#### 3. ref 作为 prop + 取消 forwardRef + use API
+
+```jsx
+// ⚠️ React 18 与之前：需 forwardRef 包裹
+const MyInput = forwardRef((props, ref) => <input {...props} ref={ref} />);
+
+// ✅ React 19：ref 直接是 prop
+function MyInput({ ref, ...props }) {
+  return <input {...props} ref={ref} />;
+}
+
+// ✅ use API: 在 Render 中读 Promise 或 Context，无需 hook
+import { use } from 'react';
+function UserPanel({ userPromise }) {
+  const user = use(userPromise);    // ⚠️ 会触发 Suspense
+  return <div>{user.name}</div>;
+}
+```
+
+#### React 19 其他重要变化速查
+
+| 变化 | 说明 |
+|------|------|
+| **原生支持 `<title>` / `<meta>` / `<link>`** | 任何组件内都可写，React 自动提升到 `<head>` |
+| **原生支持异步类型资源** | 可以 import 样式表、脚本，React 自动处理 dedup |
+| **Document Metadata** | SEO 场景不再需 react-helmet |
+| **更好的错误信息** | 合并重复错误、产包堆栈更清晰 |
+| **Server Components / Server Actions 正式 GA** | 不再是 experimental |
+
+#### 迁移 React 18 → 19 检查清单
+
+① 检查是否还在用 `defaultProps`——函数组件已不支持，改用默认参数；
+② `propTypes` 已移除，远期迁到 TypeScript；
+③ 清理 `forwardRef`——不是 bug，但代码会变净；
+④ 检查是否启 React Compiler——需代码遵守 Rules of React。
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：虚拟 DOM 是什么？为什么需要它？**

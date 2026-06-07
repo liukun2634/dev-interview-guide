@@ -44,6 +44,39 @@ HTTP（HyperText Transfer Protocol）是 Web 的核心应用层协议。HTTPS = 
 - **连接迁移**：用 Connection ID 标识连接（非 IP+端口），Wi-Fi 切 4G 不断连
 - **内建加密**：TLS 1.3 融入 QUIC，不可降级
 
+#### 2026 高频追问：0-RTT 重放攻击防御
+
+**0-RTT 最大优点也是最大隐患**：表面零延迟，但默认不抵抗**重放攻击**。
+
+```text
+攻击场景：
+① 用户在公共 WiFi 上发送 "POST /transfer { amount: 1000, to: A }"
+   ，这是 0-RTT 请求
+② 攻击者抓包获得该加密报文
+③ 几分钟后重发该报文 → 服务器看到合法 ticket，接受请求 → 转账重复执行
+```
+
+**防御 3 法**：
+① **0-RTT 仅用于幂等接口**（GET / HEAD / 查询接口）——RFC 8446 明确要求；
+② **服务器侧不接受 0-RTT 中的写请求**（POST/PUT/DELETE）；路由到 0-RTT 的写请求必须返 425 Too Early 让客户重试（会走 1-RTT）；
+③ **anti-replay 窗口**：服务器维护近期接受的 0-RTT 东西 hash，重复拒绝。
+
+```nginx
+# nginx 配置示例
+ssl_early_data on;          # 允许 0-RTT
+proxy_set_header Early-Data $ssl_early_data;
+
+# 后端看到 Early-Data: 1 且请求是 POST/PUT/DELETE → 返 425 Too Early
+```
+
+#### 连接迁移深入
+
+**为什么 TCP 做不到连接迁移**：TCP 连接的身份 = `<src IP, src port, dst IP, dst port>` 四元组。手机从 WiFi 切 4G 后 src IP 变了 → 连接必断。
+
+**QUIC 怎么做到**：用 **Connection ID**（8 字节随机）作为身份。IP 变了 Connection ID 不变 → 服务器能识别继续使用同一连接。
+
+**实战价值**：手机 App / 车载 / IoT 设备场景，连接迁移可提高炭顶 30%+。B 站、Cloudflare、Google 都已启用。
+
 ## HTTPS 与 TLS 握手
 
 ### HTTPS = HTTP + TLS

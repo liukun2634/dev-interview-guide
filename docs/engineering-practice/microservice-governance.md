@@ -338,6 +338,53 @@ spec:
 | **Sidecar Mode**（传统）| 每个 Pod 注入 Envoy | 隔离强、规则细 | 资源开销大、启动慢 |
 | **Ambient Mode**（2024 GA）| 节点级 ztunnel + 命名空间 Waypoint | 资源减半、平滑接入 | 部分高级功能仍演进中 |
 
+#### Ambient Mode 深入（面试高频追问）
+
+**Sidecar 的 3 大痛点**：
+① 资源重：每 Pod 复制一份 Envoy（0.5-1 vCPU / 100-500MB），集群 1000+ Pod 就是 1000 份 Envoy；
+② 启动慢：Pod 启动顺序问题——应用启动后 Envoy 未就绪 → 首 N 个请求被干掉；
+③ 会侵入：防火墙/依赖脚本需适配 Envoy。
+
+**Ambient Mode 架构变革（Istio 1.22+ GA）**：
+
+```text
+传统 Sidecar Mode:               Ambient Mode:
+
+  Node                                Node
+  ├─ Pod A: [App] + [Envoy]            ├─ Pod A: [App]
+  ├─ Pod B: [App] + [Envoy]            ├─ Pod B: [App]
+  └─ Pod C: [App] + [Envoy]            ├─ Pod C: [App]
+                                       └─ ztunnel (节点级 DaemonSet)   ← L4 加密+mTLS
+
+                                     Namespace
+                                       └─ Waypoint (可选)               ← L7 高级治理
+```
+
+**两层分离**：
+- **安全层**（ztunnel）：节点级 DaemonSet，Rust 写，**只管 L4 + mTLS + ID**。资源极小（~50MB / Node）
+- **治理层**（Waypoint Proxy）：按 namespace / service 按需部署，**只处理 L7**（路由 / 重试 / 熔断 / 灰度）。不需要的 namespace 不部署
+
+**Ambient 关键优势**：
+
+| 维度 | Sidecar | **Ambient** |
+|------|---------|-------------|
+| **资源占用** | 与 Pod 数成正比 | **与 Node 数成正比**（减 70-90%）|
+| **接入成本** | 需重启所有 Pod | **无需重启**（在节点部署）|
+| **升级** | 重推 Envoy = 重推 Pod | **独立升级 ztunnel**，业务无感 |
+| **适用** | 需要高级 L7 治理的全部服务 | 只要 mTLS 的服务 + 高级治理服务混合 |
+| **调试** | Sidecar 日志在 Pod 里 | 集中在 ztunnel ，需 trace 跨级别 |
+
+::: tip 💡 2026 演进预测
+
+> **未来 3 年**：新项目首选 **Ambient Mode**，Sidecar 仅保留给 1.0+ 业务。**Cilium Service Mesh**（基于 eBPF，无 Sidecar 无 Waypoint）是另一条路线，与 Ambient 争夺下一代 mesh 标准。
+
+:::
+
+**Q：Ambient 什么场景不适用？**
+
+① 需要极细粒度授权（路由到 Sidecar IP）——Ambient L4 是节点级，粒度粗；
+② 使用 Sidecar 独立的高级插件（如自定义 EnvoyFilter）——迁移需重写。
+
 **面试加分点**：能说出"Istio 2024 推出的 Ambient Mode 用节点级代理替代 Sidecar，把资源开销降低 50%+"——这是了解前沿动态的信号。
 
 ---

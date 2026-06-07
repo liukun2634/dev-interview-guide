@@ -532,6 +532,71 @@ synchronized (lock) {
 
 **面试要点**：能讲出"JDK 21 虚拟线程有 synchronized Pinning 坑，JDK 24 已彻底解决"——是了解最新动态的强信号。
 
+#### Pinning 实战排查（JDK 21-23 生产必备）
+
+**生产上了虚拟线程后有过一句话令人心慌**："吞吐量反而下降了"——原因 99% 是 **Pinning**。必须会用 JFR 排查。
+
+```bash
+# 开启 JFR 监听 VirtualThreadPinned 事件
+java -XX:StartFlightRecording=filename=app.jfr,duration=60s \
+     -XX:FlightRecorderOptions=stackdepth=64 \
+     -Djdk.tracePinnedThreads=full \
+     -jar app.jar
+
+# 分析 JFR
+jfr print --events jdk.VirtualThreadPinned app.jfr
+```
+
+**输出示例**：
+```
+jdk.VirtualThreadPinned {
+  startTime = 14:32:01.234
+  duration = 124 ms        ← 被 Pin 了 124ms！
+  eventThread = "VirtualThread@123"
+  stackTrace = [
+    java.lang.Thread.sleep(...)
+    com.app.Service.process(Service.java:42)   ← 在这里
+    com.app.Lock.synchronized(...)              ← 被 synchronized 块钉住
+  ]
+}
+```
+
+#### synchronized vs ReentrantLock 选型表（JDK 21-23）
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| **虚拟线程 + JDK 24+** | 任意 | JEP 491 修复后都不 Pin |
+| **虚拟线程 + JDK 21-23** | **`ReentrantLock`** | synchronized 会 Pin 成性能灾难 |
+| **平台线程** | `synchronized` 足够了 | 简单 + JIT 优化好 |
+| **需超时获锁 / 中断响应** | `ReentrantLock` | 提供 `tryLock(timeout)` / `lockInterruptibly()` |
+
+```java
+// ⚠️ JDK 21-23 虚拟线程场景：避免 synchronized
+private final ReentrantLock lock = new ReentrantLock();
+
+void criticalSection() {
+    lock.lock();
+    try {
+        // 哪怕里面有 I/O / sleep 也不 Pin 载体线程
+        httpClient.send(request);
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+::: warning ⚠️ Pinning 位置隐藏在依赖里
+
+> 你自己可能不写 synchronized，但 **JDK 标准库 + 第三方库** 到处都是：
+> ① `java.io.BufferedReader` 内部 synchronized
+> ② `System.out.println` 中的 `PrintStream`
+> ③ `java.util.logging` 中的 `Handler`
+> ④ 老版 MySQL JDBC / HttpClient
+>
+> 生产环境虚拟线程期限达到 JDK 24 前，**必须全面扫描依赖中的 synchronized**。
+
+:::
+
 #### Structured Concurrency 一图看懂
 
 结构化并发让"父任务等所有子任务"变得**和 try-with-resources 一样自然**：
