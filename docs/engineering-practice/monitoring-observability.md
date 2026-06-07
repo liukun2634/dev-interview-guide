@@ -356,6 +356,180 @@ java -javaagent:opentelemetry-javaagent.jar \
 
 **何时还需要手动埋点**：业务关键节点（核心算法步骤、关键状态机切换）—— Auto 只采集框架边界，业务内部需要 `Tracer.spanBuilder("step-name").startSpan()` 手工补充。
 
+### OTel Collector 端到端架构（生产必备）
+
+**OTel Collector 是 2026 可观测性中枢——所有遥测数据的"瑞士军刀"。**
+
+```text
+   ┌─────────────────────────────────────────────────┐
+   │                  App / SDK                       │
+   │   (Java Agent / Python OTel SDK / Go SDK)       │
+   └──────────────────┬──────────────────────────────┘
+                      │ OTLP gRPC/HTTP
+                      ↓
+   ┌─────────────────────────────────────────────────┐
+   │            OTel Agent Collector                  │
+   │            (DaemonSet on each Node)              │
+   │   ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+   │   │ Receivers │→ │Processors │→ │ Exporters │    │
+   │   └──────────┘  └──────────┘  └──────────┘    │
+   │   • otlp        • batch        • otlp           │
+   │   • prom        • memory_limiter • prometheus    │
+   │   • filelog     • attributes    • otlphttp       │
+   └──────────────────┬──────────────────────────────┘
+                      │ OTLP
+                      ↓
+   ┌─────────────────────────────────────────────────┐
+   │       Gateway Collector (Deployment)             │
+   │   • tail_sampling                                │
+   │   • resource detection                           │
+   │   • span metrics                                 │
+   └──────────────────┬──────────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        ↓             ↓             ↓
+   ┌──────┐      ┌──────┐      ┌──────┐
+   │Tempo │      │Mimir │      │ Loki │
+   │Trace │      │Metric│      │ Log  │
+   └──────┘      └──────┘      └──────┘
+                      ↓
+                  ┌──────┐
+                  │Grafana│  ← 统一查询入口
+                  └──────┘
+```
+
+**两层 Collector 架构（生产推荐）**：
+
+| 层 | 部署形态 | 职责 |
+|----|---------|------|
+| **Agent**（节点级 DaemonSet）| 每个 K8s Node 一个 | 就近接收应用 OTLP、批处理、限流 |
+| **Gateway**（集中 Deployment）| 集群级 N 个副本 | Tail Sampling、富化、路由、写后端 |
+
+**为什么要两层**：
+- ① Agent 离应用近，**网络稳定**，应用挂了 Agent 也能托底（disk queue）
+- ② Gateway 是 stateful 的（Tail Sampling 需缓存完整 Trace），独立扩展
+- ③ 应用只对接 Agent 一种 endpoint，更换后端不影响业务
+
+### Tail-based Sampling 实战配置
+
+**头部采样的根本痛点**：决定采不采时还不知道这条 Trace 会不会出错/慢——结果错误链路常被采漏。
+
+**Tail Sampling 解决**：等所有 Span 收完再决策。
+
+```yaml
+# OTel Gateway Collector 配置
+processors:
+  tail_sampling:
+    decision_wait: 30s          # 等 30 秒收齐 Trace
+    num_traces: 100000          # 内存缓存 trace 数
+    policies:
+      # ★ 错误必采
+      - name: errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+
+      # ★ 慢请求必采（> 1s）
+      - name: latency
+        type: latency
+        latency: { threshold_ms: 1000 }
+
+      # ★ 特定用户必采（VIP 排障）
+      - name: vip-users
+        type: string_attribute
+        string_attribute:
+          key: user.id
+          values: [vip_001, vip_002]
+
+      # ★ 其余 1% 概率采样
+      - name: random
+        type: probabilistic
+        probabilistic: { sampling_percentage: 1 }
+```
+
+::: warning ⚠️ Tail Sampling 的两个陷阱
+
+> ① **内存爆炸**：所有 Span 入内存等齐 → 1M QPS 集群可能 100GB+ 内存。**对策**：多副本 Gateway + 按 TraceID hash 路由（同 trace 必到同实例）。
+> ② **跨实例 Trace 拆分**：默认 OTel Collector **不会**自动把同 trace 的 span 路由到同实例 → 决策会错。**对策**：用 `loadbalancingexporter` 按 traceID 路由。
+
+:::
+
+### Exemplars：指标 → Trace 一键跳转（2024 必知）
+
+**问题**：监控看到 P99 飙到 5 秒，但不知道是**哪条具体请求**导致的。
+
+**Exemplars** = 在 Histogram 指标中**附加一条代表性 Trace 的 TraceID**——Grafana 里点指标点即可跳到对应 Trace。
+
+```text
+P99 latency 监控曲线
+   ↑
+5s ●          ← 这个高点附了 traceID=abc123
+   │   ●     ← 这个附了 traceID=xyz456
+1s ●●●●●●●●●
+   └─────────→
+   点 5s 那个点 → Grafana 自动打开 Tempo 显示 trace abc123 的全链路
+```
+
+```yaml
+# Prometheus 必须开启 Exemplar 支持
+storage:
+  exemplars:
+    max_exemplars: 100000   # 内存中保留 N 条
+
+# Spring Boot 应用配置
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true     # 必须用 histogram（不是 summary）
+```
+
+**生产价值**：以前是"看指标 → 猜原因 → 查 Trace"三步，现在是"看指标 → 点 → Trace"一步。
+
+### Span Metrics（Span 自动转指标）
+
+OTel Collector 的 `spanmetrics` connector **自动从 Trace 计算 RED 指标**（Rate / Errors / Duration）——不需要应用代码加埋点：
+
+```yaml
+connectors:
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [10ms, 50ms, 100ms, 500ms, 1s, 5s]
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [spanmetrics, otlp/tempo]  # 同时写 metric 和 trace
+    metrics/spans:
+      receivers: [spanmetrics]
+      exporters: [prometheus]
+```
+
+**收益**：每个服务自动有 `http_server_requests_count` / `http_server_request_duration_seconds_bucket` 指标，无需在应用里加 Micrometer。
+
+### eBPF Tracing：零代码全栈观测（2026 兴起）
+
+**OpenTelemetry + eBPF** 让 Trace 采集**完全跳过应用 SDK**——内核直接抓 syscalls。
+
+| 工具 | 特色 |
+|------|------|
+| **Pixie**（New Relic 开源）| K8s 集群一键安装，自动出 HTTP / MySQL / Redis trace |
+| **Beyla**（Grafana 2024）| **Go / Java / Rust / Python 零修改**，eBPF 抓 HTTP/gRPC |
+| **OpenTelemetry eBPF Profiler** | 持续 profiling，CPU/内存火焰图 |
+
+**与 SDK 方案对比**：
+
+| 维度 | SDK 接入 | eBPF |
+|------|---------|------|
+| **代码改动** | 引入 SDK + 配置 | **零改动** |
+| **支持语言** | 看 SDK 覆盖 | **不限语言** |
+| **业务上下文** | ✅ 应用知道用户/订单 | ❌ 只看协议层 |
+| **性能开销** | 1-5% | < 1% |
+| **部署位置** | 应用内 | 内核态 |
+
+**2026 趋势**：**SDK + eBPF 混合**——SDK 抓业务上下文，eBPF 补全网络层和未被 instrument 的依赖。
+
 ---
 
 ## SRE 实践：Error Budget / Runbook / 复盘

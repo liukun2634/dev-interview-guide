@@ -410,6 +410,151 @@ LLM 会自动识别"查订单状态"意图 → 解析参数 → 调用方法 →
 
 详见 [AI 技术 — RAG](../ai-technology/rag) 和 [AI Agent](../ai-technology/ai-agents)。
 
+## CRaC（Coordinated Restore at Checkpoint）启动加速
+
+**2026 K8s / Serverless 必备**：Spring Boot 3.2+ 官方支持 CRaC，**JVM 启动从秒级到毫秒级**。
+
+### 为什么需要 CRaC
+
+| 场景 | 痛点 | CRaC 解决 |
+|------|------|---------|
+| **K8s 滚动发布** | Spring Boot 启动 10-30 秒，N 个副本逐个起来很慢 | 启动从 10 秒 → **50ms** |
+| **Serverless 冷启动** | 每次冷启动 5-15 秒，用户等不及 | 冷启动从 5 秒 → **50-200ms** |
+| **HPA 弹性扩缩** | 应付突发流量来不及拉起新副本 | 秒级扩缩可行 |
+| **CI 自动化测试** | 起 100 个测试实例花数分钟 | 秒级起完 |
+
+### CRaC 原理
+
+```text
+传统启动: JVM 启动 → 类加载 → Bean 初始化 → 应用就绪
+              1-3s        5-10s        2-5s       = 10-20s 总和
+
+CRaC:
+  ① 一次性准备阶段（offline）:
+     正常启动应用 → 业务流量预热（warm JIT）→ checkpoint 把整个 JVM 进程序列化到磁盘
+
+  ② 运行阶段:
+     从 checkpoint 文件 restore → 已经"启动好"的 JVM 进程瞬间恢复 → 业务就绪
+     仅需 50-200ms
+```
+
+底层是 **Linux CRIU（Checkpoint/Restore In Userspace）**——把整个进程的内存、文件描述符、网络连接全部序列化。
+
+### Spring Boot 3 启用 CRaC
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>org.crac</groupId>
+    <artifactId>crac</artifactId>
+    <version>1.5.0</version>
+</dependency>
+```
+
+```bash
+# 1. 用 Azul Zulu / Liberica（支持 CRaC 的 JDK）启动应用
+java -XX:CRaCCheckpointTo=./checkpoint -jar app.jar
+
+# 2. 待应用预热完成，触发 checkpoint
+jcmd <pid> JDK.checkpoint
+
+# 3. 之后从 checkpoint 启动
+java -XX:CRaCRestoreFrom=./checkpoint
+# ↑ 50-200ms 即可对外服务
+```
+
+```java
+// 应用代码处理资源生命周期（连接池、文件句柄等）
+@Component
+public class DbResource implements org.crac.Resource {
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> ctx) {
+        // checkpoint 前关闭 DB 连接（防止 restore 时连接已失效）
+        dataSource.close();
+    }
+    @Override
+    public void afterRestore(Context<? extends Resource> ctx) {
+        // restore 后重连
+        dataSource.reinit();
+    }
+}
+```
+
+### CRaC vs GraalVM Native Image 对比
+
+| 维度 | **CRaC** | **GraalVM Native** |
+|------|---------|------------------|
+| **启动时间** | 50-200ms | **10-50ms**（更快）|
+| **峰值性能** | **同 JIT** | 不如 JIT（缺动态优化）|
+| **内存占用** | 同 JVM | **减少 50-80%** |
+| **构建时间** | 短 | **长（5-15 分钟）** |
+| **反射/动态代理** | 完全支持 | 需提前注册（运行时反射有限）|
+| **JFR / 监控工具** | 完全支持 | 部分支持 |
+| **依赖兼容** | 兼容所有 Java 库 | 部分库需打补丁 |
+| **适用场景** | **K8s 滚动 / 弹性扩缩** | **Serverless / 资源紧张** |
+
+::: tip 💡 决策
+
+> **CRaC** 是"启动速度+生产兼容性"最佳折中——已有项目几乎不改代码即可用，**首选**。
+> **GraalVM** 适合内存极度敏感（Lambda）或全新构建——但兼容性问题多。
+> 两者都需要 **Azul Zulu / Liberica / GraalVM** 等专门 JDK，OpenJDK 主线尚未集成。
+
+:::
+
+## Spring Boot 3.3 / 3.4 新特性速查
+
+**2026 已主流到 3.4+**，能讲出新版本特性是跟得上节奏的强信号。
+
+### Spring Boot 3.3（2024.5）
+
+| 特性 | 价值 |
+|------|------|
+| **类数据共享（CDS）官方文档化** | 启动提速 30-50%，配合 CRaC 更快 |
+| **服务连接 docker-compose 支持** | 本地开发自动连容器，无需手写 application-local.yml |
+| **OAuth2 / SAML 集成增强** | Spring Security 6.3 一体化 |
+| **SBOM 端点** | actuator/sbom 输出软件物料清单，合规必备 |
+| **新观测指标**（HTTP Client）| RestClient / WebClient 自动出指标 |
+
+### Spring Boot 3.4（2024.11）
+
+| 特性 | 价值 |
+|------|------|
+| **结构化日志支持** | 内置 JSON / GELF / Logstash 格式，无需 Logback 配置 |
+| **更好的虚拟线程兼容**（配合 JDK 24 JEP 491）| synchronized Pinning 问题彻底消失 |
+| **MockMvcTester（流式 API）** | 替代旧 MockMvc，断言更清晰 |
+| **Mockito 5.x** | 默认支持 |
+| **`@HttpExchange` 增强** | 支持 reactive + 错误处理 |
+| **REST client metrics 默认开启** | 无需配置即可获得 P50/P99 |
+
+### Spring Modulith（模块化单体）
+
+**2024-2026 新趋势**：微服务"过头"了，回归"**模块化单体（Modular Monolith）**"。
+
+```java
+// 把单体拆成强边界模块（但仍是单进程）
+src/main/java/com/example/
+  ├── order/          ← Module 1
+  │   ├── api/         (跨模块对外接口)
+  │   ├── domain/      (聚合根/实体)
+  │   └── package-info.java  // @ApplicationModule
+  ├── payment/        ← Module 2
+  │   └── ...
+  └── shipping/       ← Module 3
+```
+
+**核心能力**：
+- ✅ **编译期检查模块边界**——不允许 `order` 直接 import `payment.internal.*`
+- ✅ **事件驱动通信**——模块间用 `@ApplicationModuleListener`（取代直接调用）
+- ✅ **自动生成模块文档**（PlantUML / AsciiDoc）
+- ✅ **集成测试只起单个模块**——大幅加速 CI
+
+**何时选模块化单体**：
+- 团队 < 30 人，业务复杂但流量没那么大
+- 想要清晰边界但不想运维 K8s + 服务网格
+- 早期项目想给未来留拆微服务的余地
+
+详见 [Spring Modulith 官方文档](https://spring.io/projects/spring-modulith)。
+
 ## 面试常问 & 怎么答
 
 ### Q1: Spring Boot 3 有哪些重大变化？

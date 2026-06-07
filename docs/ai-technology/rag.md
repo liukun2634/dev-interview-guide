@@ -407,6 +407,73 @@ GraphRAG 将传统 RAG 中的"扁平文档检索"升级为**基于知识图谱�
 
 **优势**：擅长回答需要跨文档推理的**全局性问题**（如"这个领域的主要趋势是什么？"），传统 RAG 由于只检索局部片段难以处理此类问题。
 
+#### Microsoft GraphRAG 完整流水线（2024 论文级实现）
+
+**面试 2026 高频追问**："GraphRAG 怎么实现？比向量 RAG 强在哪？成本多少？"——能讲清完整 5 阶段 + 真实成本数字立刻区分高级。
+
+```text
+┌────────────── 索引阶段（贵）──────────────┐
+① 文档切分（chunk ~600 token + overlap）
+       ↓
+② LLM 提取实体 + 关系 (用 Claude/GPT-4 跑全文)
+   输出: [("Apple", "founded_by", "Steve Jobs"),
+          ("Apple", "headquartered_in", "Cupertino"), ...]
+       ↓
+③ 构建知识图谱（NetworkX / Neo4j）
+       ↓
+④ Leiden 算法做社区检测
+   多层级聚类: Level 0 (大社区) → Level 1 → ...
+       ↓
+⑤ LLM 生成每个社区的摘要（最贵的一步）
+   "Apple 社区: 由 Steve Jobs 创立，总部 Cupertino..."
+└──────────────────────────────────────────┘
+
+┌────────────── 查询阶段 ──────────────┐
+Global Search: "这个领域的主要趋势是什么？"
+  → 用所有社区摘要做 Map-Reduce
+  → Map: 每个社区摘要独立回答
+  → Reduce: 合并所有部分答案
+
+Local Search: "Steve Jobs 是谁的导师？"
+  → 实体匹配 + 1-2 跳邻居展开
+  → 拉取相关三元组 + 原始文档块
+└────────────────────────────────────┘
+```
+
+**真实成本（10 万 token 文档）**：
+
+| 阶段 | 成本（GPT-4o）| 时间 |
+|------|--------------|------|
+| 实体抽取 | ~$5-10 | 5-10 分钟 |
+| 社区摘要 | ~$10-20 | 10-20 分钟 |
+| 单次 Global 查询 | ~$0.5-1 | 30-60 秒 |
+| 单次 Local 查询 | ~$0.05-0.1 | 5-10 秒 |
+
+::: warning ⚠️ GraphRAG 不是银弹
+
+> ① **索引成本是普通 RAG 的 50-100×**——单次 100K 文档要花 $15-30；
+> ② **全局查询慢**（30-60 秒），不适合实时对话；
+> ③ **必须周期重建**——文档更新不能增量改图谱；
+> ④ **小规模数据没必要**：< 10 篇文档用传统 RAG 完全够。
+
+**适用场景判断**：
+- ✅ 跨文档推理的**全局问题**（"竞品总览"、"研究趋势"）
+- ✅ 关系密集型领域（人物关系 / 法律案例 / 医学）
+- ❌ FAQ / 客服（用 BM25 + 向量足够）
+- ❌ 实时对话（延迟过高）
+
+:::
+
+#### 开源实现对比
+
+| 项目 | 厂商 | 特色 |
+|------|------|------|
+| **Microsoft GraphRAG** | 微软 | 论文官方实现，最完整 |
+| **LightRAG** | 港大 2024.10 | 速度快、成本低 50%、增量更新 |
+| **nano-graphrag** | 社区 | 极简（< 800 行），可读性最佳 |
+| **Neo4j GraphRAG** | Neo4j | 商业级，集成 LangChain |
+| **LlamaIndex GraphRAG** | LlamaIndex | 集成度高、易上手 |
+
 ### Agentic RAG
 
 将 RAG 与 [AI Agent](./ai-agents) 结合，由 Agent **自主决定检索策略**，是 Self-RAG / CRAG / Adaptive RAG 的进一步泛化——把"是否检索、检索几次、检索什么、用哪个数据源"全部交给 LLM 的规划循环。
@@ -433,6 +500,43 @@ GraphRAG 将传统 RAG 中的"扁平文档检索"升级为**基于知识图谱�
 | **Adaptive RAG** | 按查询复杂度路由 | 流量大、查询分布差异大 | 中 |
 | **GraphRAG** | 知识图谱 + 社区摘要 | 全局性问题、跨文档推理 | 高 |
 | **Agentic RAG** | Agent 自主多轮规划 | 复杂、开放式、多源数据 | 高 |
+| **ColBERT v2** | **Late Interaction**（词级延迟交互）| 长文档 / 高 recall 要求 | 中 |
+
+### ColBERT v2 / Late Interaction（2026 必知）
+
+**ColBERT**（Stanford 2020 + v2 2022）是和 dense bi-encoder 完全不同的另一条技术路线——**词级别延迟交互**，常被忽视但效果出色。
+
+#### 与传统 dense retrieval 的本质区别
+
+```
+Dense Bi-Encoder（OpenAI / BGE）:
+  Doc:   [token_1, ..., token_N] → Encoder → 1 个向量 (1024d)
+  Query: [token_1, ..., token_M] → Encoder → 1 个向量 (1024d)
+  Score: cos(query_vec, doc_vec)
+  → 把整段文档压成 1 个向量，丢失细粒度信息
+
+ColBERT (Late Interaction):
+  Doc:   [token_1, ..., token_N] → Encoder → N 个向量 (每 token 128d)
+  Query: [token_1, ..., token_M] → Encoder → M 个向量 (每 token 128d)
+  Score: Σ_q max_d (cos(q_vec, d_vec))   ← MaxSim 操作
+  → 保留每个 token 的语义，匹配更精细
+```
+
+**优势**：
+- ✅ **召回精度比 dense 高 10-30%**（长文档场景尤其明显）
+- ✅ **OOD 泛化好**（不易被陌生领域打败）
+- ✅ **可解释**（能看到哪个 query token 匹配了 doc 哪个 token）
+
+**劣势**：
+- ❌ **存储大 100×**（一个 1000 token 文档 = 1000 × 128d 向量）
+- ❌ **检索复杂**：需特殊索引（PLAID）
+
+**何时用 ColBERT**：
+- 高 recall 要求的法律 / 医学 / 科研搜索
+- 数据量 < 1000 万文档（再多存储成本顶不住）
+- 已尝试 dense + Reranker 仍然 recall 不够
+
+**主流实现**：[RAGatouille](https://github.com/AnswerDotAI/RAGatouille)（最易用）、Pyserini、Vespa 原生支持。
 
 ### 多模态 RAG
 
@@ -440,9 +544,94 @@ GraphRAG 将传统 RAG 中的"扁平文档检索"升级为**基于知识图谱�
 
 | 策略 | 说明 | 适用场景 |
 |------|------|----------|
-| **图像描述索引** | 用多模态模型生成图像描述，按文本索引和检索 | 图表、截图类文档 |
-| **多模态 Embedding** | 用 CLIP 等模型生成图文统一的 Embedding | 图文混合检索 |
-| **文档解析** | 使用 OCR + 版面分析提取图表中的结构化信息 | PDF、扫描件 |
+| **图像描述索引**（Caption Indexing）| 用多模态模型生成图像描述，按文本索引和检索 | 图表、截图类文档 |
+| **多模态 Embedding** | 用 CLIP / SigLIP / Voyage-Multimodal 等模型生成图文统一的 Embedding | 图文混合检索 |
+| **文档解析**（Document Parsing）| 使用 OCR + 版面分析提取图表中的结构化信息 | PDF、扫描件 |
+| **VLM 直接读图**（ColPali / Visual RAG）| 跳过 OCR，VLM 直接看页面截图 | 复杂版面 PDF |
+
+#### 三大主流方案对比（2026）
+
+| 方案 | 代表 | 优势 | 劣势 |
+|------|------|------|------|
+| **Caption + Text RAG** | LlamaIndex Multi-Modal | 与现有 RAG 兼容、容易部署 | 信息损失大、依赖 caption 质量 |
+| **多模态 Embedding** | **Voyage-Multimodal-3** / Cohere Embed v3 / CLIP | 真正图文统一表示、零OCR | 模型选择有限、长文档难处理 |
+| **ColPali**（2024.6）| ColPali / ColQwen2 | **完全跳过 OCR**，VLM 直接读 PDF 截图，对复杂版面无敌 | 存储大、推理贵 |
+
+#### ColPali：2024 现象级新范式
+
+**ColPali** = ColBERT 思路 + 视觉 PDF 处理。**直接把 PDF 每页变成图像 + VLM 抽特征**，不再做 OCR / 版面解析。
+
+```python
+# RAGatouille / colpali_engine
+from colpali_engine.models import ColPali
+
+model = ColPali.from_pretrained("vidore/colpali-v1.2")
+
+# 索引: 直接喂 PDF 页图像
+embeddings = model.encode_image(pdf_pages_images)   # 每页 N 个 token 向量
+
+# 查询: 文本 query
+query_emb = model.encode_query("营收增长率多少？")
+scores = colbert_score(query_emb, embeddings)
+```
+
+**为什么是突破**：
+- ✅ 复杂表格 / 图表 / 多栏排版 **无需 OCR 也能精确检索**
+- ✅ 财报 / 学术论文 / 招标书等"PDF 中藏宝"场景质量飞跃
+- ✅ ViDoRe benchmark 上比传统流水线 +15 NDCG@5
+
+**2026 现状**：财务 / 法律 / 医学 PDF 检索新项目首选 ColPali / ColQwen2.5。
+
+---
+
+### 混合架构：RAG + 长上下文（2025-2026 业界共识）
+
+**核心洞察**：RAG 和长上下文窗口**不是替代关系，是互补关系**。Gemini 2.5 Pro 已支持 2M token，但 RAG 仍未死。
+
+#### 决策树（必背）
+
+```text
+知识库大小？
+├─ < 100K token（约 1 本书）
+│   └─ 直接长上下文，无需 RAG
+│       优势: 召回率 100%、零索引成本、推理灵活
+│       成本: 每次查询贵（2M token 上下文 = $20+）
+│
+├─ 100K - 1M token
+│   └─ 混合：用 RAG 召回 50K → 塞进长上下文
+│       优势: 召回保证 + 推理质量高
+│
+├─ 1M - 100M token
+│   └─ 标准 RAG（chunk + dense retrieval + Reranker）
+│
+└─ > 100M token
+    └─ GraphRAG / Agentic RAG / 分库 RAG
+```
+
+#### 何时选长上下文 > RAG
+
+| 场景 | 长上下文优势 |
+|------|------------|
+| **完整文档分析**（法律合同审查、学术论文综述）| RAG 切片会丢失上下文 |
+| **跨章节推理** | RAG 难找到所有相关片段 |
+| **多文档对比**（"对比这 5 份合同的差异")| 一次性塞进所有 |
+| **少样本学习**（few-shot examples）| 直接放 prompt 里 |
+
+#### 何时仍需 RAG
+
+| 场景 | RAG 优势 |
+|------|---------|
+| **超大知识库** | 长上下文也装不下 |
+| **新鲜数据** | 长上下文每次都要重新喂、贵 |
+| **隐私分级** | 按 ACL 检索是必需的 |
+| **多源数据** | DB / API / 文档混合 |
+| **成本敏感** | RAG 单次查询 $0.01-0.1 vs 长上下文 $1-10 |
+
+#### Prompt Caching：长上下文的成本救星
+
+详见 [Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)——把固定知识库前缀缓存后，**命中可降本 90%**，让"长上下文 + RAG"混合方案在成本上接近纯 RAG。
+
+
 
 ### 生产级 RAG 模式
 

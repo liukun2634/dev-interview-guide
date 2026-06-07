@@ -335,6 +335,7 @@ export default withMermaid(defineConfig({
           text: '前端框架',
           collapsed: false,
           items: [
+            { text: '🔥 TypeScript 5.x 类型系统深度', link: '/web-and-frameworks/typescript' },
             { text: 'React', link: '/web-and-frameworks/react' },
             { text: 'Angular', link: '/web-and-frameworks/angular' },
           ],
