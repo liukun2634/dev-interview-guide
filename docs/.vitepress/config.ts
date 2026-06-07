@@ -372,6 +372,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
             { text: '模型评估、对齐与 AI 安全', link: '/ai-technology/evaluation-and-alignment' },
+            { text: '🔥 Prompt Injection 攻防与 LLM 安全', link: '/ai-technology/security-and-jailbreak' },
             { text: 'LLM 推理优化', link: '/ai-technology/inference-optimization' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },
             { text: 'AI 系统设计面试题', link: '/ai-technology/ai-system-design' },

@@ -321,6 +321,111 @@ GPU 3:     KV[750K:1M]
 - **H2O / SnapKV**：基于注意力分数动态淘汰
 - 适合无限长流式对话（如长期 Agent 会话）
 
+---
+
+## 推理引擎选型对比（2026 必背）
+
+**面试 Top 题**："vLLM、SGLang、TensorRT-LLM、llama.cpp 怎么选？"——能讲清各自核心优势 + 适用场景 + 真实数字，立刻区分中/高级工程师。
+
+### 主流引擎核心差异
+
+| 引擎 | 核心技术 | 强项 | 弱项 | 适用场景 |
+|------|---------|------|------|---------|
+| **vLLM** | **PagedAttention**（KV 分页）+ Continuous Batching | **吞吐量王者**（业界标杆）、生态最广、开源活跃 | 极致延迟不如 TensorRT-LLM、Windows 不友好 | **通用首选**：API 服务、高吞吐场景 |
+| **SGLang** | **RadixAttention**（前缀树共享 KV）+ 编译器优化 | **结构化输出 + Agent / RAG 场景吞吐第一**（前缀复用率高）、官方 DSL | 上线晚于 vLLM，生态稍小 | Agent / RAG / 多轮对话 / 结构化输出 |
+| **TensorRT-LLM** | **NVIDIA 官方 + 编译期 Kernel 融合 + FP8** | **单请求极致延迟最低**（Hopper 架构上比 vLLM 快 1.5-2×）| **仅 NVIDIA GPU**、编译时间长、配置复杂 | 延迟敏感生产（聊天前端）+ Triton 集成 |
+| **llama.cpp** | **GGUF 量化 + CPU/GPU 混合 + Metal** | **唯一支持 Mac / 边缘 / 嵌入式**、INT4 量化生态最完善 | 吞吐弱、不适合多并发服务 | 桌面应用、Mac 本地 LLM、边缘设备 |
+| **TGI**（HF Text Generation Inference）| HuggingFace 官方 + 速度优化 | 与 HuggingFace 生态无缝、易上手 | 性能逐渐落后 vLLM/SGLang | HF 用户快速原型 |
+| **Ollama** | llama.cpp 封装 + 极简体验 | **零配置**本地体验 | 服务化弱、性能受限 llama.cpp | 个人 / 小团队本地实验 |
+
+### PagedAttention vs RadixAttention 本质对比
+
+**PagedAttention（vLLM）—— 解决显存碎片**
+
+```
+传统 KV Cache: 给每个请求预留 max_seq_len 显存 → 极大浪费
+
+vLLM 思路: 像操作系统分页 → KV Cache 按 16 token 一块切分
+  ├── 物理块池（连续 GPU 显存）
+  └── 逻辑表（每请求一张 KV 块表）
+
+效果: 显存利用率从 20-40% → 90%+，并发量翻 2-4 倍
+```
+
+**RadixAttention（SGLang）—— 解决前缀重复**
+
+```
+场景: 10 个用户问相同 System Prompt 的不同问题
+  System Prompt: 2000 token（重复 10 次）
+  用户问题: 200 token（10 个不同）
+
+传统: 10 × 2200 = 22000 个 KV Cache 槽
+SGLang: 2000（共享）+ 10 × 200 = 4000 个槽 → 节省 80%
+
+实现: 用基数树（Radix Tree）按 token 前缀组织 KV Cache
+       命中前缀的请求直接复用，不重算 prefill
+```
+
+::: tip 💡 真实业务选型矩阵
+
+| 业务类型 | 推荐 | 原因 |
+|---------|------|------|
+| **OpenAI 风格 API 服务**（高吞吐） | **vLLM** | 默认最稳 |
+| **企业知识库 RAG**（长 System Prompt + 多用户） | **SGLang** | RadixAttention 前缀复用收益巨大 |
+| **Agent / 多轮对话** | **SGLang** | 上下文重复率高 |
+| **C 端聊天前端**（极致首 token 延迟） | **TensorRT-LLM** | Hopper FP8 + Kernel 融合最强 |
+| **Apple Silicon Mac 本地** | **llama.cpp / Ollama** | 唯一选择 |
+| **生产 NVIDIA Triton 集群** | **TensorRT-LLM** | 官方深度集成 |
+| **快速试新模型** | **vLLM** 或 **TGI** | 上线时间最快 |
+
+:::
+
+### 量化方案速查
+
+| 方案 | 精度 | 显存节省 | 性能损失 | 主流支持 |
+|------|------|---------|---------|---------|
+| **FP16 / BF16**（基线）| 16-bit | 1× | 0% | 全部 |
+| **FP8（E4M3）** | 8-bit | 2× | < 1% | TensorRT-LLM / vLLM 0.6+ / DeepSeek-V3 原生 |
+| **INT8（W8A8）** | 8-bit | 2× | 1-3% | TensorRT-LLM / vLLM |
+| **AWQ INT4** | 4-bit 权重 | 4× | 1-3% | vLLM / TensorRT-LLM / llama.cpp |
+| **GPTQ INT4** | 4-bit 权重 | 4× | 2-5% | vLLM / TGI |
+| **GGUF Q4_K_M** | 4-bit | 4× | 3-5% | **llama.cpp 独家**、Mac/CPU 必选 |
+| **GGUF Q2_K**（极致压缩）| 2-bit | 8× | 10-20% | 仅嵌入式 / 探索性场景 |
+
+::: warning ⚠️ KV Cache 量化的隐藏陷阱
+
+> **权重量化（FP8/INT4）已是生产共识**，但 **KV Cache 量化（FP8 KV）**要谨慎：
+> ① 长上下文场景（>32K）容易精度退化；
+> ② Reasoning 模型（o1/R1 类）对 KV 精度更敏感，建议 FP8 KV 关闭；
+> ③ vLLM 默认 KV 为 FP16，开 FP8 KV 必须先做评估集回归。
+
+:::
+
+### 投机解码进阶：EAGLE / Medusa（2025 主流）
+
+**核心思想**：让小模型/小头先猜几个 token，大模型一次验证多个，**单步生成 2-3 个 token**。
+
+| 方案 | 实现 | 加速比 | 接受率 |
+|------|------|--------|--------|
+| **传统 Speculative Decoding** | 用 7B 草稿模型给 70B 大模型猜 | 1.5-2× | 60-70% |
+| **Medusa**（2024）| 在大模型上加 **N 个并行预测头**（无需草稿模型）| **2-2.5×** | 70-80% |
+| **EAGLE / EAGLE-2 / EAGLE-3**（2024-2025）| **特征级**猜测（不是 token，是 hidden state）| **3-4×** | **80-90%**（SOTA）|
+| **Lookahead Decoding** | 用 Jacobi 迭代猜后续 token | 1.5-2× | 中 |
+
+**vLLM / SGLang / TensorRT-LLM 均原生支持**。生产场景**首选 EAGLE-2/3**（接受率高、显存开销小）。
+
+### 黄金答题模板
+
+> **面试官：你的推理服务怎么选型？**
+>
+> **答**：按 4 个维度决策：
+> ① **吞吐 vs 延迟**：高吞吐选 **vLLM**（PagedAttention 显存利用率 90%+），极致延迟选 **TensorRT-LLM**（Hopper FP8 + Kernel 融合最强）；
+> ② **场景重复率**：RAG / Agent / 多用户共享 System Prompt 选 **SGLang**（RadixAttention 前缀复用最高节省 80% KV 显存）；
+> ③ **硬件**：仅 NVIDIA 才能用 TensorRT-LLM，Mac / 边缘只能 **llama.cpp**；
+> ④ **量化**：生产首选 FP8 权重（DeepSeek-V3 原生支持，TensorRT-LLM/vLLM 0.6+），4-bit 选 AWQ（精度好于 GPTQ），KV Cache 量化要小心精度回退。
+> 加分项：上 **EAGLE-2/3 投机解码**——SOTA 加速 3-4×，2025 年起所有主流引擎都支持。
+
+
 ### 技术选型对照
 
 | 场景 | 推荐组合 |
