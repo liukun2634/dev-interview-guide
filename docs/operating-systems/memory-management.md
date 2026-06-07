@@ -266,6 +266,225 @@ Linux 内核用于管理**物理页框**的分配算法：
 
 ---
 
+## 用户态内存分配器对比（高性能服务必背）
+
+**面试 Top 题**："你的 Redis / 数据库为什么换 jemalloc？" —— glibc / jemalloc / tcmalloc / mimalloc 是 2026 高性能岗位必背。
+
+### 4 大主流分配器
+
+| 分配器 | 出处 | 强项 | 弱项 |
+|--------|------|------|------|
+| **glibc ptmalloc**（默认）| GNU | 兼容性最广、零依赖 | **多线程性能差**（早期锁竞争、arena 内碎片大）|
+| **jemalloc** | Facebook / FreeBSD | **多线程优秀、内存碎片少**、**Redis / Firefox / Rust 默认** | 内存占用比 glibc 稍高 |
+| **tcmalloc** | Google | **吞吐最高**（线程本地缓存）、性能 profiler | 依赖 gperftools |
+| **mimalloc** | Microsoft（2019）| **最现代**、内存占用最低、安全设计（mitigates use-after-free） | 较新、生态相对小 |
+
+### 性能对比真实数字（多线程高并发场景）
+
+| 维度 | glibc | jemalloc | tcmalloc | mimalloc |
+|------|-------|----------|----------|----------|
+| **吞吐** | 1× | 1.5-2× | **2-3×** | 2-3× |
+| **内存占用** | 1× | 0.7-0.8× | 0.9× | **0.6-0.7×** |
+| **P99 延迟** | 高 | **低** | 中 | 低 |
+| **碎片化** | 严重 | 优秀 | 良好 | 优秀 |
+
+### 切换方法（生产实战）
+
+```bash
+# 方法 1: LD_PRELOAD 不改代码切换（最常用）
+LD_PRELOAD=/usr/lib/libjemalloc.so.2 ./myapp
+
+# 方法 2: Docker / 镜像层面预装
+FROM ubuntu:24.04
+RUN apt-get install -y libjemalloc2
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+CMD ["./myapp"]
+
+# 方法 3: 代码层面 link
+gcc -ljemalloc app.c
+```
+
+::: tip 💡 jemalloc 真实收益案例
+
+> ① **Redis** 默认 jemalloc（编译时静态链接），内存碎片率从 glibc 的 30% 降到 5%
+> ② **MySQL** 切 jemalloc 后高并发 QPS 提升 10-30%
+> ③ **大型 Java 应用** 切 jemalloc 后 RSS（实际内存占用）降 15-30%
+> ④ **Firefox / Rust 标准库** 默认 jemalloc——Rust 1.32+ 改回系统 malloc 是为了通用性，性能敏感应用仍推荐切回
+
+:::
+
+### 监控分配器（生产必备）
+
+```bash
+# jemalloc 内置 stats（运行时 dump）
+MALLOC_CONF="stats_print:true" ./myapp
+
+# 查看 RSS 真实占用
+ps -o pid,rss,vsz,cmd -p <pid>
+
+# 详细分析内存碎片
+jemalloc-prof + jeprof  # 火焰图
+```
+
+---
+
+## NUMA 架构（多核服务器必懂）
+
+### 什么是 NUMA
+
+**NUMA（Non-Uniform Memory Access）** = 多 CPU socket 服务器上，**每个 CPU socket 有自己的本地内存**，访问跨 socket 内存会慢。
+
+```text
+┌──────────────────────────┐      ┌──────────────────────────┐
+│      NUMA Node 0          │ ←──→ │      NUMA Node 1          │
+│  ┌──────────────────┐    │ QPI/ │  ┌──────────────────┐    │
+│  │   CPU 0-15       │    │ UPI  │  │   CPU 16-31      │    │
+│  └────────┬─────────┘    │ 互联 │  └────────┬─────────┘    │
+│           │              │      │           │              │
+│  ┌────────▼─────────┐    │      │  ┌────────▼─────────┐    │
+│  │  Local RAM 128GB │    │      │  │  Local RAM 128GB │    │
+│  └──────────────────┘    │      │  └──────────────────┘    │
+└──────────────────────────┘      └──────────────────────────┘
+
+CPU 0 访问 Node 0 内存: ~100ns（本地）
+CPU 0 访问 Node 1 内存: ~150-300ns（跨 socket，慢 50%-200%）
+```
+
+### 实战命令
+
+```bash
+# 查看 NUMA 拓扑
+numactl --hardware
+
+# 进程绑定到 NUMA 节点
+numactl --cpunodebind=0 --membind=0 ./myapp
+
+# 查看进程的 NUMA 内存分布
+numastat -p <pid>
+
+# 看 NUMA miss 率（高 = 跨节点访问多）
+numastat -m
+```
+
+::: warning ⚠️ NUMA 经典坑
+
+> ① **数据库**（MySQL / PostgreSQL / Redis）跨 NUMA 节点写操作可能比本地慢 30-50%——生产 `numactl --interleave=all` 平均分布或显式绑定。
+>
+> ② **K8s 1.18+ Topology Manager** 支持 NUMA 感知调度——大模型推理 / 高频交易必开。
+>
+> ③ **JVM `-XX:+UseNUMA`** 让 G1 GC NUMA 感知，但仅在 Parallel GC 完全启用。
+
+:::
+
+---
+
+## HugePage / Transparent HugePage
+
+### 为什么需要大页
+
+**问题**：标准 page 4KB → 大内存应用页表巨大、TLB miss 率高。
+
+**例子**：100GB 内存数据库
+- 4KB 页：**2500 万个页表项**，TLB（512 条）命中率极低
+- 2MB 大页：**5 万个页表项**，TLB 命中率 99%+
+
+### 三种使用方式
+
+#### 1. 显式 HugePage（HugeTLB）
+
+```bash
+# 预分配 1024 个 2MB 大页（共 2GB）
+echo 1024 > /proc/sys/vm/nr_hugepages
+
+# 应用 mmap 时指定 MAP_HUGETLB
+mmap(NULL, len, PROT_..., MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+```
+
+#### 2. Transparent HugePage（THP，自动）
+
+```bash
+# 三档配置
+echo always   > /sys/kernel/mm/transparent_hugepage/enabled    # 总是用
+echo madvise  > /sys/kernel/mm/transparent_hugepage/enabled    # ★ 仅 madvise 用（生产推荐）
+echo never    > /sys/kernel/mm/transparent_hugepage/enabled    # 禁用
+```
+
+::: warning ⚠️ THP 在数据库场景是经典反模式
+
+> **Redis / MongoDB / PostgreSQL 官方都建议关闭 THP** 或设 `madvise`：
+> - THP 后台 `khugepaged` 合并小页时会 **抖动 latency**
+> - COW 操作放大（合并 2MB → COW 整个 2MB 而非 4KB）
+> - Redis fork RDB 时巨大 COW 导致内存翻倍 OOM
+>
+> 修复：
+> ```bash
+> echo madvise > /sys/kernel/mm/transparent_hugepage/enabled
+> echo never   > /sys/kernel/mm/transparent_hugepage/defrag
+> ```
+
+:::
+
+### Linux 6.x 新增 mTHP（multi-size THP）
+
+**Linux 6.1+ 引入 mTHP** —— 不再只有 2MB 一档，支持 16KB / 64KB / 1MB / 2MB / 16MB 多种大页，根据 vma 大小自适应。**减少 THP 抖动 + 保留大页收益**，2026 起主流发行版默认。
+
+---
+
+## OOM Killer（必背）
+
+### 工作原理
+
+**Linux 内存耗尽时杀进程腾内存**，由 **OOM Killer** 决定杀谁。
+
+```text
+内存紧张
+   ↓
+回收 page cache → 不够
+回收 anonymous（swap）→ 不够（或没 swap）
+   ↓
+触发 OOM Killer
+   ↓
+扫描所有进程，按 oom_score 排序
+   ↓
+杀分数最高的进程
+```
+
+### oom_score 计算
+
+```bash
+# 查看进程的 OOM 分数（0-1000）
+cat /proc/<pid>/oom_score          # 实际分数
+cat /proc/<pid>/oom_score_adj      # 用户调整（-1000 到 1000）
+
+# 保护关键进程不被杀
+echo -1000 > /proc/<pid>/oom_score_adj    # 永远不杀
+
+# 让某进程优先被杀
+echo 1000 > /proc/<pid>/oom_score_adj
+```
+
+**评分因素**：
+- **进程总内存（RSS）越大，分越高** ← 主因
+- **运行时间长 / 子进程多 / 重要进程**（如 root 进程）会减分
+
+### 容器场景：OOMKilled 排查
+
+```bash
+# K8s Pod 突然 Restart，看是不是 OOMKilled
+kubectl describe pod my-pod | grep -A 5 "Last State"
+# State: Terminated
+# Reason: OOMKilled    ← 关键
+# Exit Code: 137       ← 137 = 128 + SIGKILL(9)
+
+# 看宿主机内核日志
+dmesg | grep -i "killed process"
+# Out of memory: Killed process 1234 (java) total-vm:8GB
+```
+
+详见 [K8s — Pod 故障 5 大模式](../engineering-practice/kubernetes#pod-故障-5-大模式排查生产必备)。
+
+---
+
 ## CPU 缓存与并发底层
 
 理解 CPU 缓存层级、**MESI 协议**、**伪共享**、**内存屏障**是 2025-2026 年中高级面试**区分候选人深度**的硬核话题——尤其在写并发库、做性能优化时是绕不开的基本功。

@@ -220,6 +220,164 @@ Object o = ois.readObject();   // ← 攻击点
 
 详见 [Spring Security — JWT 顶门 5 大坑](../web-and-frameworks/spring-security#jwt-顶门-5-大坑)。
 
+## mTLS（双向 TLS）— K8s / 微服务必备
+
+**传统 TLS（单向）只校验服务器身份**——浏览器看证书确认网站是真的，**服务器不验证客户端身份**。
+
+**mTLS（mutual TLS / 双向 TLS）**：**服务器也校验客户端证书**——客户端必须出示有效证书才能建立连接。
+
+### 应用场景
+
+| 场景 | 为什么用 mTLS |
+|------|-------------|
+| **微服务间通信** | 服务 A 调服务 B，B 要确认对方真的是 A（而非伪造）|
+| **K8s Service Mesh**（Istio / Linkerd）| Pod 间通信自动 mTLS，零信任网络 |
+| **金融 / 政务 API** | 合规要求双向认证 |
+| **零信任网络**（Zero Trust）| 取代传统"内网即信任" |
+| **IoT 设备** | 设备出厂烧 cert，云端验设备身份 |
+
+### mTLS 握手流程
+
+```text
+Client                                              Server
+  │                                                   │
+  ├─ ClientHello + supported certs ──────────────────→│
+  │                                                   │
+  │←─ ServerHello + Server Cert + CertificateRequest ─┤  ★ 请求客户端证书
+  │                                                   │
+  ├─ Client Cert + CertVerify（用私钥签 handshake）──→│
+  │                                                   │
+  │   ★ 双方互相验证证书链 + 签名                       │
+  │                                                   │
+  ├─ Application Data ←─────────────────────────────→│
+```
+
+### 实战：Spring Boot 启用 mTLS
+
+```yaml
+# application.yml
+server:
+  ssl:
+    enabled: true
+    key-store: classpath:server.jks
+    key-store-password: changeit
+    # ★ mTLS 关键
+    client-auth: need              # need = 强制 / want = 可选
+    trust-store: classpath:ca.jks  # 校验客户端证书的 CA
+    trust-store-password: changeit
+```
+
+```java
+// 业务代码拿到客户端证书
+@GetMapping("/secure")
+public String secure(HttpServletRequest req) {
+    X509Certificate[] certs = (X509Certificate[])
+        req.getAttribute("javax.servlet.request.X509Certificate");
+    String clientCN = certs[0].getSubjectX500Principal().getName();
+    return "Hello " + clientCN;
+}
+```
+
+### Istio Service Mesh 自动 mTLS（K8s 最佳实践）
+
+```yaml
+# Istio: 全集群默认 mTLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT     # ★ 强制 mTLS，业务零修改
+```
+
+**优势**：业务代码完全不知 mTLS 存在，Sidecar 自动处理 + 证书自动轮换。
+
+详见 [微服务治理 — Service Mesh 与 Istio](../engineering-practice/microservice-governance#service-mesh-与-istio)。
+
+### mTLS 性能与运维成本
+
+| 维度 | 影响 |
+|------|------|
+| **CPU 开销** | 比单向 TLS +10-15%（多一次签名 / 验证）|
+| **延迟** | +1-2ms（多 1 个 RTT 的握手内容）|
+| **证书管理** | **最大痛点**——客户端证书签发 / 分发 / 轮换 / 撤销 |
+| **CA 设计** | 通常用 **Vault / cert-manager / SPIFFE** 自动化 |
+
+::: warning ⚠️ mTLS 不是银弹
+
+> 一次 mTLS 不够——**还要做应用层授权**（JWT / OAuth）。mTLS 解决"对方是不是我认识的服务"，**不解决"这个用户能做这个操作"**。生产用 mTLS（认证）+ JWT / RBAC（授权）双层。
+
+:::
+
+## 后量子密码学（PQC）— 2024 NIST 标准
+
+**问题**：当前 TLS 用 RSA / ECDSA 等基于"大整数分解 / 椭圆曲线离散对数"的算法。**Shor 算法（量子计算）能多项式时间破解** → 量子计算机商用后所有现存 HTTPS 流量裸奔。
+
+**威胁时间表**：
+- **Now-Harvest, Later-Decrypt 攻击**：攻击者**今天**截获加密流量保存，**未来**用量子计算机解密（如外交 / 国安数据）→ **现在就必须迁移**
+- 量子计算机预计 2030-2040 达到破解 RSA-2048 的规模
+
+### NIST 2024 标准化的 PQC 算法
+
+**2024.8 NIST 正式发布 3 个标准**：
+
+| 算法 | 类型 | 用途 | 基于 |
+|------|------|------|------|
+| **ML-KEM**（FIPS 203）| 密钥封装 | **替代 ECDH / RSA 密钥交换** | Module-Lattice（CRYSTALS-Kyber）|
+| **ML-DSA**（FIPS 204）| 数字签名 | **替代 RSA / ECDSA 签名** | Module-Lattice（CRYSTALS-Dilithium）|
+| **SLH-DSA**（FIPS 205）| 数字签名（基于哈希）| 长期高安全签名 | Hash-based（SPHINCS+）|
+
+**对比传统算法**：
+
+| 算法 | 公钥大小 | 签名大小 | 速度 | 量子抗性 |
+|------|---------|---------|------|---------|
+| RSA-2048 | 256 B | 256 B | 中 | ❌ |
+| ECDSA P-256 | 32 B | 64 B | 快 | ❌ |
+| **ML-KEM-768** | **1184 B** | - | 快 | ✅ |
+| **ML-DSA-65** | **1952 B** | **3309 B** | 快 | ✅ |
+
+**主要代价**：**密钥 / 签名大 10-30 倍** → TLS 握手报文增大 → 移动 / IoT 影响明显。
+
+### 2026 部署现状
+
+| 厂商 | 状态 |
+|------|------|
+| **Cloudflare** | 2024 起所有 TLS 1.3 默认 **混合**（X25519 + ML-KEM-768）|
+| **Google Chrome** | 116+ 实验性支持 X25519-Kyber768 |
+| **AWS** | KMS / S3 已支持 PQC 签名 |
+| **Microsoft** | Azure Key Vault 路线图 |
+| **OpenSSL** | 3.5+ 实验性 PQC（2025）|
+| **国密** | SM2 / SM9 也在研究 PQC 替代 |
+
+### Hybrid Mode（混合模式 — 当前主流）
+
+**为什么混合**：纯 PQC 算法 still 新，**怕实现 bug**——所以同时用 **传统算法 + PQC**，两个都破才挂。
+
+```text
+TLS 1.3 ClientHello:
+  key_share:
+    - X25519（经典 ECDH）
+    - X25519MLKEM768（混合 = X25519 + ML-KEM-768）
+
+服务器选择 X25519MLKEM768 → 两个都安全才行
+```
+
+### 黄金答题模板
+
+> **面试官：为什么需要后量子密码？现在怎么应对？**
+>
+> **答**：当前 TLS 用的 RSA / ECDSA **未来 5-15 年会被量子计算机破解**——更可怕的是 **"Harvest now, decrypt later"** 攻击：攻击者今天截存加密流量，未来用量子机解。所以**现在就要迁移**，不能等。
+>
+> **NIST 2024.8 标准化 3 个 PQC 算法**：① **ML-KEM**（替代 ECDH 密钥交换）；② **ML-DSA**（替代 ECDSA 签名）；③ **SLH-DSA**（基于哈希的签名，长期安全）。
+>
+> **代价**：密钥和签名比传统大 **10-30 倍**——TLS 握手报文增大，对移动 / IoT 有影响。
+>
+> **2026 主流方案**：**Hybrid Mode**——TLS 1.3 同时用 X25519 + ML-KEM-768，两个都被破才挂。Cloudflare 默认开启，Chrome 116+ 支持。
+>
+> **怎么准备**：① 用最新 OpenSSL 3.5+ / BoringSSL；② 云上启用 PQC TLS（AWS KMS / Azure / Cloudflare 都有开关）；③ 长期保存的密钥用 SLH-DSA；④ **不要等量子机商用再迁**——长期数据现在就该 PQC。
+
 ## 攻击类型横向速查
 
 | 攻击 | 攻击点 | 核心防御 |

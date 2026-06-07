@@ -48,6 +48,76 @@ title: 进程与线程
 
 > **单核 CPU** 同一时刻只有一个进程处于运行状态；多核 CPU 则可以有多个进程同时运行。
 
+### Linux 进程状态 R/S/D/Z/T（必背追问）
+
+**面试 Top 题**："`ps aux` 输出里 STAT 列那些字母分别什么意思？" —— 国内外大厂都爱问。Linux 把抽象模型映射成 6+ 个具体状态：
+
+| STAT | 全称 | 含义 | 触发场景 |
+|------|------|------|---------|
+| **R** | Running / Runnable | 正在运行或在 run queue 等待 CPU | CPU 密集型任务 |
+| **S** | Interruptible Sleep | 可中断睡眠（等 I/O / 等事件）| 99% 的 idle 进程 |
+| **D** | Uninterruptible Sleep | **不可中断睡眠**（内核态硬等）| **NFS 卡死 / 磁盘异常 / 内核驱动 bug** |
+| **Z** | Zombie | **僵尸进程**（已退出但父进程未 wait）| 父进程 bug |
+| **T** | Stopped / Traced | 被 SIGSTOP 暂停 / 被 ptrace 跟踪 | Ctrl+Z / gdb 调试 |
+| **X** | Dead | 即将销毁的瞬时状态 | 几乎看不到 |
+
+#### D 状态深入（实战必备）
+
+```bash
+# 看到一堆 D 状态进程
+$ ps aux | awk '$8 ~ /D/ { print }'
+USER   PID  STAT  COMMAND
+root   1234 D     [nfs_writeback]    ← NFS 服务器宕了，进程卡死
+```
+
+**D 状态危险性**：
+- ❌ **`kill -9` 杀不掉**（不响应信号）
+- ❌ 占用 CPU 槽位，**计入 load average**（导致看似 CPU 不忙但 load 飙到 100+）
+- ❌ 通常意味着 **底层硬件 / 内核 bug**，必须重启
+
+**排查命令**：
+```bash
+# 看 D 状态进程的内核栈，定位卡在哪
+cat /proc/<pid>/stack
+cat /proc/<pid>/wchan      # 等什么内核事件
+```
+
+#### 僵尸进程 vs 孤儿进程（必背）
+
+```text
+僵尸进程（Zombie / <defunct>）:
+   子进程 exit → 内核保留 PCB（含退出码 / 资源使用）
+   等父进程调 wait() / waitpid() 来回收
+   父进程不回收 → 子进程永远 Z 状态 → PID 表项耗尽
+
+孤儿进程（Orphan）:
+   父进程先于子进程退出
+   子进程被 init（PID 1，systemd）"收养"
+   init 会定期 wait() 回收 → 不会变僵尸
+```
+
+**僵尸进程排查**：
+```bash
+# 找所有僵尸
+$ ps aux | awk '$8 ~ /Z/'
+
+# 找僵尸的父进程
+$ ps -o ppid= -p <zombie_pid>
+
+# 修复: 重启父进程，或父进程写代码用 SIGCHLD handler + wait()
+signal(SIGCHLD, SIG_IGN);  // ★ 让内核自动回收子进程
+```
+
+**容器场景特别注意**：容器内 **PID 1 是业务进程**（不是 systemd），不会自动回收僵尸——容器内 fork() 子进程必须 wait()，否则积累僵尸耗尽 PID。**生产用 [tini](https://github.com/krallin/tini) 作 PID 1**（K8s `shareProcessNamespace: true` 类似效果）。
+
+::: tip 💡 实战排查口诀
+
+> `top` 看到 **load average 高但 CPU 利用率低** → 大概率有 D 状态进程；
+> `ps aux | awk '$8 ~ /Z/'` 找僵尸；
+> `cat /proc/<pid>/stack` 看 D 状态卡在哪个内核函数。
+
+:::
+
 ## 进程与线程的区别
 
 这是操作系统面试最高频的考点，需要从多个维度进行对比。
