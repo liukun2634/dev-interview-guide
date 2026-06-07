@@ -182,6 +182,7 @@ export default withMermaid(defineConfig({
             { text: 'MySQL 日志', link: '/databases/mysql-logs' },
             { text: '分库分表', link: '/databases/sharding' },
             { text: 'Redis 核心', link: '/databases/redis' },
+            { text: '🔥 向量数据库选型深度', link: '/databases/vector-database-selection' },
           ],
         },
       ],
@@ -346,6 +347,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'AI 概述与发展历程', link: '/ai-technology/ai-overview' },
             { text: 'LLM 大语言模型原理', link: '/ai-technology/llm-fundamentals' },
+            { text: '🔥 VLM 视觉语言模型', link: '/ai-technology/vision-language-models' },
           ],
         },
         {
@@ -363,6 +365,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
             { text: 'Agent Skills 编写指南', link: '/ai-technology/ai-agent-skills' },
+            { text: '🔥 Computer Use 与多 Agent 编排', link: '/ai-technology/agent-computer-use' },
             { text: 'Harness Engineering', link: '/ai-technology/harness-engineering' },
           ],
         },
