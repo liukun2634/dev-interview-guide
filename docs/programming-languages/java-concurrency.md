@@ -251,6 +251,28 @@ try {
 
 **使用场景：** 数据库连接（每个线程持有独立 Connection）、用户登录上下文（Spring Security 的 SecurityContextHolder）、MDC 日志追踪 ID。
 
+::: warning ⚠️ 虚拟线程时代的 ThreadLocal 新考点（JDK 21+）
+
+> 虚拟线程够轻量，一个进程可能同时存在数百万个，每个线程都背负一个 `ThreadLocalMap` 会造成：
+> ① **内存爆炸**：100 万虚拟线程 × 每线程 1KB ThreadLocal 数据 = 1GB 额外开销；
+> ② **语义变化**：传统线程池时代 "一线程贯穿多请求" 的模型在虚拟线程下变成 "一虚拟线程一请求"，ThreadLocal 的 "跨调用联动" 用法意义不大。
+>
+> **JDK 21 引入的替代品：ScopedValue（JEP 446 Preview / JEP 481 Second Preview）**——不可变、生命周期严格限定在一个 Lambda 范围内，定位虚拟线程的轻量最佳选择：
+>
+> ```java
+> private static final ScopedValue<User> USER = ScopedValue.newInstance();
+>
+> ScopedValue.where(USER, currentUser).run(() -> {
+>     // 范围内的代码可用 USER.get() 读取；退出后自动清理。
+>     doWork();
+> });
+> // 优点：① 不可变→线程安全 ② 无需手动 remove（隐含清理） ③ 嵌套作用域天然支持
+> ```
+>
+> **面试高频追问**：虚拟线程 + ThreadLocal 有什么问题？→ 答 **内存、语义、生命周期**三点，并提 `ScopedValue` 作为 JDK 21+ 推荐替代。
+
+:::
+
 ---
 
 ### 并发容器

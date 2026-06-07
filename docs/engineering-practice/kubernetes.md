@@ -592,6 +592,89 @@ spec:
 
 ---
 
+## Pod 安全标准（PSS）—— PodSecurityPolicy 的继任者
+
+**2026 必知**：PodSecurityPolicy（PSP）已于 **Kubernetes 1.25（2022.08）完全移除**，以 **Pod Security Standards （PSS）+ Pod Security Admission 控制器** 取代。面试谈到 K8s 安全这是高频追问点。
+
+### PSP 为什么被移除
+
+| 问题 | 说明 |
+|------|------|
+| 授权复杂 | RBAC + PSP 双重授权，配错使用者很多 |
+| 默认 允许 | 需手动绑定，忘记绑定等于无限制 |
+| 不能 dry-run / audit | 只能强推，无法如今推行安全治理 |
+
+### Pod Security Standards 三级别
+
+| Profile | 限制程度 | 适用场景 |
+|---------|---------|---------|
+| **privileged** | 完全不限制 | 系统组件（如 kube-proxy、CNI） |
+| **baseline** | 防御已知提权（禁 hostNetwork / hostPID / privileged）| 应用 Pod 默认底线 |
+| **restricted** | 严格、遵循安全最佳实践（必须 runAsNonRoot、readOnlyRootFilesystem、限制 capabilities）| 生产应用 |
+
+### 用法：Namespace 标签控制
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-app
+  labels:
+    # 强制：不符合 restricted 的 Pod 直接拒绝创建
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    # 审计：记录不符合 baseline 的 Pod，不拦截
+    pod-security.kubernetes.io/audit: baseline
+    # 警告：kubectl apply 时提示，不拦截
+    pod-security.kubernetes.io/warn: baseline
+```
+
+### 符合 restricted 的 Pod 最小示例
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-app
+spec:
+  securityContext:
+    runAsNonRoot: true               # ✅ PSS restricted 必需
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault           # ✅ 必需
+  containers:
+    - name: app
+      image: myapp:1.0
+      securityContext:
+        allowPrivilegeEscalation: false   # ✅ 必需
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]                   # ✅ 必需
+```
+
+::: tip 💡 生产黑金组合
+
+> **三层防护**：① Namespace 加 PSS `enforce: baseline`（全局默认）→ ② 关键应用 Namespace 提升为 `enforce: restricted` → ③ 超外需求用 **OPA Gatekeeper / Kyverno** 做自定义策略（PSS 仅覆盖常见场景）。
+>
+> **迁移路径**：从K8s 1.22 开始，PSP 和 PSS 可以并存 → 1.23 PSS 进入 Beta 默认启用 → 1.25 PSP 完全移除。
+
+:::
+
+### kubectl 排查命令
+
+```bash
+# 查看 Namespace 的 PSS 策略
+kubectl get ns my-app -o yaml | grep pod-security
+
+# 验证 Pod 是否符合 restricted（dry-run）
+kubectl apply --dry-run=server -f pod.yaml
+
+# 查看拒绝原因
+kubectl describe rs my-app-xxxx | grep -i "violates PodSecurity"
+```
+
+---
+
 ## 面试常问 & 怎么答
 
 **Q1：描述 Pod 的完整生命周期？**

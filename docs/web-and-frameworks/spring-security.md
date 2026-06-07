@@ -30,12 +30,37 @@ HTTP 请求 → DelegatingFilterProxy → FilterChainProxy → SecurityFilterCha
 
 | 过滤器 | 职责 |
 |--------|------|
-| SecurityContextPersistenceFilter | 从 Session 恢复 SecurityContext（登录状态） |
+| SecurityContextHolderFilter | **从 SecurityContextRepository 加载 SecurityContext**（⚠️ Spring Security 6+ 取代了 SecurityContextPersistenceFilter） |
 | UsernamePasswordAuthenticationFilter | 处理表单登录（/login POST） |
 | BasicAuthenticationFilter | 处理 HTTP Basic 认证 |
 | BearerTokenAuthenticationFilter | 处理 Bearer Token（JWT/OAuth2） |
 | ExceptionTranslationFilter | 捕获认证/授权异常，返回 401/403 |
-| AuthorizationFilter | 最终的授权检查（替代旧版 FilterSecurityInterceptor） |
+| AuthorizationFilter | 最终的授权检查（**Spring Security 6.0+ 统一取代 FilterSecurityInterceptor，后者已 @Deprecated**） |
+
+::: warning ⚠️ Spring Security 5 → 6 重要变更清单（面试必背）
+
+> ① **`WebSecurityConfigurerAdapter` 已于 Security 5.7+ 标记 @Deprecated，6.0+ 完全移除**；改用 **声明 `SecurityFilterChain` Bean** 的函数式配置。
+> ② **`antMatchers()` / `mvcMatchers()` / `regexMatchers()` 已于 6.0+ 移除**，统一改用 **`requestMatchers()`**。
+> ③ **`SecurityContextPersistenceFilter` 已移除**，改由 `SecurityContextHolderFilter` + `SecurityContextRepository` 代替（明确读写分离）。
+> ④ **`FilterSecurityInterceptor` 已 @Deprecated**，由 `AuthorizationFilter` 取代。
+> ⑤ **默认开启 CSRF 保护、默认使用 Lambda DSL**（链式换行风格变了）。
+
+```java
+// ✅ Spring Security 6 标准写法
+@Bean
+SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    http
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/public/**").permitAll()      // ⚠️ 不再是 antMatchers
+            .anyRequest().authenticated()
+        )
+        .formLogin(Customizer.withDefaults())
+        .csrf(Customizer.withDefaults());                    // 默认开启
+    return http.build();
+}
+```
+
+:::
 
 ## 认证流程
 

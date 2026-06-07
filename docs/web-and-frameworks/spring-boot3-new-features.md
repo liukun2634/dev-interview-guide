@@ -33,6 +33,38 @@ Spring 6 / Boot 3 全面迁移到 Jakarta EE：
 
 **为什么要迁移？** Oracle 将 Java EE 转让给 Eclipse 基金会，因商标原因 javax 不能继续使用，改为 jakarta。
 
+### 自动配置发现机制变更（面试高频追问）
+
+**Spring Boot 3 废弃了使用多年的 `META-INF/spring.factories`**，改用专用的 imports 文件：
+
+| 版本 | 自动配置注册文件 |
+|------|------|
+| Spring Boot 2.x | `META-INF/spring.factories`（与其他 SPI 混在一起） |
+| **Spring Boot 3.x+** | **`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`**（一行一个全限定类名） |
+
+```text
+# Spring Boot 2.7 写法（已废弃）
+# META-INF/spring.factories
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.example.MyAutoConfig,\
+com.example.OtherAutoConfig
+```
+
+```text
+# Spring Boot 3 标准写法
+# META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+com.example.MyAutoConfig
+com.example.OtherAutoConfig
+```
+
+::: warning ⚠️ 迁移必踩坑
+
+> ① `spring.factories` 在 Spring Boot 3 **不是完全不能用**，仅是 **EnableAutoConfiguration 入口不再读取**；其他 SPI（如 `ApplicationListener`）仍可以放在 `spring.factories` 里。
+> ② 自定义 starter 必须调整，否则 Spring Boot 3 **加载不到你的 AutoConfig**，表现为“Bean 没被创建但也不报错”。
+> ③ 迁移后必须从 JAR 中手动验证该文件是否存在：`jar tf my-starter.jar | grep AutoConfiguration.imports`。
+
+:::
+
 ## GraalVM Native Image
 
 ### AOT 编译 vs JIT 编译
