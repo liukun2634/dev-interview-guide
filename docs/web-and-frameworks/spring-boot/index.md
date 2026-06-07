@@ -23,6 +23,51 @@ Spring Boot 不是新框架，而是让 Spring 应用更容易启动和配置的
 
 **一句话理解**：Spring Boot = Spring + 合理的默认配置 + 嵌入式服务器 + Starter 依赖管理。
 
+## Spring Boot 版本演进时间线
+
+Spring Boot 由 Pivotal（现 VMware Tanzu）的 Phil Webb 发起，2014.04 首版 1.0 GA。一句话定位：**Spring 应用的"约定优于配置"打包方式**。
+
+| 版本 | 时间 | Spring 依赖 | JDK | 关键变化 |
+|------|------|------------|-----|---------|
+| **1.0** | 2014.04 | Spring 4.0 | JDK 6 | **首版**：自动配置（`spring.factories`）、Starter POM、嵌入式 Tomcat、Actuator、CLI |
+| **1.3** | 2015.11 | Spring 4.2 | JDK 7 | DevTools 热重载、缓存自动配置 |
+| **1.5** | 2017.01 | Spring 4.3 | JDK 7 | Kafka starter、OAuth2 增强；1.x 末代 |
+| **2.0** | 2018.03 | Spring 5.0 | **JDK 8** | **🔥 重写底层**：Reactor / WebFlux 支持、HTTP/2、Actuator 端点全面重构（新指标体系 Micrometer）、Spring Security 5、JOOQ |
+| **2.1 / 2.2** | 2018-2019 | Spring 5.1/5.2 | JDK 8/11 | JUnit 5 默认、懒加载（`spring.main.lazy-initialization`） |
+| **2.3** | 2020.05 | Spring 5.2 | JDK 8/11 | **Graceful Shutdown**（优雅停机）、Docker 镜像构建（Cloud Native Buildpacks）、Liveness/Readiness 探针 |
+| **2.4** | 2020.11 | Spring 5.3 | JDK 8/11 | **配置文件加载机制重写**（统一 `spring.config.import`）、Volume 配置 |
+| **2.5 / 2.6** | 2021 | Spring 5.3 | JDK 8/11 | 周期任务执行器、Layered Jar 改进 |
+| **2.7** | 2022.05 | Spring 5.3 | JDK 8/11/17 | **2.x 末代版本**；自动配置文件改为 `AutoConfiguration.imports`（为 3.x 平滑过渡）；OSS 维护到 2023.11，商业支持到 2025.08 |
+| **3.0** | 2022.11 | **Spring 6.0** | **JDK 17** | **🔥 断代式升级**：Jakarta EE 9（`javax → jakarta`）、AOT + GraalVM Native Image、Observability（Micrometer Tracing）、HTTP Interface |
+| **3.1** | 2023.05 | Spring 6.0 | JDK 17 | **Docker Compose / Testcontainers 集成**（启动时自动起依赖容器）、Spring Authorization Server 1.0 |
+| **3.2** | 2023.11 | Spring 6.1 | JDK 17 | **🔥 虚拟线程支持（Java 21）**：`spring.threads.virtual.enabled=true` 一行开启；**CRaC**（Coordinated Restore at Checkpoint）启动毫秒级；RestClient |
+| **3.3** | 2024.05 | Spring 6.1 | JDK 17 | Native Image 加强、SBOM Actuator 端点、Bitnami CNB 默认镜像 |
+| **3.4** | 2024.11 | Spring 6.2 | JDK 17 | 结构化日志（JSON Logs）、Bean Background Initialization、`@SpringBootApplication` 启动加速 |
+| **3.5** | 2025.05 | Spring 6.2 | JDK 17 | Bean 配置改进；3.x 末代；商业支持延长 |
+| **4.0** | 2025.11（GA） | **Spring 7.0** | **JDK 17 / 25 LTS** | API 模块化重构、强化 AOT 与原生镜像；自动配置进一步精简；HTTP/3 实验 |
+
+::: warning ⚠️ Spring Boot 2.x → 3.x 升级关键点
+
+1. **JDK 17 强制**：2.x 兼容 JDK 8/11/17；3.x 起最低 JDK 17。
+2. **Jakarta 包名迁移**：`javax.servlet`、`javax.persistence`、`javax.validation` → `jakarta.*`。**第三方库也必须升级**（Tomcat 10+ / Hibernate 6+ / Spring Cloud 2022.0+）。
+3. **配置元数据文件路径变化**：自动配置注册从 `META-INF/spring.factories` 改为 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（一行一个全限定类名）。
+4. **`spring-boot-starter-validation` 不再传递依赖**：3.x 中需显式引入。
+5. **Native Image 一等公民**：`mvn -Pnative native:compile` 即可生成可执行文件，启动 < 100ms，内存占用 1/10。
+6. **虚拟线程改变线程模型直觉**：3.2+ 开启后 Tomcat / @Async / Scheduled 全部走虚拟线程，"线程池调优"思路要重新审视。
+:::
+
+### Spring Boot 三阶段心智模型
+
+```
+2014 ─────────── 2018 ─────────── 2022 ─────────── 2025+
+"约定优于配置时代"  "云原生时代"     "AOT + Jakarta 时代"  "虚拟线程 + 原生镜像时代"
+                  (Boot 2 + WebFlux) (Boot 3 + JDK 17)    (Boot 3.2+ / Boot 4)
+   Boot 1.x       Boot 2.x          Boot 3.0-3.1         Boot 3.2+ / 4.0
+   省 XML、嵌 Tomcat 响应式 + 指标体系  Jakarta + Native    Loom + CRaC + JSON 日志
+```
+
+**面试黄金答法**：被问"Spring Boot 这些年演进"按这四阶段讲，强调**"3.0 是 2014 以来最大的一次断代升级（JDK + Jakarta + Native），不是日常小版本迭代"**，并补一句"**2026 主流已到 3.4+，部分新项目开始用 3.5 / 4.0**"。
+
 ## 核心机制
 
 ### 自动配置原理（面试必考）

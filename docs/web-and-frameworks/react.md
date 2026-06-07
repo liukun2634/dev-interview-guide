@@ -14,6 +14,48 @@ React 是 Facebook 开源的声明式 UI 库，核心哲学是 **UI = f(state)**
 
 ---
 
+## 版本演进时间线
+
+理解 React 的版本演进，本质是看清"**架构换代**"和"**心智模型迁移**"两条主线。每一次大版本都对应一次开发模式的范式转移。
+
+| 版本 | 发布时间 | 关键变化 | 心智模型影响 |
+|------|---------|---------|------------|
+| **0.3 – 0.14** | 2013.05 – 2015.10 | 首次开源（JSConf US 2013）；JSX、虚拟 DOM、单向数据流 | 声明式 UI 替代 jQuery 命令式操作 |
+| **15** | 2016.04 | 重写核心，DOM 渲染从 SVG 命名空间剥离；正式版本号 1.0 之外的成熟 | 稳定 API，社区开始大规模采用 |
+| **16（Fiber）** | 2017.09 | **Fiber 架构重写**：可中断渲染、错误边界、Portals、Fragment、自定义 DOM 属性 | 协调器从递归改为可中断链表，为并发模式埋下基础 |
+| **16.3** | 2018.03 | 新生命周期（`getDerivedStateFromProps`）、新 Context API、`React.forwardRef` | 旧 `componentWillMount/Receive/Update` 被标记 Unsafe |
+| **16.6** | 2018.10 | `React.memo`、`React.lazy` + `Suspense`（仅代码分割） | 懒加载首次正式登场 |
+| **16.8（Hooks）** | 2019.02 | **🔥 Hooks 正式发布**：`useState` / `useEffect` / `useContext` / `useReducer` | 函数组件取代类组件成为默认；逻辑复用从 HOC/Render Props 转向自定义 Hook |
+| **17** | 2020.10 | "无新特性"版本：新 JSX Transform（无需 `import React`）、事件委托从 document 改为 root | 为多版本共存铺路，被称为"过渡桥梁" |
+| **18** | 2022.03 | **并发渲染（Concurrent Rendering）正式 GA**：`createRoot`、`useTransition`、`useDeferredValue`、`useId`、Automatic Batching、Suspense for SSR、Streaming SSR | 渲染从同步到可打断；状态更新可标记优先级 |
+| **18.2 / 18.3** | 2022.06 – 2024.04 | 稳定期；19 升级前的最后过渡版（`useFormState` 等实验性） | 生态全面拥抱并发模式 |
+| **19** | 2024.12 | **🔥 Actions / `useActionState` / `useOptimistic` / `useFormStatus`**；**ref as prop**（不再需要 `forwardRef`）；**`use()` API**（条件读取 Promise/Context）；**Document Metadata**（`<title>` / `<meta>` 直接放组件内）；Server Components 稳定 API；`<form action>` 直接传函数 | 表单状态托管给框架；元数据组件化；客户端/服务端边界清晰化 |
+| **19.1** | 2025.03 | Owner Stack 调试增强；服务端错误更易追踪 | 调试体验向 Server Components 靠拢 |
+| **React Compiler RC** | 2025 年 | **🔥 自动 memo 化**：编译器静态分析，自动插入 `useMemo` / `useCallback` / `React.memo` | 性能优化从"手动 memo"走向"零心智负担" |
+
+::: warning ⚠️ 版本迁移高频面试题
+
+1. **"为什么 React 17 没有新特性？"** → 不是没做事，而是把所有破坏性改动延迟，让企业能在同一应用中混用 17/18 子树渐进升级。
+2. **"`createRoot` 和 `ReactDOM.render` 的区别？"** → 18 用 `createRoot` 才开启并发模式；老 API 仍可用但性能与行为按旧逻辑走。
+3. **"React 19 是不是要废掉 Redux？"** → 不会废，但 Server Actions + `useActionState` + `useOptimistic` 让**大量 Redux 用于"表单 + 加载状态"的场景**变得多余；Redux 仍适合复杂客户端状态机。
+4. **"React Compiler 出来后还要写 `useMemo` 吗？"** → 默认不需要；但 Compiler 不接管副作用、不能跨组件优化、对动态依赖无能为力，**仍需理解原理以应对边缘场景**。
+:::
+
+### 三大阶段心智模型
+
+```
+2013 ─────────── 2019 ─────────── 2022 ─────────── 2024+
+"虚拟 DOM 时代"   "Hooks 时代"     "并发渲染时代"    "Server/Compiler 时代"
+                                  (Concurrent)     (RSC + Auto-Memo)
+   React 0.x-15    React 16.8-17    React 18         React 19+
+   类组件主流       函数组件 + Hooks  可中断渲染       服务端组件 + 编译器优化
+   生命周期为王     自定义 Hook 复用   优先级调度       客户端代码减少
+```
+
+**面试黄金答法**：被问到"React 这些年发展脉络"时，按这四个阶段讲，**比按版本号逐个背书更有结构感**。
+
+---
+
 ## 核心概念
 
 ### 1. 组件化思想

@@ -12,6 +12,69 @@ Angular 是 Google 出品的全功能前端框架，内置模块化、依赖注�
 
 ---
 
+## 版本演进时间线
+
+Angular 的发展可分为**两段历史**：AngularJS（1.x）和 Angular（2+）。两者不是升级关系，而是完全不同的两个框架。Angular 2+ 之后每 6 个月发布一个大版本（5 月、11 月），节奏极其稳定。
+
+### 第一段：AngularJS（2010 – 2021，已 EOL）
+
+| 版本 | 时间 | 特征 |
+|------|------|------|
+| **AngularJS 1.0** | 2012.06 | 双向绑定（脏检查）、Controller + $scope、Directive、内置 DI | 
+| **1.5** | 2016.02 | 引入 `.component()` API，为迁移到 Angular 2 铺路 |
+| **1.8（最终版）** | 2020.07 | 最后一个 LTS 版本 |
+| **EOL** | 2021.12.31 | **AngularJS 官方停止维护**，所有项目应迁移到 Angular 2+ 或其他框架 |
+
+### 第二段：Angular（2016+，6 个月一个大版本）
+
+| 版本 | 时间 | 关键变化 |
+|------|------|---------|
+| **2.0** | 2016.09 | **完全重写**，TypeScript 优先；组件化 + 模块化 + 单向数据流；引入 Zone.js 变更检测；与 1.x 不兼容 |
+| **4** | 2017.03 | 跳过 3（Router 单独发布到 3.x 造成版本号冲突）；统一所有包到 4；体积优化 |
+| **5** | 2017.11 | 引入 AOT 默认启用、HttpClient、新的 Build Optimizer |
+| **6** | 2018.05 | **Angular CLI Workspace**（多项目）、`ng update` / `ng add`、Tree-Shakable Providers（`providedIn: 'root'`）、RxJS 6（`pipe()` 操作符） |
+| **7** | 2018.10 | CDK 虚拟滚动、拖放；DoBootstrap 钩子 |
+| **8** | 2019.05 | **Ivy 预览**、Differential Loading（ES5/ES2015 双包）、Web Workers 支持 |
+| **9** | 2020.02 | **🔥 Ivy 编译器默认启用**：bundle 体积大幅缩小、增量编译、更好的调试体验 |
+| **10** | 2020.06 | 升级 TypeScript 3.9；严格模式 `--strict` |
+| **11** | 2020.11 | Webpack 5 实验性支持；Hot Module Replacement |
+| **12** | 2021.05 | **View Engine 完全移除**，Ivy 成为唯一编译器；Webpack 5 默认 |
+| **13** | 2021.11 | **彻底删除 View Engine**、Component API 升级、IE 不再支持 |
+| **14** | 2022.06 | **🔥 Standalone Components 预览**（可不写 NgModule）、`inject()` 函数、Typed Forms、CLI 自动补全 |
+| **15** | 2022.11 | **Standalone APIs 稳定**、Directive Composition、`NgOptimizedImage` |
+| **16** | 2023.05 | **🔥 Signals 预览**（细粒度响应式，替代 Zone.js 检测）、`takeUntilDestroyed`、Required Inputs、SSR Hydration 非破坏性预览 |
+| **17** | 2023.11 | **🔥 新控制流语法**（`@if` / `@for` / `@switch` 替代 `*ngIf` / `*ngFor`）、Deferrable Views（`@defer`）、SSR Hydration 稳定、**新文档站 angular.dev**、品牌焕新 |
+| **18** | 2024.05 | **Signals 进入稳定**（input/output/model signals）、Material 3 GA、Zoneless 实验支持 |
+| **19** | 2024.11 | **Standalone 成为默认**（脚手架默认不生成 NgModule）、`linkedSignal()`、`resource()` API、Hydration 增量预览 |
+| **20** | 2025.05 | **Zoneless 稳定**（可彻底移除 Zone.js）、Signal Forms 实验、Reactive Resource、Server Routes 增强 |
+| **21** | 2025.11 | Signal Forms 稳定预览；推进基于 Signal 的变更检测全面替代 Zone.js |
+| **22** | 2026.05 | 持续巩固 Signal-based 响应式；Vite + esbuild 工具链进一步替代 Webpack |
+
+::: warning ⚠️ 版本迁移高频面试题
+
+1. **"AngularJS 和 Angular 是什么关系？"** → **不是升级关系**，是两个完全不同的框架。AngularJS 已 EOL（2021.12），不要在新项目使用。
+2. **"为什么没有 Angular 3？"** → Router 子项目当时已经发布到 3.x，为了统一所有包版本号，主框架直接跳到 4。
+3. **"Ivy 是什么？为什么重要？"** → Angular 9 默认启用的新编译器/运行时，相比 View Engine：**bundle 体积减小、增量编译更快、调试更友好、为 Standalone / Signals 等新特性铺路**。Angular 12 后 View Engine 完全移除。
+4. **"Standalone Components 解决了什么问题？"** → 干掉 NgModule 的样板代码，组件可以独立声明依赖（直接在 `imports` 中写其他组件/指令/管道），**学习曲线接近 React/Vue**。
+5. **"Signals 和 RxJS 是替代关系吗？"** → 不是。Signals 用于**组件内细粒度同步状态**，RxJS 用于**异步事件流**。两者共存：Signal 替代 `BehaviorSubject + async pipe` 的简单场景，复杂异步仍用 RxJS。
+6. **"Zoneless 是什么？"** → Angular 18+ 实验、20 稳定的特性，**不再依赖 Zone.js 自动检测变更**，改由 Signals 驱动精确更新。优势：bundle 更小、性能更可预测；代价：需要全面采用 Signals。
+:::
+
+### 三大阶段心智模型
+
+```
+2010 ─────────── 2016 ─────────── 2022 ─────────── 2024+
+"AngularJS 时代"  "Angular 2 时代"  "Standalone 时代"  "Signals/Zoneless 时代"
+                  (NgModule + Zone) (干掉 NgModule)    (干掉 Zone.js)
+   AngularJS      Angular 2-13      Angular 14-17      Angular 18+
+   $scope 脏检查   TypeScript 强约定  样板代码大幅减少    Signal 响应式
+   Controller     依赖注入 + RxJS    inject() 函数     精确细粒度更新
+```
+
+**面试黄金答法**：被问到"Angular 这些年发展"时按这四个阶段讲，并明确指出"AngularJS 已 EOL，现代 Angular 走向 Signal + Standalone + Zoneless 这一套'去样板化'路线"。
+
+---
+
 ## 核心概念
 
 ### Angular 架构总览

@@ -10,6 +10,62 @@ title: TypeScript 5.x 类型系统深度
 2026 年 **TypeScript 5.5+ 已是前端标配**。面试不再问"什么是 TypeScript"，而是问 **泛型约束 / 条件类型 / 模板字面量 / `infer`** 这些深度用法，以及 **5.x 新特性**（const 类型参数、装饰器 GA、推导改进）。能讲清 `as const` / `satisfies` / `infer` 三件套立刻区分初/中/高级。
 :::
 
+## 版本演进时间线
+
+TypeScript 由微软 Anders Hejlsberg（C# 之父）主导，2012 年发布。每 3 个月一个小版本，类型系统能力**不断向"可推导"和"模式描述"两个方向演进**。
+
+| 版本 | 时间 | 关键变化 |
+|------|------|---------|
+| **0.8** | 2012.10 | **首次开源**：类、接口、模块、JSX 前身、基本类型注解 |
+| **1.0** | 2014.04 | 第一个正式版；ES6 风格类与模块；与 Angular 团队达成合作（Angular 2 选 TS） |
+| **1.5** | 2015.07 | 装饰器（Stage-1）、ES6 模块、Tagged Templates |
+| **2.0** | 2016.09 | **🔥 strict null checks**（`--strictNullChecks`）、`readonly`、`never` 类型、控制流分析 |
+| **2.1** | 2016.12 | **🔥 Mapped Types & keyof**：`Partial<T>` / `Pick<T,K>` 等工具类型可写出来 |
+| **2.8** | 2018.03 | **🔥 Conditional Types & `infer`**：`T extends U ? X : Y`；类型层面的"if-else"，奠定后续所有高阶类型基础 |
+| **3.0** | 2018.07 | Project References、Tuple in Rest、`unknown` 类型 |
+| **3.4** | 2019.03 | **`const` assertions（`as const`）**：字面量类型保留；只读元组与数组 |
+| **3.7** | 2019.11 | **可选链 `?.` 与空值合并 `??`**（领先 ES 提案落地）、断言函数 |
+| **4.0** | 2020.08 | Variadic Tuple Types（可变元组）、Labeled Tuple Elements |
+| **4.1** | 2020.11 | **🔥 Template Literal Types**：`` `${'on'}${Capitalize<K>}` `` 字符串模式可参与类型计算 |
+| **4.4** | 2021.08 | Control Flow Analysis of Aliased Conditions（别名条件也参与窄化）、`--exactOptionalPropertyTypes` |
+| **4.5** | 2021.11 | `Awaited<T>` 工具类型；ES 模块支持改进 |
+| **4.7** | 2022.05 | Node 16 ES Modules（`.mts` / `.cts`）、Instantiation Expressions |
+| **4.9** | 2022.11 | **🔥 `satisfies` 操作符**：保留字面量类型推导的同时校验约束，**取代很多场景下的类型断言** |
+| **5.0** | 2023.03 | **🔥 装饰器 GA**（符合 TC39 Stage-3 提案）、**`const` 类型参数**（`<const T>`）、`enum` 全面改进、性能大幅提升 |
+| **5.1** | 2023.06 | `undefined` 返回的隐式类型放宽、JSX 类型支持改进 |
+| **5.2** | 2023.08 | `using` / `await using`（资源显式释放，匹配 ES 提案） |
+| **5.3** | 2023.11 | Import Attributes（`import json from './x.json' with { type: 'json' }`） |
+| **5.4** | 2024.03 | `NoInfer<T>` 工具类型；改进闭包内类型窄化保留 |
+| **5.5** | 2024.06 | **类型谓词推断**（`array.filter(x => x !== null)` 自动收窄）、JSDoc `@import`、正则类型检查 |
+| **5.6** | 2024.09 | "Disallowed Nullish/Truthy Checks" 类错误（防 `if (foo)` 写错）、Iterator Helpers |
+| **5.7** | 2024.11 | Never-Initialized 变量检查、Path Rewriting 输出 |
+| **5.8** | 2025.02 | `--erasableSyntaxOnly` 配合 Node 原生 TS 执行；Conditional Return Type 推导改进 |
+| **5.9** | 2025 年下半年 | 持续优化推导稳定性、Project References 增量构建提速 |
+| **6.0 / 7.0（Native Port）** | 2025-2026 进行中 | **🔥 编译器 Go 语言重写**：官方目标 **10× 速度**，已开源 `microsoft/typescript-go`。**改写编译器后向兼容，类型系统行为不变** |
+
+::: warning ⚠️ 版本演进高频面试题
+
+1. **"`infer` 是什么时候引入的？为什么重要？"** → 2.8（2018）引入；它让类型系统具备了"**模式匹配 + 局部变量**"能力，所有高阶工具类型（`ReturnType` / `Parameters` / `Awaited`）都依赖它。
+2. **"`as const` 和 `satisfies` 的区别？"** → `as const`（3.4）把字面量"冻成最窄类型"；`satisfies`（4.9）"校验是否满足某个约束，但保留推导出的精确类型"。**4.9 之前要么类型断言丢失推导，要么宽松推导丢失约束，`satisfies` 一举解决**。
+3. **"TypeScript 5.0 的装饰器和旧装饰器为什么不兼容？"** → 旧版（experimentalDecorators）跟 TC39 Stage-1 提案，**字段装饰器、参数装饰器、运行时元数据**等行为不同；5.0 GA 的是 Stage-3 标准提案，**API 形态、执行时机、可读写访问器都不一样**。Angular 等框架仍依赖旧版，需开启 `experimentalDecorators`。
+4. **"为什么要把编译器用 Go 重写？"** → 当前 TS 编译器是 TS/JS 自身写的，**大型仓库类型检查动辄数十秒到数分钟**。Native Port 目标 10× 速度，编辑器/CLI 响应将进入毫秒级。**不改变类型系统行为**，只是更快。
+:::
+
+### 三大能力跃迁
+
+```
+2012 ─────────── 2016 ─────────── 2020 ─────────── 2024+
+"基本类型时代"    "类型计算时代"    "模式推导时代"    "原生加速时代"
+                  (Mapped + Cond)  (Template + as const)
+   TS 0.8-1.x     TS 2.0-3.x       TS 4.x           TS 5.x / Native
+   类、接口、注解  泛型、infer、never 字面量模式、satisfies  编译器 Go 重写
+   "JS 加类型"    "类型当编程语言"   "类型描述协议"    "万级文件秒级检查"
+```
+
+**面试黄金答法**：被问"你怎么看 TS 演进"时按这四阶段讲，并强调**"类型系统已演化为一门小型 DSL，4.x 后的核心议题是如何用类型描述运行时的字符串/对象 schema"**——例如 tRPC、Zod、Drizzle 都靠 5.x 类型能力实现端到端类型安全。
+
+---
+
 ## 类型系统核心特性（必背）
 
 ### 1. 类型推导 vs 类型注解

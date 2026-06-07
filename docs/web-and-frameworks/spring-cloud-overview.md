@@ -18,6 +18,68 @@ title: Spring Cloud 速查
 - 主流技术栈已从 Netflix 全家桶（Eureka、Zuul、Hystrix）迁移到 Alibaba 体系（Nacos、Gateway、Sentinel）。
 - Spring Cloud 本身是规范和抽象，具体实现由 Spring Cloud Netflix、Spring Cloud Alibaba 等提供。
 
+## Spring Cloud 版本演进时间线（Release Train）
+
+Spring Cloud 使用 **Release Train（发布列车）** 命名：早期用伦敦地铁站名按字母排序（Angel → Brixton → Camden …），2020.x 起改为**年份命名**与 Spring Boot 节奏对齐。
+
+### 主流版本对照表
+
+| Release Train | 时间 | 对应 Spring Boot | 关键变化 |
+|---------------|------|-----------------|---------|
+| **Angel** | 2015.03 | 1.2 | 首个 GA；Eureka、Hystrix、Zuul、Config Server |
+| **Brixton** | 2016.05 | 1.3/1.4 | Stream、Sleuth、Zipkin |
+| **Camden** | 2016.09 | 1.4/1.5 | OAuth2、新 Discovery Client |
+| **Dalston** | 2017.04 | 1.5 | OpenFeign 改名（前身 Netflix Feign） |
+| **Edgware** | 2017.11 | 1.5 | 增量改进 |
+| **Finchley** | 2018.06 | **2.0** | **🔥 跟随 Boot 2.0 大升级**：Reactor、Gateway（替代 Zuul）首个 GA、Bus |
+| **Greenwich** | 2019.01 | 2.1 | OpenFeign 升级、Config Server 改进 |
+| **Hoxton** | 2019.11 | 2.2/2.3 | **🔥 Netflix 组件进入 maintenance mode**（Eureka 1 / Zuul 1 / Hystrix / Ribbon / Archaius）；推荐迁移到 Loadbalancer、Resilience4j、Gateway |
+| **2020.0（Ilford）** | 2020.12 | 2.4 | 改用年份命名；**移除 Hystrix Dashboard / Turbine / Ribbon / Zuul**；Loadbalancer / Resilience4j 替代 |
+| **2021.0（Jubilee）** | 2021.12 | 2.6/2.7 | Spring Native 实验、Vault 改进 |
+| **2022.0（Kilburn）** | 2023.01 | **3.0/3.1** | **🔥 配合 Boot 3.x 升级**：Jakarta EE、JDK 17、AOT；Gateway 增强 |
+| **2023.0（Leyton）** | 2024.02 | 3.2/3.3 | RestClient 支持、OpenFeign 改进、可观测性强化 |
+| **2024.0（Moorgate）** | 2024.12 | 3.4 | **🔥 虚拟线程支持全面铺开**；Spring Cloud Stream 改进；Config Server 性能优化 |
+| **2025.0** | 2025.11（GA） | 3.5 / **4.0** | Boot 4.0 适配；HTTP Interface 强化；AOT 一等公民 |
+
+### Spring Cloud Alibaba 版本对照
+
+国内项目主流是 Spring Cloud Alibaba（SCA），版本号紧跟 Spring Cloud 列车。
+
+| SCA 版本 | 对应 Spring Cloud | Spring Boot | 时间 | 备注 |
+|---------|------------------|------------|------|------|
+| 2.2.x | Hoxton | 2.2.x | 2020 | Boot 2.2 末期主流 |
+| 2021.0.x | 2021.0.x | 2.6/2.7 | 2022 | 末代 JDK 8 兼容 |
+| 2022.0.x | 2022.0.x | **3.0/3.1** | 2023 | **Jakarta 迁移** |
+| 2023.0.x | 2023.0.x | 3.2/3.3 | 2024 | 虚拟线程开始可用 |
+| 2024.0.x | 2024.0.x | 3.4 | 2025 | **2026 主流版本** |
+
+::: warning ⚠️ Netflix 退役与迁移路径（必背）
+
+| 已退役组件（Hoxton 后 maintenance） | 推荐替代 |
+|----------------------------------|---------|
+| **Eureka 1**（注册中心） | Nacos / Consul / Kubernetes Service |
+| **Zuul 1**（网关，阻塞 IO） | **Spring Cloud Gateway**（Reactor 异步） |
+| **Hystrix**（熔断） | **Resilience4j** / **Sentinel** |
+| **Ribbon**（客户端负载） | **Spring Cloud LoadBalancer** |
+| **Archaius**（配置） | Nacos / Spring Cloud Config |
+
+**面试经典追问**："为什么 Netflix OSS 整体退役？"
+答：① Netflix 内部已大规模迁到 K8s + Envoy；② Hystrix 等组件官方明确不再演进（线程隔离模式 + 阻塞调用与响应式不兼容）；③ Spring 团队需要 Reactor 原生方案统一异步生态。
+:::
+
+### Spring Cloud 三阶段心智模型
+
+```
+2015 ─────────── 2019 ─────────── 2023+
+"Netflix 时代"   "Alibaba + Resilience4j 时代"  "Boot 3 + K8s Native 时代"
+                 (Hoxton 退役 Netflix)         (2022.0+ / Jakarta / 虚拟线程)
+   Angel-Edgware  Finchley-2021.0              2022.0-2025.0
+   Eureka/Zuul    Nacos + Gateway + Sentinel   Service Mesh / K8s Service
+   Hystrix/Ribbon Resilience4j + LoadBalancer  虚拟线程 + AOT
+```
+
+**面试黄金答法**：被问"Spring Cloud 这些年发展"时按这三阶段讲，并明确给出迁移建议——**"新项目不要再选 Eureka / Zuul / Hystrix；中小规模选 Nacos + Gateway + Sentinel + Resilience4j；大规模 / 多语言场景应考虑 K8s + Istio（Service Mesh）取代 Spring Cloud 的部分能力"**（详见 [Service Mesh](../engineering-practice/microservice-governance#service-mesh-与-istio)）。
+
 ## 服务注册与发现
 
 ### Nacos vs Eureka
