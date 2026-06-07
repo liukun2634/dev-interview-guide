@@ -171,22 +171,54 @@ export default withMermaid(defineConfig({
       ],
       '/databases/': [
         {
-          text: '数据库',
+          text: '数据库 — 章节总览',
           collapsed: false,
           items: [
-            { text: '章节概览', link: '/databases/' },
+            { text: '章节概览与选型地图', link: '/databases/' },
+          ],
+        },
+        {
+          text: '关系型数据库（OLTP 核心）',
+          collapsed: false,
+          items: [
             { text: 'MySQL 架构', link: '/databases/mysql-architecture' },
-            { text: '索引原理', link: '/databases/indexing' },
-            { text: '事务与锁', link: '/databases/transaction-lock' },
-            { text: 'SQL 优化', link: '/databases/sql-optimization' },
-            { text: 'MySQL 日志', link: '/databases/mysql-logs' },
+            { text: '索引原理（B+ 树 / 覆盖索引 / ICP）', link: '/databases/indexing' },
+            { text: '事务与锁（ACID / MVCC / 隔离级别）', link: '/databases/transaction-lock' },
+            { text: 'SQL 优化（EXPLAIN / 慢 SQL / JOIN）', link: '/databases/sql-optimization' },
+            { text: 'MySQL 日志（redo / undo / binlog / 2PC）', link: '/databases/mysql-logs' },
+            { text: '🔥 PostgreSQL 深度（vs MySQL 决策）', link: '/databases/postgresql' },
+          ],
+        },
+        {
+          text: '扩展与分布式',
+          collapsed: false,
+          items: [
             { text: '分库分表', link: '/databases/sharding' },
+            { text: '🔥 分布式数据库 NewSQL（TiDB / CockroachDB / Spanner / OceanBase）', link: '/databases/distributed-databases' },
+          ],
+        },
+        {
+          text: 'NoSQL 与缓存',
+          collapsed: false,
+          items: [
             { text: 'Redis 核心', link: '/databases/redis' },
             { text: '🔥 NoSQL 全景（MongoDB / Cosmos DB / DynamoDB / Cassandra）', link: '/databases/nosql-databases' },
-            { text: '🔥 分布式数据库 NewSQL（TiDB / CockroachDB / Spanner / OceanBase）', link: '/databases/distributed-databases' },
+          ],
+        },
+        {
+          text: '分析与数据栈（OLAP）',
+          collapsed: false,
+          items: [
             { text: '🔥 数据仓库与 Lakehouse（Snowflake / BigQuery / Databricks）', link: '/databases/data-warehouse' },
+            { text: '🔥 Elasticsearch 全文搜索（OpenSearch / 向量混合）', link: '/databases/elasticsearch' },
+          ],
+        },
+        {
+          text: '专用存储',
+          collapsed: false,
+          items: [
+            { text: '🔥 向量数据库选型（Milvus / Qdrant / pgvector）', link: '/databases/vector-database-selection' },
             { text: '🔥 对象存储与云存储（Azure Blob / S3 / GCS / MinIO）', link: '/databases/cloud-storage' },
-            { text: '🔥 向量数据库选型深度', link: '/databases/vector-database-selection' },
           ],
         },
       ],
