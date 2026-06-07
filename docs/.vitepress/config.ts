@@ -183,6 +183,8 @@ export default withMermaid(defineConfig({
             { text: '分库分表', link: '/databases/sharding' },
             { text: 'Redis 核心', link: '/databases/redis' },
             { text: '🔥 NoSQL 全景（MongoDB / Cosmos DB / DynamoDB / Cassandra）', link: '/databases/nosql-databases' },
+            { text: '🔥 分布式数据库 NewSQL（TiDB / CockroachDB / Spanner / OceanBase）', link: '/databases/distributed-databases' },
+            { text: '🔥 数据仓库与 Lakehouse（Snowflake / BigQuery / Databricks）', link: '/databases/data-warehouse' },
             { text: '🔥 对象存储与云存储（Azure Blob / S3 / GCS / MinIO）', link: '/databases/cloud-storage' },
             { text: '🔥 向量数据库选型深度', link: '/databases/vector-database-selection' },
           ],
