@@ -291,15 +291,30 @@ export default withMermaid(defineConfig({
       ],
       '/programming-languages/': [
         {
-          text: '编程语言',
+          text: '编程语言 — 总览',
           collapsed: false,
           items: [
             { text: '章节概览', link: '/programming-languages/' },
+          ],
+        },
+        {
+          text: 'Java 体系',
+          collapsed: false,
+          items: [
             { text: 'Java 基础', link: '/programming-languages/java-fundamentals' },
             { text: 'Java 并发编程', link: '/programming-languages/java-concurrency' },
             { text: 'Java 集合框架', link: '/programming-languages/java-collections' },
             { text: 'JVM 深入', link: '/programming-languages/jvm-internals' },
             { text: 'Java 新特性', link: '/programming-languages/java-modern-features' },
+          ],
+        },
+        {
+          text: '其他主流语言',
+          collapsed: false,
+          items: [
+            { text: '🔥 C++ 现代特性', link: '/programming-languages/cpp' },
+            { text: '🔥 C# 与 .NET', link: '/programming-languages/csharp' },
+            { text: '🔥 Python 现代特性', link: '/programming-languages/python' },
           ],
         },
       ],
