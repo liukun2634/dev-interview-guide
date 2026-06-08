@@ -309,12 +309,32 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: '其他主流语言',
+          text: 'C++ 体系',
           collapsed: false,
           items: [
-            { text: '🔥 C++ 现代特性', link: '/programming-languages/cpp' },
-            { text: '🔥 C# 与 .NET', link: '/programming-languages/csharp' },
-            { text: '🔥 Python 现代特性', link: '/programming-languages/python' },
+            { text: '🔥 C++ 现代特性（11/14/17/20/23）', link: '/programming-languages/cpp' },
+          ],
+        },
+        {
+          text: 'C# 体系',
+          collapsed: false,
+          items: [
+            { text: '🔥 C# 与 .NET 8/9', link: '/programming-languages/csharp' },
+          ],
+        },
+        {
+          text: 'Python 体系',
+          collapsed: false,
+          items: [
+            { text: '🔥 Python 3.12/3.13 现代特性', link: '/programming-languages/python' },
+          ],
+        },
+        {
+          text: 'Go / Rust 体系',
+          collapsed: false,
+          items: [
+            { text: '🔥 Go（GMP / Channel / 1.22-1.24）', link: '/programming-languages/go' },
+            { text: '🔥 Rust（所有权 / async / 2024 Edition）', link: '/programming-languages/rust' },
           ],
         },
       ],
