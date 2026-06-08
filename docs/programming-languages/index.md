@@ -26,11 +26,11 @@ title: 编程语言
 
 | 主题 | 主要场景 | 重要度 |
 |------|---------|------|
-| [C++ 现代特性](./cpp) **🆕** | 游戏 / 嵌入式 / 高频交易 / 系统编程 | ⭐⭐⭐⭐ |
-| [C# 与 .NET](./csharp) **🆕** | 外企 / Azure / 金融 / Unity / Windows 客户端 | ⭐⭐⭐⭐ |
-| [Python 现代特性](./python) **🆕** | AI / 数据科学 / DevOps / 自动化 / Web | ⭐⭐⭐⭐⭐ |
-| [Go 现代特性](./go) **🆕** | 云原生 / K8s / 微服务 / API 网关 / CLI | ⭐⭐⭐⭐⭐ |
-| [Rust 现代特性](./rust) **🆕** | 系统编程 / 替代 C++ / 性能模块 / WASM | ⭐⭐⭐⭐ |
+| [C++ 体系](./cpp-fundamentals) 🆕 | 游戏 / 嵌入式 / 高频交易 / 系统编程 | ⭐⭐⭐⭐ |
+| [C# 体系](./csharp-fundamentals) 🆕 | 外企 / Azure / 金融 / Unity / Windows 客户端 | ⭐⭐⭐⭐ |
+| [Python 体系](./python-fundamentals) 🆕 | AI / 数据科学 / DevOps / 自动化 / Web | ⭐⭐⭐⭐⭐ |
+| [Go 体系](./go-fundamentals) 🆕 | 云原生 / K8s / 微服务 / API 网关 / CLI | ⭐⭐⭐⭐⭐ |
+| [Rust 体系](./rust-fundamentals) 🆕 | 系统编程 / 替代 C++ / 性能模块 / WASM | ⭐⭐⭐⭐ |
 
 ---
 
@@ -139,4 +139,4 @@ C/C++/Rust  >>>  Go/C#/Java (with AOT)  >>>  Java JIT  >>>  Node.js  >>>  Python
 - [JVM 底层](./jvm-internals) ↔ [.NET CLR](./csharp) ↔ [Python 解释器](./python)
 - [Java 并发](./java-concurrency) ↔ [操作系统 — 进程线程](../operating-systems/process-and-thread)
 - [Python AI 栈](./python) ↔ [AI 技术章节](../ai-technology/)
-- [C++ 性能](./cpp) ↔ [系统设计 — 高性能架构](../system-design/)
+- [C++ 性能](./cpp-memory-management) ↔ [系统设计 — 高性能架构](../system-design/)
