@@ -231,6 +231,56 @@ Header.Payload.Signature
 4. **PATCH 的幂等性：** PATCH 是否幂等取决于实现。绝对值修改（`{ "name": "Alice" }`）是幂等的；增量修改（`{ "balance": "+100" }`）不是幂等的
 :::
 
+## API 文档：OpenAPI 3.1 + springdoc-openapi
+
+::: tip 💡 2026 标准
+**Swagger 2 / springfox 已停止维护**，新项目统一用 **springdoc-openapi**（基于 OpenAPI 3.1，原生支持 Spring Boot 3 / Jakarta）。
+:::
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    <version>2.6.0</version>
+</dependency>
+```
+
+启动后自动暴露：
+- **`/v3/api-docs`** — JSON 格式的 OpenAPI 3.1 规范
+- **`/swagger-ui.html`** — 交互式调试界面
+
+```java
+@Operation(summary = "查询用户", description = "按 ID 查找用户")
+@ApiResponse(responseCode = "200", description = "找到")
+@ApiResponse(responseCode = "404", description = "不存在")
+@GetMapping("/users/{id}")
+UserDto get(@Parameter(description = "用户 ID") @PathVariable Long id) { ... }
+```
+
+| 工具 | 状态 | 备注 |
+|------|------|------|
+| **springdoc-openapi** | ✅ 主流 | OpenAPI 3.1、Boot 3 友好 |
+| ~~springfox~~ | ❌ EOL（2020 后无更新） | 不要用于新项目 |
+| **OpenAPI Generator** | ✅ 主流 | 反向生成客户端 SDK（Java/TS/Go） |
+| **Stoplight / Postman** | ✅ 协作 | 团队 API 设计与 mock |
+
+## REST vs GraphQL vs gRPC：协议选型矩阵
+
+API 设计不只有 REST。**2024-2026 大厂普遍三套并存**：对外 REST，前端聚合 GraphQL，内部 RPC 用 gRPC。
+
+| 维度 | REST | GraphQL | gRPC |
+|------|------|---------|------|
+| **传输** | HTTP/1.1 + JSON | HTTP + JSON | **HTTP/2 + Protobuf** |
+| **数据形状** | 后端固定，前端可能"过取/欠取" | **前端按需查询** | 强类型 schema，IDL 定义 |
+| **流式** | SSE / 长轮询 | Subscriptions（WS） | **原生四种 RPC 模式**（一/双向流） |
+| **浏览器友好** | ✅ 一等公民 | ✅ Apollo / urql | ⚠️ 需 grpc-web 代理 |
+| **服务发现/LB** | 标准 K8s Service | 标准 | **客户端 LB**（gRPC LB 自带，无 sidecar 也行） |
+| **典型场景** | 对外 Open API、CRUD | BFF 聚合、移动端弱网 | **内部高性能微服务**、多语言 RPC |
+| **生态代表** | Spring MVC、Express | Apollo、Hasura | Spring gRPC、Envoy |
+
+**心智模型**：「**对外 REST（通用），前端 GraphQL（聚合），内部 gRPC（性能）**」。详见 [HTTP/HTTPS · gRPC 基于 HTTP/2](../../computer-networks/http-https#grpc基于-http2-的高性能-rpc)。
+
 <div class="dig-questions">
   <div class="dig-questions__header">
     <span>📝 面试真题</span>

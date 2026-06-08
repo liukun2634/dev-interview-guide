@@ -404,6 +404,43 @@ Spring Cloud LoadBalancer（替代 Ribbon）提供客户端负载均衡：
 
 `lb://user-service` 中的 `lb://` 前缀就是触发负载均衡的标识。
 
+## 分布式追踪：Micrometer Tracing 取代 Sleuth
+
+::: warning ⚠️ 2026 必知：Sleuth 已 EOL
+**Spring Cloud Sleuth 已于 2022.0 进入维护模式，3.x 后不再支持**。Spring Boot 3 / Spring Cloud 2022.0+ 改用 **Micrometer Tracing**（与 Micrometer 指标体系共用 API）。新项目**禁止再引入 Sleuth**。
+:::
+
+| 主题 | Sleuth（已废弃） | **Micrometer Tracing（推荐）** |
+|------|----------------|------------------------------|
+| 所属 | spring-cloud-sleuth | io.micrometer:micrometer-tracing |
+| API | `Span` / `Tracer`（自有抽象） | **统一 `Observation` API**（指标 + 追踪 + 日志） |
+| Exporter | Zipkin / Brave | **Zipkin / OpenTelemetry（OTLP）** |
+| W3C TraceContext | 部分支持 | ✅ **默认 traceparent / tracestate** |
+| Boot 3 支持 | ❌ | ✅ |
+
+```xml
+<!-- Boot 3 + OpenTelemetry 标准栈 -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-tracing-bridge-otel</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.opentelemetry</groupId>
+    <artifactId>opentelemetry-exporter-otlp</artifactId>
+</dependency>
+```
+
+```yaml
+management:
+  tracing:
+    sampling.probability: 1.0           # 采样率
+    propagation.type: w3c               # ★ W3C 标准（替代 b3）
+  otlp:
+    tracing.endpoint: http://otel-collector:4318/v1/traces
+```
+
+详见 [可观测性 · OpenTelemetry 深度](../engineering-practice/monitoring-observability#opentelemetry-深度)。
+
 ## 面试常问 & 怎么答
 
 ### Q1: Nacos 和 Eureka 的区别？

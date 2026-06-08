@@ -271,6 +271,41 @@ Spring Cloud Gateway 是 WebFlux 最经典的落地场景：
 // 非阻塞模型下少量线程即可处理万级并发
 ```
 
+## 虚拟线程时代 WebFlux 还有必要吗？（Boot 3.2+ 必读）
+
+::: warning ⚠️ 2026 顶级面试题
+"既然虚拟线程让 Spring MVC 也能轻松扛 10 万并发，WebFlux 是不是要被淘汰了？" —— **这是 2025-2026 后端架构师面试的分水岭题**。能讲清楚立刻显出深度。
+:::
+
+### 答案先行
+
+> **MVC + 虚拟线程"吃掉"了 WebFlux 80% 的应用场景**（高并发 I/O 密集业务），但**剩下 20% 是 WebFlux 不可替代的**：**流式数据、背压、组合编排、协议层**（RSocket、SSE）。
+
+### 三场景决策表
+
+| 场景 | MVC + 虚拟线程 | WebFlux | 胜出 |
+|------|---------------|---------|------|
+| 高并发 CRUD（10K QPS） | ✅ 写法简单、生态成熟、JDBC 完全可用 | ⚠️ 必须 R2DBC，调试复杂 | **MVC + Loom** |
+| API 网关（万级 QPS 转发） | ✅ 可行，但默认配置不如 Reactor Netty | ✅ 原生 Event Loop + 背压 | **WebFlux**（如 Spring Cloud Gateway） |
+| SSE / 长连接 / WebSocket | ⚠️ 占线程也能做，但 `Flux` API 缺失 | ✅ `Flux<ServerSentEvent>` 一行 | **WebFlux** |
+| 复杂异步编排（10 个下游服务 fan-out） | ⚠️ `CompletableFuture` 嵌套 | ✅ `Mono.zip` / `Flux.merge` 优雅 | **WebFlux**（或 Kotlin 协程） |
+| 流式大文件 / 实时消息 | ❌ 内存或阻塞 | ✅ 天然背压 | **WebFlux** |
+| 团队不熟悉响应式 | ✅ | ❌ 学习曲线陡峭 | **MVC + Loom** |
+
+### 心智模型
+
+```
+2020 年：MVC（阻塞）   vs  WebFlux（异步非阻塞）   ← "高并发就上 WebFlux"
+2024 年：MVC + Loom    vs  WebFlux                ← "高并发不再是 WebFlux 唯一卖点"
+未来：    MVC + Loom（业务主力）+ WebFlux（流式/编排）+ Kotlin 协程（KMP）
+```
+
+**面试黄金答法**：「**虚拟线程不是把 WebFlux 杀了，是把 WebFlux 拉回到它真正擅长的领域：流式数据与异步编排。常规业务 + JDBC 现在应该首选 MVC + Loom**」。
+
+### 不是 WebFlux 错，是用错了 WebFlux
+
+历史上很多团队选 WebFlux 的真实原因是"听说性能好"，但**项目里全是 CRUD + JPA**，结果：① 不会写 `Mono.fromCallable().subscribeOn(boundedElastic())` 把阻塞调用调度出去；② Stack Trace 一团乱麻无法定位；③ `ThreadLocal` 假设全部失效。**这些项目在 2024 之后应该考虑迁回 MVC + Loom**。
+
 ## 面试常问 & 怎么答
 
 ### Q1: Spring MVC 和 WebFlux 的区别？

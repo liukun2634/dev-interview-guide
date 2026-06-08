@@ -423,6 +423,48 @@ function Counter() {
 }
 ```
 
+#### 2026 状态管理决策树（必背）
+
+::: tip 💡 一句话定位
+**"先问数据来源"——服务端数据 vs 客户端状态是不同的问题，混着用就是踩坑。**
+:::
+
+```
+┌──────────────────────────────────────────────────┐
+│ Q1: 这个状态本质上是服务端数据吗？                  │
+│   是 → TanStack Query / SWR / RTK Query           │
+│        （缓存、失效、轮询、乐观更新都内置）          │
+│   否 ↓                                           │
+├──────────────────────────────────────────────────┤
+│ Q2: 这个状态只在一个组件内用吗？                    │
+│   是 → useState / useReducer                     │
+│   否 ↓                                           │
+├──────────────────────────────────────────────────┤
+│ Q3: 只是配置型/低频更新（主题/语言/用户）吗？        │
+│   是 → Context API（避免 prop drilling 已足够）   │
+│   否 ↓                                           │
+├──────────────────────────────────────────────────┤
+│ Q4: 复杂、跨组件、需要中间件 / 时间旅行？           │
+│   是 → Redux Toolkit / Zustand                   │
+│   否（细粒度原子状态）→ Jotai                     │
+└──────────────────────────────────────────────────┘
+```
+
+| 工具 | 类别 | 2026 趋势 | 适合 |
+|------|------|----------|------|
+| **TanStack Query (React Query)** | **服务端状态** | 🔥🔥🔥 事实标准 | 任何带后端的应用 |
+| **SWR** | 服务端状态 | 🔥🔥 Vercel 出品 | Next.js 项目 |
+| **Zustand** | 客户端状态 | 🔥🔥🔥 | 大多数新项目首选 |
+| **Jotai** | 客户端状态（原子） | 🔥🔥 | 复杂派生状态 |
+| **Redux Toolkit** | 客户端状态 | 🔥🔥 | 大型企业项目、需要 Redux DevTools |
+| **MobX** | 客户端状态 | 🔥 | OOP 偏好团队 |
+| ~~原版 Redux~~ | — | ❌ 不推荐裸用 | 用 Redux Toolkit |
+| ~~Recoil~~ | — | ❌ Meta 已停止维护 | 迁移到 Jotai |
+
+::: warning ⚠️ React 19 之后 Redux 还需要吗？
+**Server Actions + `useActionState` + `useOptimistic` 把"表单 + 加载状态 + 乐观更新"这类**之前 Redux 的主战场**全部内置化**。但 Redux 在以下场景仍不可替代：① 复杂客户端状态机（多步骤向导、协作编辑）；② 需要时间旅行调试；③ 团队已有大量 Redux 代码不想迁移。**新项目首选 Zustand + TanStack Query 组合**。
+:::
+
 ---
 
 ### 5. React Router（v6）
@@ -883,6 +925,64 @@ function UserPanel({ userPromise }) {
 ② `propTypes` 已移除，远期迁到 TypeScript；
 ③ 清理 `forwardRef`——不是 bug，但代码会变净；
 ④ 检查是否启 React Compiler——需代码遵守 Rules of React。
+
+---
+
+## 微前端与 Module Federation（2026 大型 Web 必考）
+
+::: tip 💡 何时上微前端
+**不要为了"用而用"**。微前端只在以下场景才回本：① **多团队并行开发同一站点**（如阿里、字节内部门户）；② **巨型应用拆分**（百万行级）；③ **技术栈渐进升级**（一部分还是 jQuery，一部分要上 React）；④ **独立部署 / 独立发版**。普通 SaaS / 中后台**不需要微前端**。
+:::
+
+### 主流方案对比（2026）
+
+| 方案 | 原理 | 优点 | 缺点 |
+|------|------|------|------|
+| **Module Federation**（Webpack 5 / Rspack）| 运行时跨应用共享模块 | ✅ 共享依赖（不重复下载 React）；✅ 主子框架自由 | 配置复杂；版本协议要约定 |
+| **qiankun**（阿里）| 基于 single-spa + 沙箱 | ✅ 沙箱隔离强；中文生态好 | 性能损耗；CSS/JS 隔离仍有边界 |
+| **micro-app**（京东）| Web Components + JS 沙箱 | ✅ 接入极简（一个标签） | 生态较新 |
+| **wujie**（腾讯）| iframe + WebComponent | ✅ 真隔离（iframe）；性能优于传统 iframe | iframe 通信复杂 |
+| **Native iframe** | 浏览器原生 | ✅ 最强隔离 | 通信差、SEO 差、UX 割裂 |
+
+### Module Federation 关键概念
+
+```js
+// host（主应用）
+new ModuleFederationPlugin({
+  name: 'shell',
+  remotes: {
+    // 运行时加载远程模块
+    cart: 'cart@https://cdn.example.com/cart/remoteEntry.js',
+  },
+  shared: { react: { singleton: true }, 'react-dom': { singleton: true } }
+});
+
+// remote（子应用）
+new ModuleFederationPlugin({
+  name: 'cart',
+  filename: 'remoteEntry.js',
+  exposes: { './App': './src/App' },
+  shared: { react: { singleton: true }, 'react-dom': { singleton: true } }
+});
+```
+
+```tsx
+// host 中按需异步加载
+const CartApp = React.lazy(() => import('cart/App'));
+```
+
+### 微前端核心问题与对策
+
+| 问题 | 对策 |
+|------|------|
+| **JS 全局变量污染** | 沙箱（Proxy 拦截 window 写入） |
+| **CSS 样式冲突** | Shadow DOM / CSS Modules / scoped 前缀 |
+| **依赖版本不一致** | Module Federation `shared.singleton` 强制单例；约定主应用版本 |
+| **路由冲突** | 主应用做路由分发；子应用用 hash 路由或 basename |
+| **跨应用通信** | 全局事件总线（CustomEvent）；状态共享（避免）；URL 参数 |
+| **共享登录态** | Cookie + 同域；JWT 走 localStorage 或 HTTP-Only Cookie |
+
+**面试黄金答法**：「微前端不是技术问题，是**组织协作问题**。一个团队能搞定的项目永远不应该微前端化——增加的协调成本远超收益。**判断信号：是否多团队？是否独立发版？是否技术栈不一致？三个都是 yes 才考虑**」。
 
 ---
 

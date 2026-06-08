@@ -84,6 +84,33 @@ spring:
         - prod-mq
 ```
 
+## spring.config.import：现代统一配置导入（Boot 2.4+）
+
+::: tip 💡 2026 必背：替代 `bootstrap.yml` 的标准方式
+Boot 2.4 重写了配置加载机制，引入 **`spring.config.import`**。它**替代了** `bootstrap.yml`、`@PropertySource`、`spring.cloud.config.uri` 等多种碎片化方案，**统一为一个声明式入口**。
+:::
+
+```yaml
+spring:
+  config:
+    import:
+      - optional:file:./config/local.yml       # 本地可选文件
+      - optional:configtree:/etc/secrets/      # K8s ConfigMap/Secret 挂载目录
+      - optional:configserver:                 # Spring Cloud Config Server
+      - optional:nacos:my-app.yml              # Nacos（spring-cloud-starter-alibaba-nacos-config）
+      - optional:consul:/config/my-app/        # Consul KV
+```
+
+| 前缀 | 来源 | 备注 |
+|------|------|------|
+| `file:` / `classpath:` | 本地/JAR 内文件 | 替代 `@PropertySource` |
+| `configtree:` | 目录树（每个文件 = 一个配置项） | **K8s Secret/ConfigMap 首选** |
+| `configserver:` | Spring Cloud Config | 替代 `bootstrap.yml` |
+| `nacos:` / `consul:` / `vault:` | 各配置中心 | 由对应 Starter 提供 |
+| `optional:` | 加 `optional:` 前缀文件不存在不报错 | 强烈推荐 |
+
+**Boot 2.4+ 不再需要 `bootstrap.yml`**：所有外部配置加载移至 `spring.config.import`，启动阶段更可控、错误信息更清晰。老项目升级时移除 `spring-cloud-starter-bootstrap` 依赖即可。
+
 ## 配置绑定
 
 ### @Value
@@ -140,6 +167,42 @@ app:
 | 校验 | ❌ 不支持 | ✅ 支持 @Validated + JSR 303 |
 | IDE 支持 | 一般 | ✅ 可生成 metadata，有自动补全 |
 | 适用场景 | 少量简单配置 | 一组相关配置 |
+
+### @ConfigurationProperties + @Validated 启动期校验（强烈推荐）
+
+```java
+@ConfigurationProperties(prefix = "app")
+@Validated                          // ★ 启动时校验
+public record AppProperties(
+    @NotBlank String name,
+    @Min(1) @Max(65535) int port,
+    @Email String contact,
+    @DurationMin(seconds = 1) Duration timeout,
+    @Valid Security security        // 嵌套对象也要 @Valid 才会递归校验
+) {
+    public record Security(@NotEmpty String jwtSecret, @Min(60) long expiresSec) {}
+}
+```
+
+**收益**：配置错了**应用启动失败**而不是上线后运行时崩溃；错误信息精准到字段。Boot 3.x **要求显式引入** `spring-boot-starter-validation`。
+
+### 动态刷新：@RefreshScope（Spring Cloud）
+
+```java
+@RefreshScope                       // ★ Bean 在配置变更时重新创建
+@Component
+public class RateLimiter {
+    @Value("${rate.limit.qps}") int qps;
+}
+```
+
+调用 POST `/actuator/refresh`（或 Nacos / Apollo 推送）后，**只有标了 `@RefreshScope` 的 Bean 重建**，其余 singleton 不受影响。
+
+::: warning ⚠️ @RefreshScope 三大坑
+1. **`@RefreshScope` 是基于代理的作用域** → 与 `@Async` / `@Transactional` 同类失效规则一致（自调用不生效）
+2. **不要在 `@RefreshScope` Bean 上加 `@PostConstruct` 做重资源初始化** → 每次刷新都会重新执行
+3. **被注入 `@RefreshScope` Bean 的其他 singleton 仍持有旧引用** → 必须也注入代理（`@Lazy` 或 `ObjectProvider`）
+:::
 
 ## Actuator 监控
 

@@ -656,6 +656,89 @@ export class CartService {
 }
 ```
 
+#### NgRx vs Signals：Angular 2026 状态管理决策
+
+::: tip 💡 一句话定位
+**"Signals 吃掉了 80% 的 NgRx 应用场景"**——Angular 16+ 的 Signals 让"细粒度响应式状态"不再需要 Redux 风格样板代码。**NgRx 仍适合大型企业应用 + 严格的 Event Sourcing 模式**。
+:::
+
+```
+┌────────────────────────────────────────────────┐
+│ Q1: 服务端数据？                                │
+│   是 → @ngrx/data / TanStack Query (Angular)   │
+│   否 ↓                                         │
+├────────────────────────────────────────────────┤
+│ Q2: 只在一个组件内？                            │
+│   是 → signal() / computed()                   │
+│   否 ↓                                         │
+├────────────────────────────────────────────────┤
+│ Q3: 跨组件简单共享？                            │
+│   是 → 共享 Service + signal（Boot 16+）       │
+│   否 ↓                                         │
+├────────────────────────────────────────────────┤
+│ Q4: 大型应用、需要 Event Sourcing / DevTools？  │
+│   是 → NgRx Store / NgRx Signals Store         │
+│   否（中型）→ ComponentStore / Akita           │
+└────────────────────────────────────────────────┘
+```
+
+| 方案 | 类别 | 2026 趋势 | 适合 |
+|------|------|----------|------|
+| **Signals**（核心 API） | 客户端状态 | 🔥🔥🔥 默认选择 | Angular 16+ 任何新项目 |
+| **NgRx Signals Store** | 客户端状态 | 🔥🔥🔥 NgRx 18+ 新方向 | 中大型项目，受 Signal 加持 |
+| **NgRx Store**（经典）| 客户端状态 | 🔥🔥 仍是企业级首选 | 大型项目、严格 Redux 模式 |
+| **NgRx ComponentStore** | 局部状态 | 🔥 中等 | 复杂组件本地状态 |
+| **Akita / Elf** | 客户端状态 | 🔥 | 偏 ORM 风格 |
+| **RxJS BehaviorSubject** | 简单共享 | 🔥 仍可用 | 中小项目、迁移过渡 |
+
+```typescript
+// ✅ Signal 风格（Angular 16+）：极简
+@Injectable({ providedIn: 'root' })
+export class CartStore {
+  // 状态
+  private readonly _items = signal<CartItem[]>([]);
+
+  // 公开只读
+  readonly items = this._items.asReadonly();
+  readonly itemCount = computed(() =>
+    this._items().reduce((sum, i) => sum + i.quantity, 0)
+  );
+
+  // 动作
+  addItem(item: CartItem): void {
+    this._items.update(curr => {
+      const existing = curr.find(i => i.id === item.id);
+      return existing
+        ? curr.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i)
+        : [...curr, item];
+    });
+  }
+}
+
+// 组件中使用 —— 模板自动追踪依赖
+@Component({
+  template: `<span>{{ cart.itemCount() }}</span>`
+})
+class CartIcon {
+  cart = inject(CartStore);
+}
+```
+
+#### Signal vs RxJS Observable：共存而非替代
+
+| 维度 | **Signal** | **RxJS Observable** |
+|------|-----------|---------------------|
+| **本质** | 同步、可读值（getter） | 异步、值流 |
+| **触发** | 同步读取最新值 | 订阅后异步推送 |
+| **背压** | ❌ 不适用 | ✅ 操作符控制 |
+| **典型场景** | UI 状态、表单值、计算属性 | HTTP 请求、WebSocket、用户事件流 |
+| **互转** | `toSignal(obs$)` / `toObservable(sig)` | 同左 |
+| **变更检测** | **细粒度**（只更新读取的组件） | 依赖 Zone.js / async pipe |
+
+::: warning ⚠️ Zoneless（Angular 18+ 实验、20 稳定）
+启用 Zoneless 后**必须用 Signal 驱动 UI**——RxJS Observable + async pipe 仍工作（async pipe 内部用 Signal 桥接），但**手动 ChangeDetectorRef.markForCheck() 完全失效**。这是迁移 Zoneless 的最大坑。
+:::
+
 ---
 
 ## 面试常问 & 怎么答

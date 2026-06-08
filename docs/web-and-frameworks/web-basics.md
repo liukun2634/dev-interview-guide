@@ -114,6 +114,35 @@ Filter 在请求到达 Servlet 之前和响应返回客户端之前执行，形�
 - 微服务架构下，Session 共享复杂，Token 天然无状态，适合水平扩展
 - 但 Token 也有缺点：无法主动撤销、payload 不宜存敏感数据、刷新机制需要额外设计
 
+## BFF（Backend For Frontend）下的会话与认证
+
+::: tip 💡 2026 新趋势
+**JWT 不是万能解药**。2024-2026 大厂前端架构普遍走向 **BFF + HTTP-Only Cookie + Session ID**（如 Next.js + iron-session、SvelteKit、Nuxt），核心理由是：Token 放 localStorage **天然受 XSS 影响**，而 HTTP-Only Cookie 浏览器 JS 无法读取。
+:::
+
+| 方案 | 适用场景 | 安全弱点 |
+|------|---------|---------|
+| **JWT in localStorage** | 纯 SPA、移动 App、跨域 API | XSS 直接拖走 token；无法主动撤销 |
+| **JWT in HTTP-Only Cookie** | SSR 站点、Same-Site | 需要防 CSRF；体积大占 Cookie 配额 |
+| **Session ID + Redis（BFF 模式）** | Next.js / SvelteKit / Nuxt 全栈 | 需要 BFF 节点；同源部署最佳 |
+| **OAuth2 PKCE + 后端 Cookie** | SPA + 第三方登录 | 实现复杂，但**官方推荐**（取代 Implicit Flow） |
+
+**心智模型**：「**Token 适合 API**，**Cookie 适合页面**」——BFF 把 Token 留在服务端，对浏览器只下发 HTTP-Only Cookie，兼得安全性与水平扩展能力。详见 [Spring Security · OAuth2](./spring-security#oauth2-四种授权模式必背)。
+
+## HTTP/3、Servlet 6 与现代 Web
+
+::: warning ⚠️ 2026 必知
+**Servlet API 6.0（Jakarta EE 10）已是 Spring Boot 3.x 默认**，JSP 已边缘化（新项目几乎不用）。Tomcat 10.1+ 实验性支持 HTTP/3 over QUIC（基于 Netty）；Spring WebFlux + Reactor Netty 是目前最容易跑通 HTTP/3 的栈。
+:::
+
+| 主题 | 现状（2026） | 面试要点 |
+|------|------------|---------|
+| **HTTP/2** | Tomcat 10+ 默认开启、所有主流浏览器原生支持 | 多路复用、Server Push 已废弃 |
+| **HTTP/3 (QUIC)** | Tomcat 实验、Netty 稳定、CDN 全面支持 | UDP 基础、0-RTT、连接迁移 |
+| **JSP / JSTL** | **新项目不再使用**；Thymeleaf / 前后端分离取代 | 面试只考"知道存在过即可" |
+| **Servlet 6.0 异步** | `AsyncContext` 仍可用，但**虚拟线程**让其大幅简化 | Boot 3.2+ 一行 `spring.threads.virtual.enabled=true` |
+| **WebSocket** | Jakarta WebSocket 2.1，Spring `@MessageMapping` + STOMP | 双向通信、心跳保活 |
+
 ## 为什么 Spring 要封装 Servlet
 
 原生 Servlet 开发的痛点：

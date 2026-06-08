@@ -190,14 +190,15 @@ Spring 面试最爱问"XX 什么时候会失效"。理解失效原因就是理�
 | 数据访问与事务 | @Transactional 原理与失效、JPA/MyBatis | 🔥🔥🔥 | [数据访问与事务](./data-access/) |
 | Spring Security | 过滤器链、JWT、RBAC | 🔥🔥 | [Spring Security](./spring-security) |
 | Spring Boot 3 新特性 | Jakarta 迁移、Native Image、虚拟线程 | 🔥 | [Spring Boot 3 新特性](./spring-boot3-new-features) |
-| Spring Cloud 速查 | Nacos、Gateway、Sentinel | 🔥🔥 | [Spring Cloud 速查](./spring-cloud-overview) |
+| Spring Cloud 速查 | Nacos、Gateway、Sentinel、Seata、Micrometer Tracing | 🔥🔥 | [Spring Cloud 速查](./spring-cloud-overview) |
 
 ### 前端：主流框架
 
 | 类别 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
-| React | 组件化、Hooks、虚拟 DOM、状态管理 | 🔥🔥🔥 | [React](./react) |
-| Angular | 模块化、依赖注入、RxJS、变更检测 | 🔥🔥 | [Angular](./angular) |
+| React | 组件化、Hooks、虚拟 DOM、状态管理、RSC、React 19、微前端 | 🔥🔥🔥 | [React](./react) |
+| Angular | 模块化、依赖注入、RxJS、变更检测、Signals、Zoneless | 🔥🔥 | [Angular](./angular) |
+| TypeScript | 类型系统、infer/satisfies、5.x 新特性、Branded Types | 🔥🔥🔥 | [TypeScript](./typescript) |
 
 ---
 

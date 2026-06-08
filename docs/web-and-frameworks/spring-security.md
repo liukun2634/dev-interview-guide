@@ -167,6 +167,83 @@ spring:
 
 核心流程：用户点击"GitHub 登录" → 重定向到 GitHub 授权页 → 用户授权 → GitHub 回调携带 code → Spring Security 用 code 换取 access_token → 获取用户信息 → 创建本地认证。
 
+## OAuth2 Resource Server：JWT vs Opaque Token（高频追问）
+
+::: tip 💡 2026 微服务标准做法
+微服务的"受保护资源"端使用 **Spring Security OAuth2 Resource Server**。Token 有两种存活方式：**自包含 JWT** vs **不透明 Opaque Token**。**面试常问"为什么不全用 JWT"**——答案在下表。
+:::
+
+| 维度 | JWT（自包含 Token） | Opaque Token（不透明 Token） |
+|------|-------------------|----------------------------|
+| **格式** | `Header.Payload.Signature` 可解码 | 随机字符串（如 UUID） |
+| **校验** | **本地公钥验签**（JWKS）| **每次回授权服务器 `/introspect`** |
+| **网络开销** | 0（本地）| 1 次远程调用/请求（可缓存） |
+| **撤销** | ❌ 颁发即生效，**无法主动撤销**（除非黑名单） | ✅ 服务端立即吊销 |
+| **载荷敏感** | 任何人都能 base64 解开看到 claims | 服务端独享 |
+| **吞吐量** | **高**（无远程依赖） | 受授权服务器限流 |
+| **续签** | 短 TTL + Refresh Token | 灵活 |
+| **典型场景** | **大流量 / 公开 API** | **企业内网 / 金融 / 强安全** |
+
+```java
+// JWT 模式
+@Bean
+SecurityFilterChain jwt(HttpSecurity http) throws Exception {
+    return http.oauth2ResourceServer(oauth -> oauth
+        .jwt(jwt -> jwt.jwkSetUri("https://auth.example.com/.well-known/jwks.json"))
+    ).build();
+}
+
+// Opaque 模式
+@Bean
+SecurityFilterChain opaque(HttpSecurity http) throws Exception {
+    return http.oauth2ResourceServer(oauth -> oauth
+        .opaqueToken(o -> o
+            .introspectionUri("https://auth.example.com/oauth2/introspect")
+            .introspectionClientCredentials("client-id", "secret"))
+    ).build();
+}
+```
+
+**金融级混合方案**：① JWT 用于**短生命周期 access token**（5-15 分钟），② 网关层缓存 introspect 结果**模拟撤销**（Token 入黑名单后 5 秒内全网失效），③ Refresh Token 走 `/introspect` 强一致。
+
+## Method Security：@PreAuthorize 与 SpEL 表达式（Boot 3 / Security 6 推荐）
+
+```java
+@Configuration
+@EnableMethodSecurity              // ★ Boot 3 推荐；@EnableGlobalMethodSecurity 已 @Deprecated
+class MethodSecurityConfig {}
+
+@Service
+class OrderService {
+    @PreAuthorize("hasRole('ADMIN')")
+    public void deleteOrder(Long id) { ... }
+
+    @PreAuthorize("hasAuthority('ORDER_READ') and #userId == authentication.principal.id")
+    public Order get(Long id, Long userId) { ... }   // ★ SpEL 引用方法参数 + 当前用户
+
+    @PostAuthorize("returnObject.ownerId == authentication.principal.id")
+    public Order getById(Long id) { ... }            // ★ 校验返回值
+
+    @PreFilter("filterObject.amount < 10000")
+    public void batchApprove(List<Order> orders) { ... }
+}
+```
+
+| 注解 | 时机 | 用途 |
+|------|------|------|
+| `@PreAuthorize` | 方法**调用前** | 最常用；可访问方法参数 |
+| `@PostAuthorize` | 方法**返回后** | 校验返回对象（如"只能看自己的订单"） |
+| `@PreFilter` | 调用前过滤入参集合 | 移除不符合权限的元素 |
+| `@PostFilter` | 返回后过滤返回集合 | 同上但作用于返回值 |
+
+**SpEL 内建变量**：`authentication`（当前认证对象）、`principal`（用户主体）、`#参数名`（方法参数）、`returnObject`（返回值）、`filterObject`（集合元素）。
+
+::: warning ⚠️ Method Security 三大坑
+1. **基于 AOP 代理** → 同类内 `this.xxx()` **不生效**（与 `@Transactional` 同病）
+2. **`@PreAuthorize` 的 SpEL 错误是运行时异常** → 单测必须覆盖每个权限分支
+3. **避免在表达式里查数据库** → 性能差且难维护；改 `PermissionEvaluator` 抽出来
+:::
+
 ## OAuth2 四种授权模式（必背）
 
 **OAuth2 是 2025-2026 年面试中第三方登录、开放平台、统一鉴权场景的必问题**。能讲清楚四种 grant_type 的区别 + 谁用谁，立刻显出深度。

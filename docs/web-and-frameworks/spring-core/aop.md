@@ -260,6 +260,34 @@ public void transfer(Long from, Long to, BigDecimal amount) {
 
 :::
 
+## 虚拟线程时代的 @Async / AOP（Boot 3.2+ 必读）
+
+::: warning ⚠️ 2026 实战陷阱
+Spring Boot 3.2 起 `spring.threads.virtual.enabled=true` 一行开启虚拟线程，**`@Async` 默认 Executor 也切到虚拟线程**。带来两个新问题：
+:::
+
+| 问题 | 原因 | 解决 |
+|------|------|-----|
+| **`@Async` 不再用线程池** | 虚拟线程"用完即弃"，没有池化 | 不再需要 `corePoolSize` 调优；但要小心**没有队列、限流由信号量代替** |
+| **`ThreadLocal` 跨方法漏数据** | 虚拟线程频繁创建销毁，旧的"绑线程上下文"假设失效 | 切到 `ScopedValue`（Java 21+ 预览，25 GA）或 `Context Propagation`（io.micrometer:context-propagation） |
+| **`synchronized` 触发 Pinning** | 虚拟线程被钉到 OS 线程，丢失轻量性 | JDK 24+ 已修复绝大多数 pinning；老库改用 `ReentrantLock` |
+| **AOP 代理跨虚拟线程边界** | 代理对象正常工作，但**事务/SecurityContext 不会自动传递到 `@Async` 内** | 显式传递（DelegatingSecurityContextRunnable / `@WithSpan`） |
+
+**面试黄金答法**：「**虚拟线程时代，AOP 代理本身没变；变的是被代理方法内的"线程上下文"假设——`ThreadLocal` 退场、`ScopedValue` / `Context Propagation` 上位**」。
+
+## Spring AOP vs AspectJ：性能与选型补充
+
+| 指标 | Spring AOP（JDK/CGLIB） | AspectJ（编译期） |
+|------|------------------------|------------------|
+| **调用开销** | 每次方法调用走 invoke 反射 + interceptor 链 | 直接字节码内联，**几乎 0 开销** |
+| **典型基准**（百万次/秒） | ~5-10M | ~50-100M（一个数量级差距） |
+| **冷启动** | 容器创建代理（轻） | 编译期织入（影响构建） |
+| **支持 private/final/构造方法** | ❌ | ✅ |
+| **配置复杂度** | 一行 `@EnableAspectJAutoProxy` | 需配 `aspectjrt` + `aspectj-maven-plugin` |
+| **AOT / Native Image** | Boot 3 已支持 CGLIB AOT 优化 | 编译期织入与 Native 天然契合 |
+
+**何时切 AspectJ**：① 切面被**高频调用**（如每次 RPC、每次 Cache 查找），代理开销不可接受；② 需要切 **`private` / `final` / 构造器**；③ 监控 agent / 性能埋点（LTW + javaagent）；④ Spring Native 极致体积。其余场景 **Spring AOP 完全够用**。
+
 ## 面试常问 & 怎么答
 
 ### Q1: JDK 动态代理和 CGLIB 的区别？

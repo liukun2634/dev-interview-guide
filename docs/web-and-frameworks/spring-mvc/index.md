@@ -63,6 +63,61 @@ HTTP 响应
 
 **执行顺序**：Filter → DispatcherServlet → Interceptor preHandle → Controller → Interceptor postHandle → Interceptor afterCompletion → Filter
 
+## 虚拟线程下的 Spring MVC（Boot 3.2+ 必读）
+
+::: warning ⚠️ 2026 高频追问
+"Spring MVC 加了虚拟线程是不是就和 WebFlux 一样了？" —— **不一样**。MVC 仍是同步阻塞编程模型，虚拟线程只是把"每请求一线程"的代价**从 MB 级降到 KB 级**，让传统写法直接吃到高并发红利，但**编程模型完全不变**。
+:::
+
+| 主题 | 平台线程时代 | 虚拟线程时代 |
+|------|------------|------------|
+| 并发上限 | 几百到几千（线程栈 1MB） | 几十万（虚拟线程栈 KB 级） |
+| `ThreadLocal` | 安全且高效 | **仍可用，但要警惕泄漏**（频繁创建销毁） |
+| `SecurityContextHolder` | `ThreadLocal` 实现，正常 | 仍工作，但 `@Async` 跨线程需显式传 |
+| `synchronized` | 普通锁 | **触发 Pinning**（JDK 24+ 已修复多数） |
+| `RequestContextHolder` | `ThreadLocal` | 仍生效，单请求生命周期内安全 |
+| 阻塞 IO（JDBC / HttpClient） | 占线程 | **释放载体线程**，吞吐量飞跃 |
+
+**一行开启**：
+```yaml
+spring:
+  threads:
+    virtual:
+      enabled: true   # Boot 3.2+，Tomcat / @Async / Scheduled 全部走虚拟线程
+```
+
+**心智模型**：「**JDK 21 + Boot 3.2 后，'Servlet 容器扛不住高并发'这个老论据已经站不住脚——WebFlux 的相对优势主要剩'流式数据' + '背压控制'**」。详见 [Spring WebFlux · 虚拟线程时代的选型](./webflux#虚拟线程时代-webflux-还有必要吗boot-32-必读)。
+
+## HandlerExceptionResolver：异常处理责任链
+
+`@ControllerAdvice` + `@ExceptionHandler` 背后是一条 **HandlerExceptionResolver 链**，按顺序匹配，匹配成功就停止：
+
+```
+异常抛出 → resolveException 责任链 ──┐
+  ① ExceptionHandlerExceptionResolver  ← @ExceptionHandler（最常用）
+  ② ResponseStatusExceptionResolver    ← @ResponseStatus（含 ResponseStatusException）
+  ③ DefaultHandlerExceptionResolver    ← Spring 内置（如 HttpMessageNotReadable → 400）
+  ④ 自定义 HandlerExceptionResolver
+```
+
+| Resolver | 触发 | 典型场景 |
+|----------|------|---------|
+| `ExceptionHandlerExceptionResolver` | `@ExceptionHandler` 方法匹配异常类型 | 业务异常 → 自定义 JSON 错误体 |
+| `ResponseStatusExceptionResolver` | 异常类标了 `@ResponseStatus` 或抛 `ResponseStatusException` | 简单的"业务码 + HTTP 码"映射 |
+| `DefaultHandlerExceptionResolver` | Spring 框架自身的 30+ 种异常 | `MethodArgumentNotValidException` → 400 |
+| 自定义 | 实现 `HandlerExceptionResolver` + `@Order` | 接入告警、统一日志 |
+
+**ProblemDetail（Spring 6 / Boot 3）**：官方推荐用 RFC 9457 标准错误响应：
+```java
+@ExceptionHandler(BusinessException.class)
+ProblemDetail handle(BusinessException ex) {
+    var pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    pd.setProperty("errorCode", ex.getCode());
+    pd.setProperty("traceId", MDC.get("traceId"));
+    return pd;
+}
+```
+
 ## 详细专题
 
 | 专题 | 核心知识点 | 面试频率 | 详细页面 |

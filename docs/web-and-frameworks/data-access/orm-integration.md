@@ -454,6 +454,80 @@ List<User> users = userMapper.selectList(wrapper);
 
 :::
 
+## JdbcClient：Spring 6.1+ 的现代 SQL 客户端
+
+::: tip 💡 2026 新选择
+Spring 6.1 / Boot 3.2 引入 **`JdbcClient`**，一个 **fluent builder** 风格的 JDBC API，**官方推荐替代 `JdbcTemplate` 和 `NamedParameterJdbcTemplate`**。语法更现代，与 record / Optional 友好。
+:::
+
+```java
+@Repository
+class UserRepo {
+    private final JdbcClient client;
+
+    UserRepo(JdbcClient client) { this.client = client; }
+
+    Optional<User> findById(long id) {
+        return client.sql("SELECT * FROM users WHERE id = :id")
+            .param("id", id)
+            .query(User.class)            // 自动映射到 record/POJO
+            .optional();
+    }
+
+    List<User> findActive() {
+        return client.sql("SELECT * FROM users WHERE status = ?")
+            .param(1, "ACTIVE")
+            .query(User.class).list();
+    }
+
+    long insert(User u) {
+        return client.sql("INSERT INTO users(name, email) VALUES(:n, :e)")
+            .param("n", u.name()).param("e", u.email())
+            .update();
+    }
+}
+```
+
+| 维度 | JdbcTemplate | NamedParameterJdbcTemplate | **JdbcClient** |
+|------|--------------|---------------------------|----------------|
+| 参数风格 | `?` 位置参数 | 命名参数 | **两种都支持** |
+| 链式 API | ❌ 大量重载方法 | ❌ | ✅ Fluent Builder |
+| record / POJO | 需手写 RowMapper | 同左 | **`query(MyRecord.class)` 自动映射** |
+| Optional | 需 catch `EmptyResultDataAccessException` | 同左 | **`.optional()` 一行** |
+| 流式 | ❌ | ❌ | `.stream()` 返回 `Stream<T>` |
+
+**选型建议**：① 新项目 / 重构 → **JdbcClient**；② 老代码与 JdbcTemplate 共存即可，无需强行替换；③ 复杂多表查询仍可走 MyBatis（JdbcClient 不提供 ORM 能力）。
+
+## Hibernate 6.x / Spring Data JPA 现代最佳实践
+
+| 主题 | Hibernate 5 时代 | Hibernate 6 / JPA 3.x（Boot 3） |
+|------|----------------|--------------------------------|
+| **包名** | `javax.persistence.*` | `jakarta.persistence.*` |
+| **方言** | 必须指定 `MySQL8Dialect` | **自动检测**（无需配置） |
+| **批量插入** | `hibernate.jdbc.batch_size` + 手动 flush | 同左，但 **`@SQLInsert` 注解** 可写原生批量 |
+| **N+1 解决** | `@EntityGraph` / JPQL `JOIN FETCH` | **`@EntityGraph` 仍是首选**；新增 `@FetchProfile` |
+| **DTO 投影** | `@Query` + 构造器表达式 | **JPA 3.1 `_TypedQueryReference`**，类型更安全 |
+| **records 支持** | ❌ | ✅ **可直接做投影目标**（`interface` 或 `record`） |
+
+::: warning ⚠️ Spring Data JPA 三个 2026 高频坑
+1. **`@Transactional` + `findById` 后改对象** → 自动 dirty check 触发 UPDATE，**忘记 `@Transactional` 不会保存**
+2. **`findAll(Pageable)` 全表 `COUNT(*)`** → 大表慢；改 `Slice<T>` 或显式 `@Query` 不带 count
+3. **`LazyInitializationException`** 仍是 Top 1 → 严禁在 Controller 层访问懒加载关联；用 DTO 投影 / `@EntityGraph` / Open Session In View（**新项目不推荐 OSIV**，已默认关闭）
+:::
+
+## R2DBC 与响应式 ORM 现状（2026）
+
+::: tip 💡 现状速判
+**虚拟线程让 R2DBC 的"必要性"大幅下降**。除非你已经是 WebFlux 栈或追求流式数据，**新项目建议先用 MVC + JDBC/JdbcClient + Loom**。
+:::
+
+| 方案 | 状态 | 适合 |
+|------|------|------|
+| **Spring Data R2DBC** | ✅ 稳定 | WebFlux + 高并发流式查询 |
+| **Hibernate Reactive** | ✅ 稳定 | Quarkus / WebFlux 项目；JPA API 响应式版 |
+| **jOOQ + R2DBC** | ✅ | 强类型 SQL + 响应式 |
+| **MyBatis 响应式** | ❌ 无官方支持 | — |
+
 ## 面试常问 & 怎么答
 
 ### Q1: JPA 和 MyBatis 怎么选？

@@ -533,6 +533,64 @@ type Result = { success: true; data: User } | { success: false; error: string };
 
 ---
 
+## Branded Types：用类型系统强制业务约束（2026 进阶）
+
+::: tip 💡 高阶面试加分项
+**Branded Types（也叫 Nominal Typing 模拟）** 用类型系统在编译期区分"结构相同但语义不同"的类型——比如 `UserId` 与 `OrderId` 都是 `string`，但应该互不兼容。**DDD / 金融 / 后端 BFF 项目越来越多用这个**。
+:::
+
+```typescript
+// ❌ 没有 Branded：string 都是 string，互相能赋值
+type UserId = string;
+type OrderId = string;
+function getOrder(id: OrderId) {}
+const uid: UserId = 'u_1';
+getOrder(uid);    // 编译通过 → 但语义错了！
+
+// ✅ Branded：编译期严格区分
+declare const brand: unique symbol;
+type Brand<T, B> = T & { readonly [brand]: B };
+
+type UserId = Brand<string, 'UserId'>;
+type OrderId = Brand<string, 'OrderId'>;
+
+function asUserId(s: string): UserId { return s as UserId; }
+const uid = asUserId('u_1');
+getOrder(uid);    // ❌ 编译报错：UserId 不能赋给 OrderId
+```
+
+**典型应用**：① ID 类型区分（UserId/OrderId/SkuId）；② 已验证 vs 未验证字符串（`Email` vs `string`、`ValidPassword` vs `string`）；③ 货币单位（`Cents` vs `Dollars`，避免单位错误）；④ Path 类型（`AbsolutePath` vs `RelativePath`）。
+
+## tsconfig 现代必知选项
+
+| 选项 | 何时设 | 作用 |
+|------|--------|------|
+| `"moduleResolution": "bundler"` | **Vite / Webpack / esbuild 工程** | 5.0+ 新模式，模拟打包器解析（无 `.js` 后缀也能 import .ts） |
+| `"moduleResolution": "node16" / "nodenext"` | **Node.js 原生 ESM** | 需要写 `.js` 后缀，模拟 Node 解析 |
+| `"declaration": true` + `"declarationMap": true` | 发布**类型库** | 用户可"跳转到源码"（.d.ts.map） |
+| `"composite": true` + `"references"` | **monorepo / 大项目** | Project References 增量构建（10× 加速） |
+| `"erasableSyntaxOnly": true` | TS 5.8+ **Node 原生执行** TS | 强制只用可擦除语法（无 enum / parameter property） |
+| `"verbatimModuleSyntax": true` | 严格 ESM | `import type` 强制；只移除类型导入，不改 import 语义 |
+| `"noUncheckedIndexedAccess": true` | 任何严肃项目 | `arr[i]` 自动 `T \| undefined`，防越界 |
+
+::: warning ⚠️ `moduleResolution: bundler` 是 2026 主流前端选择
+Vite / Next.js / Astro / SvelteKit 都默认推荐 `bundler`。**老的 `node` / `classic` 选项已 deprecated**，不要再用。
+:::
+
+## 工程化武器库：ts-reset / valibot / tsx
+
+| 工具 | 解决什么 | 何时引入 |
+|------|---------|---------|
+| **`@total-typescript/ts-reset`** | TS 内置类型过宽：`JSON.parse(): any`、`.filter(Boolean) 不去 null`、`Array.includes` 报错 | **任何 strict 项目**（一行 `import '@total-typescript/ts-reset'`） |
+| **`zod` / `valibot`** | 编译期类型 ≠ 运行时校验 | **API 边界 / 表单 / 配置加载** |
+| **`tsx` / `bun`** | 直接执行 .ts 文件，不用 ts-node + tsconfig 折腾 | **脚本 / CLI 工具** |
+| **`twoslash`** | 文档里嵌可执行 TS 代码，鼠标悬停显示类型 | **教程站点 / 团队文档** |
+| **`tRPC` / `drizzle`** | 端到端类型安全（后端类型直达前端） | **TS 全栈 / monorepo** |
+
+**心智模型**：「**TypeScript 不能在运行时给你类型保护——边界处必须有运行时校验**」。这是 2026 顶尖前端面试的"老实底线"。
+
+---
+
 ## 黄金答题模板（必背）
 
 > **面试官：TypeScript 你最熟的是哪些高级特性？**
