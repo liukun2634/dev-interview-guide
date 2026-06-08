@@ -192,6 +192,14 @@ Spring 面试最爱问"XX 什么时候会失效"。理解失效原因就是理�
 | Spring Boot 3 新特性 | Jakarta 迁移、Native Image、虚拟线程 | 🔥 | [Spring Boot 3 新特性](./spring-boot3-new-features) |
 | Spring Cloud 速查 | Nacos、Gateway、Sentinel、Seata、Micrometer Tracing | 🔥🔥 | [Spring Cloud 速查](./spring-cloud-overview) |
 
+### Java 后端框架进阶（Spring 之外）
+
+| 类别 | 核心内容 | 面试频率 | 详细页面 |
+|------|---------|---------|---------|
+| 🔥 Java 云原生 | Quarkus / Micronaut / Helidon vs Spring Boot、Native Image 实测、CRaC | 🔥🔥（外企/云原生） | [Java 云原生框架](./java-cloud-native) |
+| 🔥 Apache Dubbo 3 | Triple 协议、应用级注册、SPI、Dubbo vs Spring Cloud vs gRPC | 🔥🔥🔥（国内必考） | [Apache Dubbo 3](./dubbo) |
+| 响应式 Java | Reactor / RxJava / Vert.x / Mutiny / Pekko、虚拟线程时代选型 | 🔥（金融/网关） | [响应式 Java](./reactive-java) |
+
 ### 前端：主流框架
 
 | 类别 | 核心内容 | 面试频率 | 详细页面 |

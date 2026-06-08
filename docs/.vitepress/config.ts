@@ -418,6 +418,15 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: 'Java 后端框架进阶',
+          collapsed: false,
+          items: [
+            { text: '🔥 Java 云原生（Quarkus / Micronaut / Helidon）', link: '/web-and-frameworks/java-cloud-native' },
+            { text: '🔥 Apache Dubbo 3', link: '/web-and-frameworks/dubbo' },
+            { text: '响应式 Java（Vert.x / Reactor / Mutiny）', link: '/web-and-frameworks/reactive-java' },
+          ],
+        },
+        {
           text: '前端框架',
           collapsed: false,
           items: [
