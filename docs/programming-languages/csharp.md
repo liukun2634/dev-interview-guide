@@ -34,6 +34,251 @@ title: C# 与 .NET 现代特性
 
 ---
 
+## C# 基础语法（必备）
+
+### 1. 类型系统：值类型 vs 引用类型
+
+```csharp
+// 值类型（栈分配）：基本类型 + struct + enum
+int n = 10;
+DateTime dt = DateTime.Now;
+struct Point { public int X, Y; }
+
+// 引用类型（堆分配）：class + string + 数组 + delegate + interface
+class User { public string Name; }
+string s = "hello";
+int[] arr = { 1, 2, 3 };
+
+// 装箱拆箱（性能敏感避免）
+int i = 42;
+object o = i;          // 装箱（堆分配 + 复制）
+int j = (int)o;        // 拆箱
+
+// ✅ 现代 C# 用泛型避免装箱
+List<int> nums;         // 不装箱
+```
+
+### 2. 字符串处理
+
+```csharp
+// 字符串不可变（每次修改产生新对象）
+string s = "Hello";
+s += " World";          // 新对象
+
+// 字符串拼接性能
+// ❌ 循环用 += → O(n²)
+string result = "";
+for (int i = 0; i < 1000; i++) result += i;
+
+// ✅ 用 StringBuilder → O(n)
+var sb = new StringBuilder();
+for (int i = 0; i < 1000; i++) sb.Append(i);
+string result = sb.ToString();
+
+// ✅ 字符串插值（C# 6+）
+string name = "Alice";
+int age = 30;
+var s = $"Hello, {name}, age {age}";
+
+// 原始字符串字面量（C# 11+，类似 Python """）
+var json = """
+{
+    "name": "Alice",
+    "age": 30
+}
+""";
+
+// 跨行 + 插值（C# 11+）
+var sql = $$"""
+SELECT * FROM users WHERE age > {{minAge}}
+""";
+```
+
+### 3. 集合（必背 4 种）
+
+| 集合 | 用途 | 底层 |
+|------|------|------|
+| `List<T>` | 动态数组 | 数组 + 自动扩容 |
+| `Dictionary<K,V>` | 哈希表 | 桶 + 链表 |
+| `HashSet<T>` | 去重集合 | 哈希表 |
+| `Queue<T>` / `Stack<T>` | 队列 / 栈 | 环形数组 / 数组 |
+
+```csharp
+var list = new List<int> { 1, 2, 3 };
+var dict = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 };
+var set = new HashSet<int> { 1, 2, 3 };
+
+// 并发集合（多线程）
+var conDict = new ConcurrentDictionary<int, User>();
+var conQueue = new ConcurrentQueue<int>();
+var conBag = new ConcurrentBag<int>();          // 无序高并发
+```
+
+### 4. OOP 与多态
+
+```csharp
+// 继承 + 多态
+public abstract class Animal {
+    public abstract string Sound();
+    public virtual string Describe() => $"I make {Sound()}";   // virtual 可重写
+}
+
+public class Dog : Animal {
+    public override string Sound() => "Woof";
+    public override string Describe() => $"Dog: {base.Describe()}";   // base 调父
+}
+
+// 接口（推荐组合优于继承）
+public interface IRepository<T> {
+    Task<T?> FindAsync(int id);
+    Task SaveAsync(T entity);
+}
+
+public interface ICacheable {
+    string CacheKey { get; }
+}
+
+public class UserRepository : IRepository<User>, ICacheable {
+    public string CacheKey => "users";
+    public async Task<User?> FindAsync(int id) { ... }
+    public async Task SaveAsync(User user) { ... }
+}
+
+// C# 8+ 接口默认方法
+public interface ILogger {
+    void Log(string msg);
+    void LogError(string msg) => Log($"[ERROR] {msg}");   // ★ 默认实现
+}
+```
+
+### 5. 委托与事件
+
+```csharp
+// 委托 = 类型安全的函数指针
+public delegate int BinaryOp(int a, int b);
+BinaryOp add = (a, b) => a + b;
+add(1, 2);              // 3
+
+// Func / Action / Predicate（内置泛型委托）
+Func<int, int, int> add = (a, b) => a + b;       // 有返回值
+Action<string> log = msg => Console.WriteLine(msg);  // 无返回值
+Predicate<int> isPositive = n => n > 0;            // bool 返回
+
+// 事件
+public class Button {
+    public event EventHandler<ClickEventArgs>? Clicked;
+
+    public void OnClick() {
+        Clicked?.Invoke(this, new ClickEventArgs());   // 触发
+    }
+}
+
+button.Clicked += (sender, args) => Console.WriteLine("clicked");
+```
+
+### 6. Nullable Reference Types（C# 8+，2026 必开）
+
+```csharp
+#nullable enable
+
+string s = null;        // ⚠️ 编译警告
+string? s2 = null;      // ✅ 显式可空
+
+if (s2 != null) {
+    Console.WriteLine(s2.Length);    // ✅ 编译器知非空
+}
+
+// ! 抑制警告（自负其责）
+Console.WriteLine(s2!.Length);
+
+// ?? 空合并 + ??= 赋值
+string name = s2 ?? "anonymous";
+s2 ??= "default";        // null 时赋值
+
+// ?. 安全调用
+int? len = s2?.Length;    // s2 null 时返 null
+```
+
+### 7. 异常处理
+
+```csharp
+try {
+    DoWork();
+}
+catch (FileNotFoundException ex) when (ex.FileName.EndsWith(".json")) {
+    // ★ when 条件过滤（C# 6+）
+    Console.WriteLine("JSON file missing");
+}
+catch (Exception ex) {
+    Console.WriteLine($"Error: {ex.Message}");
+    throw;                  // ★ 保留堆栈，不要 throw ex
+}
+finally {
+    Cleanup();              // 无论是否异常都执行
+}
+
+// using - IDisposable 自动释放
+using var fs = File.OpenRead("data.txt");
+// 离开作用域自动 Dispose
+
+// using statement
+using (var fs = File.OpenRead("data.txt")) {
+    // ...
+}   // 这里 Dispose
+
+// async 资源（IAsyncDisposable）
+await using var conn = new SqlConnection(connStr);
+```
+
+### 8. 反射（Reflection）
+
+```csharp
+// 拿类型信息
+Type type = typeof(User);
+PropertyInfo[] props = type.GetProperties();
+foreach (var p in props) Console.WriteLine(p.Name);
+
+// 运行时创建对象
+object obj = Activator.CreateInstance(type)!;
+
+// 调用方法
+MethodInfo method = type.GetMethod("Greet")!;
+method.Invoke(obj, new object[] { "Alice" });
+
+// 慢，性能敏感场景用 Source Generator 或 expression tree
+```
+
+### 9. 特性（Attributes）— C# 注解
+
+```csharp
+// 定义自定义特性
+[AttributeUsage(AttributeTargets.Method)]
+public class CacheAttribute : Attribute {
+    public int TtlSeconds { get; set; } = 300;
+}
+
+// 使用
+public class UserService {
+    [Cache(TtlSeconds = 600)]
+    public User GetUser(int id) { ... }
+}
+
+// 反射读取
+var attr = typeof(UserService)
+    .GetMethod("GetUser")!
+    .GetCustomAttribute<CacheAttribute>();
+Console.WriteLine(attr?.TtlSeconds);     // 600
+```
+
+**常用内置特性**：
+- `[Obsolete]` — 标记弃用
+- `[Serializable]` — 序列化
+- `[JsonPropertyName]` — JSON 映射
+- `[ApiController]` / `[Route]` / `[HttpGet]` — ASP.NET
+- `[Required]` / `[Range]` — 数据验证
+
+---
+
 ## C# 关键现代语法
 
 ### 1. async / await — 异步核心
@@ -421,6 +666,355 @@ public async ValueTask<int> GetFromCacheAsync(string key) {
     if (cache.TryGet(key, out var value)) return value;       // 同步路径无堆分配
     return await db.QueryAsync(key);
 }
+```
+
+---
+
+## .NET CLR 与 GC 深度
+
+### CLR 内存模型
+
+```text
+┌──────────────────────────────────────┐
+│  Managed Heap（托管堆）                │
+│  ┌──────────────────────────────────┐ │
+│  │ SOH (Small Object Heap)          │ │
+│  │  - Gen 0（新对象）                │ │
+│  │  - Gen 1（短暂存活）              │ │
+│  │  - Gen 2（长期存活）              │ │
+│  └──────────────────────────────────┘ │
+│  ┌──────────────────────────────────┐ │
+│  │ LOH (Large Object Heap)          │ │
+│  │  - 单对象 > 85KB                  │ │
+│  │  - 不压缩，碎片化                 │ │
+│  └──────────────────────────────────┘ │
+│  ┌──────────────────────────────────┐ │
+│  │ POH (Pinned Object Heap, 5.0+)   │ │
+│  │  - GC 钉住对象（互操作）          │ │
+│  └──────────────────────────────────┘ │
+└──────────────────────────────────────┘
+```
+
+### GC 分代回收
+
+```text
+对象创建 → Gen 0
+   ↓ Gen 0 GC（短暂 STW）
+存活下来 → Gen 1
+   ↓ Gen 1 GC（较少）
+长期存活 → Gen 2
+   ↓ Gen 2 GC（全堆扫描，最慢）
+```
+
+**关键事实**：
+- ✅ **80% 对象死在 Gen 0**（短命对象多）
+- ✅ Gen 2 GC 最贵——要降低 Gen 2 GC 频率
+- ✅ Server GC（多线程）vs Workstation GC（单线程）—— 服务端必开 Server GC
+
+### GC 调优（生产必备）
+
+```xml
+<!-- .csproj -->
+<PropertyGroup>
+  <ServerGarbageCollection>true</ServerGarbageCollection>
+  <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+  <RetainVMGarbageCollection>true</RetainVMGarbageCollection>     <!-- 减少 OS 内存分配 -->
+</PropertyGroup>
+```
+
+### LOH 陷阱（必背）
+
+```csharp
+// ❌ 反复分配大数组 → LOH 碎片化
+for (int i = 0; i < 100; i++) {
+    var buffer = new byte[100_000];     // > 85KB 进 LOH
+    // ...
+}
+
+// ✅ 用 ArrayPool 复用
+var pool = ArrayPool<byte>.Shared;
+var buffer = pool.Rent(100_000);
+try {
+    // 使用 buffer
+} finally {
+    pool.Return(buffer);
+}
+```
+
+### GC 监控
+
+```bash
+# 实时 GC 计数
+dotnet counters monitor -p <pid> System.Runtime
+
+# 看 Gen 0/1/2 GC 次数 + 堆大小 + 暂停时间
+# - gen-0-gc-count
+# - gen-1-gc-count
+# - gen-2-gc-count
+# - time-in-gc (%)
+# - gc-heap-size
+```
+
+---
+
+## Entity Framework Core（ORM）
+
+### 基础
+
+```csharp
+// DbContext
+public class AppDbContext : DbContext {
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Order> Orders => Set<Order>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options) {
+        options.UseSqlServer(connStr);
+    }
+}
+
+// 实体
+public class User {
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public List<Order> Orders { get; set; } = new();    // 导航属性
+}
+
+public class Order {
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public decimal Amount { get; set; }
+}
+```
+
+### CRUD
+
+```csharp
+using var db = new AppDbContext();
+
+// Create
+db.Users.Add(new User { Name = "Alice" });
+await db.SaveChangesAsync();
+
+// Read
+var users = await db.Users.Where(u => u.Name.StartsWith("A")).ToListAsync();
+var user = await db.Users.FindAsync(1);            // 按主键
+
+// Update
+user.Name = "Alice2";
+await db.SaveChangesAsync();
+
+// Delete
+db.Users.Remove(user);
+await db.SaveChangesAsync();
+```
+
+### EF 必踩坑
+
+```csharp
+// ❌ N+1 查询
+foreach (var user in db.Users) {
+    foreach (var order in user.Orders) { ... }    // ★ 每个 user 1 次 SQL
+}
+
+// ✅ Include 预加载
+var users = await db.Users
+    .Include(u => u.Orders)
+    .ToListAsync();
+
+// ❌ AsEnumerable 拉全表
+db.Users.AsEnumerable().Where(u => u.Age > 18).ToList();
+
+// ✅ SQL 端过滤
+db.Users.Where(u => u.Age > 18).ToListAsync();
+
+// ❌ 改 tracked 实体不 SaveChanges
+var u = await db.Users.FindAsync(1);
+u.Name = "new";
+// 忘了 await db.SaveChangesAsync(); ★ 不写库
+
+// ✅ AsNoTracking 只读查询（性能高 30-50%）
+var users = await db.Users.AsNoTracking().ToListAsync();
+
+// ✅ 批量更新（EF 7+）
+await db.Users.Where(u => u.Active == false)
+    .ExecuteDeleteAsync();         // 一条 SQL 删全部
+```
+
+---
+
+## ASP.NET Core 工程实战
+
+### 项目结构（推荐）
+
+```text
+MyApp/
+├── src/
+│   ├── MyApp.Api/             ← Web API（Controller / Program.cs）
+│   ├── MyApp.Application/      ← 业务逻辑（Service / DTO / Mapping）
+│   ├── MyApp.Domain/           ← 领域模型（Entity / Value Object）
+│   └── MyApp.Infrastructure/   ← 基础设施（DbContext / 外部 API）
+├── tests/
+│   ├── MyApp.UnitTests/
+│   └── MyApp.IntegrationTests/
+└── MyApp.sln
+```
+
+### 配置体系
+
+```csharp
+// appsettings.json + appsettings.Development.json + 环境变量
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.EntityFrameworkCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "Default": "Server=...;Database=..."
+  },
+  "Jwt": {
+    "Issuer": "my-app",
+    "Audience": "users",
+    "SecretKey": "..."
+  }
+}
+
+// 强类型配置（推荐）
+public class JwtSettings {
+    public string Issuer { get; set; } = "";
+    public string Audience { get; set; } = "";
+    public string SecretKey { get; set; } = "";
+}
+
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+
+// 注入使用
+public class AuthService(IOptions<JwtSettings> options) {
+    private readonly JwtSettings _jwt = options.Value;
+}
+```
+
+### Middleware Pipeline（必懂）
+
+```csharp
+// 顺序极重要！
+app.UseExceptionHandler();              // 1. 异常兜底
+app.UseHttpsRedirection();              // 2. HTTPS 重定向
+app.UseStaticFiles();                   // 3. 静态文件
+app.UseRouting();                       // 4. 路由
+app.UseCors();                          // 5. CORS
+app.UseAuthentication();                // 6. 认证
+app.UseAuthorization();                 // 7. 授权（必须在 Auth 之后）
+app.UseRateLimiter();                   // 8. 限流
+app.MapControllers();                   // 9. 路由到控制器
+```
+
+### 集成测试
+
+```csharp
+public class UserApiTests : IClassFixture<WebApplicationFactory<Program>> {
+    private readonly WebApplicationFactory<Program> _factory;
+
+    public UserApiTests(WebApplicationFactory<Program> factory) {
+        _factory = factory.WithWebHostBuilder(builder => {
+            builder.ConfigureServices(services => {
+                // 替换 DB 为 in-memory
+                services.RemoveAll<DbContextOptions<AppDbContext>>();
+                services.AddDbContext<AppDbContext>(opt =>
+                    opt.UseInMemoryDatabase("test"));
+            });
+        });
+    }
+
+    [Fact]
+    public async Task GetUser_ReturnsOk() {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/users/1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+}
+```
+
+### 单元测试（xUnit + Moq）
+
+```csharp
+public class UserServiceTests {
+    [Fact]
+    public async Task FindUser_Returns_User() {
+        // Arrange
+        var mockRepo = new Mock<IUserRepository>();
+        mockRepo.Setup(r => r.FindAsync(1))
+                .ReturnsAsync(new User { Id = 1, Name = "Alice" });
+
+        var service = new UserService(mockRepo.Object);
+
+        // Act
+        var user = await service.FindUserAsync(1);
+
+        // Assert
+        Assert.NotNull(user);
+        Assert.Equal("Alice", user.Name);
+        mockRepo.Verify(r => r.FindAsync(1), Times.Once);
+    }
+}
+```
+
+---
+
+## NuGet 包管理与项目工程
+
+### 常用包（2026 标配）
+
+| 类别 | 包 |
+|------|------|
+| **Web** | Microsoft.AspNetCore.App |
+| **EF Core** | Microsoft.EntityFrameworkCore.SqlServer / .Sqlite / .Npgsql |
+| **JSON** | System.Text.Json（默认）/ Newtonsoft.Json（老项目）|
+| **Logging** | Serilog / NLog |
+| **HTTP Client** | Refit（声明式）/ Polly（重试熔断）|
+| **测试** | xUnit / Moq / FluentAssertions / Bogus（mock data）|
+| **缓存** | StackExchange.Redis / Microsoft.Extensions.Caching |
+| **消息** | MassTransit（RabbitMQ/Kafka 抽象）|
+| **API 文档** | Swashbuckle / NSwag |
+| **认证** | Microsoft.AspNetCore.Authentication.JwtBearer |
+| **校验** | FluentValidation |
+| **Mapping** | AutoMapper / Mapster |
+| **AI** | Microsoft.SemanticKernel / Microsoft.Extensions.AI |
+| **可观测性** | OpenTelemetry.Extensions.Hosting |
+
+### .csproj 实战
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PublishAot>true</PublishAot>             <!-- Native AOT -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+  </ItemGroup>
+</Project>
+```
+
+### .NET CLI
+
+```bash
+dotnet new webapi -n MyApp           # 创建项目
+dotnet add package Serilog            # 加包
+dotnet restore                         # 还原依赖
+dotnet build                           # 编译
+dotnet run                             # 运行
+dotnet test                            # 测试
+dotnet publish -r linux-x64 -c Release -p:PublishAot=true   # Native AOT 发布
+dotnet ef migrations add InitialCreate # EF 迁移
+dotnet ef database update              # 应用迁移
 ```
 
 ---

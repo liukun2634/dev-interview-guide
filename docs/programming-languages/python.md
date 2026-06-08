@@ -34,6 +34,349 @@ title: Python 现代特性
 
 ---
 
+## Python 基础（必备）
+
+### 1. 数据类型
+
+```python
+# 基本类型
+n = 42                    # int（任意精度，无溢出）
+f = 3.14                  # float
+b = True                  # bool
+s = "hello"               # str（不可变）
+none = None
+
+# 集合（必背 4 种）
+lst = [1, 2, 3]                          # list（动态数组）
+tup = (1, 2, 3)                          # tuple（不可变）
+dct = {"a": 1, "b": 2}                   # dict（哈希表，3.7+ 保持插入顺序）
+st = {1, 2, 3}                           # set（去重）
+fz = frozenset([1, 2, 3])                # 不可变 set
+
+# 推导式（必背）
+squares = [x**2 for x in range(10)]
+evens = [x for x in range(20) if x % 2 == 0]
+d = {x: x**2 for x in range(5)}
+s = {x for x in range(10) if x % 2}
+
+# 生成器表达式（lazy，省内存）
+gen = (x**2 for x in range(1_000_000))   # ★ 不一次性算出
+sum(x**2 for x in range(1_000_000))      # 流式计算
+```
+
+### 2. 可变 vs 不可变（必背）
+
+```python
+# 不可变: int / float / bool / str / tuple / frozenset
+# 可变:   list / dict / set / 自定义类
+
+# 函数传参 = 传"对象引用"
+def append(lst):
+    lst.append(99)                       # ★ 修改外部 list
+
+l = [1, 2, 3]
+append(l)
+print(l)                                  # [1, 2, 3, 99]
+
+# 但赋值新对象不会改外部
+def reassign(lst):
+    lst = [100]                           # ★ 本地变量重新绑定
+
+reassign(l)
+print(l)                                  # [1, 2, 3, 99]（外部未变）
+
+# is vs ==
+a = [1, 2, 3]
+b = [1, 2, 3]
+a == b                                    # True（值相等）
+a is b                                    # False（不同对象）
+
+# 小整数缓存（-5 到 256）
+x = 100
+y = 100
+x is y                                    # True（缓存）
+x = 1000
+y = 1000
+x is y                                    # 可能 False（看实现）
+
+# 永远只用 `is` 比较 None / True / False
+if x is None: ...                         # ✅
+if x == None: ...                         # ❌
+```
+
+### 3. 字符串操作
+
+```python
+s = "Hello, World"
+
+# 切片
+s[0]                                      # 'H'
+s[-1]                                     # 'd'
+s[0:5]                                    # 'Hello'
+s[::-1]                                   # 'dlroW ,olleH'（反转）
+s[::2]                                    # 'HloWrd'（每 2 个取 1）
+
+# 方法
+s.upper()                                 # 'HELLO, WORLD'
+s.split(', ')                             # ['Hello', 'World']
+', '.join(['a', 'b', 'c'])                # 'a, b, c'
+s.replace('l', 'L')                       # 'HeLLo, WorLd'
+s.startswith('Hello')                     # True
+
+# f-string（必背，3.6+）
+name = "Alice"
+age = 30
+f"Hello {name}, age {age}"
+f"{name=}, {age=}"                        # "name='Alice', age=30"（3.8+ 调试）
+f"{value:.2f}"                            # 格式化
+f"{n:,}"                                  # 千分位 1,234,567
+```
+
+### 4. OOP（面向对象）
+
+```python
+# 类定义
+class User:
+    """用户类"""
+    # 类变量（所有实例共享）
+    count = 0
+
+    def __init__(self, name: str, age: int):
+        # 实例变量
+        self.name = name
+        self.age = age
+        User.count += 1
+
+    def greet(self) -> str:
+        return f"Hello, I'm {self.name}"
+
+    @classmethod                          # 类方法
+    def from_dict(cls, d: dict) -> "User":
+        return cls(d["name"], d["age"])
+
+    @staticmethod                         # 静态方法
+    def is_adult(age: int) -> bool:
+        return age >= 18
+
+    @property                             # 属性
+    def age_group(self) -> str:
+        return "adult" if self.age >= 18 else "minor"
+
+    def __repr__(self) -> str:            # 调试输出
+        return f"User({self.name!r}, {self.age})"
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, User) and self.name == other.name
+
+# 继承
+class Admin(User):
+    def __init__(self, name: str, age: int, permissions: list[str]):
+        super().__init__(name, age)
+        self.permissions = permissions
+
+# 抽象基类
+from abc import ABC, abstractmethod
+
+class Animal(ABC):
+    @abstractmethod
+    def sound(self) -> str: ...
+
+class Dog(Animal):
+    def sound(self) -> str: return "Woof"
+```
+
+### 5. dataclass（替代手写 `__init__`）
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class User:
+    name: str
+    age: int
+    tags: list[str] = field(default_factory=list)
+
+# 自动生成 __init__ / __repr__ / __eq__
+u1 = User("Alice", 30)
+u2 = User("Alice", 30)
+u1 == u2                                  # True
+
+# 不可变 dataclass
+@dataclass(frozen=True)
+class Point:
+    x: float
+    y: float
+
+# 现代替代品: Pydantic v2（含运行时校验）
+```
+
+### 6. 装饰器（Decorator，必背）
+
+```python
+import functools
+import time
+
+# 函数装饰器
+def timing(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        print(f"{func.__name__} took {time.time() - start:.3f}s")
+        return result
+    return wrapper
+
+@timing
+def slow_func():
+    time.sleep(1)
+
+slow_func()                               # slow_func took 1.001s
+
+# 带参数装饰器
+def retry(times: int = 3):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for i in range(times):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i == times - 1: raise
+                    print(f"retry {i+1}: {e}")
+        return wrapper
+    return decorator
+
+@retry(times=5)
+def unreliable_api(): ...
+
+# 类装饰器
+@dataclass                                 # ★ 内置
+@functools.lru_cache(maxsize=128)          # ★ 缓存（自动 LRU）
+def fib(n: int) -> int:
+    return n if n < 2 else fib(n-1) + fib(n-2)
+```
+
+### 7. 生成器与迭代器
+
+```python
+# 生成器函数（yield）
+def fib():
+    a, b = 0, 1
+    while True:
+        yield a
+        a, b = b, a + b
+
+g = fib()
+[next(g) for _ in range(10)]              # [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+
+# 自定义迭代器
+class Range:
+    def __init__(self, start, end):
+        self.current = start
+        self.end = end
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.current >= self.end:
+            raise StopIteration
+        v = self.current
+        self.current += 1
+        return v
+
+for x in Range(0, 5): print(x)
+```
+
+### 8. 上下文管理器（with 语句）
+
+```python
+# 自动资源管理（类似 C++ RAII / C# using）
+with open("file.txt") as f:
+    data = f.read()
+# 离开 with 自动 close
+
+# 自定义
+class DBConnection:
+    def __enter__(self):
+        self.conn = connect()
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.conn.close()
+        return False                       # False = 异常继续向上抛
+
+with DBConnection() as conn:
+    conn.query(...)
+
+# 装饰器版（contextlib）
+from contextlib import contextmanager
+
+@contextmanager
+def timer():
+    start = time.time()
+    yield
+    print(f"elapsed {time.time() - start:.3f}s")
+
+with timer():
+    slow_work()
+```
+
+### 9. 异常处理
+
+```python
+try:
+    result = risky()
+except (ValueError, TypeError) as e:      # 多个异常类型
+    print(f"validation: {e}")
+except Exception as e:
+    print(f"unknown: {e}")
+    raise                                  # 重抛
+else:
+    print("no exception")                  # try 成功才执行
+finally:
+    cleanup()                              # 无论是否异常都执行
+
+# 自定义异常
+class ApiError(Exception):
+    def __init__(self, code: int, msg: str):
+        super().__init__(msg)
+        self.code = code
+
+raise ApiError(404, "not found")
+
+# Exception Groups（Python 3.11+）
+try:
+    raise ExceptionGroup("multi", [ValueError("v"), TypeError("t")])
+except* ValueError as eg:
+    print("caught V:", eg.exceptions)
+except* TypeError as eg:
+    print("caught T:", eg.exceptions)
+```
+
+### 10. match 模式匹配（Python 3.10+）
+
+```python
+def handle(obj):
+    match obj:
+        case None:
+            return "null"
+        case int() if obj < 0:                    # ★ guard
+            return "negative"
+        case int():
+            return f"int {obj}"
+        case [first, *rest]:                       # 列表模式
+            return f"list head={first}"
+        case {"name": name, "age": age}:           # 字典模式
+            return f"person {name}/{age}"
+        case User(name=name) if age >= 18:         # 类模式
+            return f"adult {name}"
+        case _:
+            return "unknown"
+```
+
+---
+
 ## GIL 与 Free-Threaded（2026 必背 Top 题）
 
 ### GIL（Global Interpreter Lock）是什么
@@ -473,6 +816,309 @@ result = con.execute("""
 ```
 
 **2026 数据科学栈**：**uv + Polars + DuckDB + Pydantic + FastAPI**——全是高性能工具替代老路线。
+
+---
+
+## 虚拟环境与包管理
+
+### 历史演进
+
+```text
+2008 - pip          基础包安装
+2011 - virtualenv   隔离环境
+2012 - venv         标准库 (PEP 405)
+2017 - pipenv       Pipfile + lock
+2018 - poetry       项目管理 + lock + 发布
+2024 - uv           Rust 写、10-100× 速度 ← 2026 推荐
+```
+
+### venv（标准库，仍然适合简单场景）
+
+```bash
+# 创建
+python -m venv .venv
+
+# 激活
+source .venv/bin/activate                # Linux/Mac
+.venv\Scripts\activate                    # Windows
+
+# 退出
+deactivate
+
+# 装包
+pip install fastapi pydantic
+pip freeze > requirements.txt
+
+# 复现
+pip install -r requirements.txt
+```
+
+### uv（2026 推荐，前面已讲）
+
+```bash
+uv init my-app && cd my-app
+uv add fastapi 'sqlalchemy[asyncio]'
+uv sync
+uv run python app.py
+uv python install 3.13
+uv python pin 3.13
+```
+
+### pyproject.toml（PEP 621，现代标准）
+
+```toml
+[project]
+name = "my-app"
+version = "0.1.0"
+description = "My awesome app"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2.6",
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "mypy", "ruff"]
+
+[project.scripts]
+my-app = "my_app.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+strict = true
+```
+
+---
+
+## 测试（pytest 事实标准）
+
+### 基础
+
+```python
+# test_user.py
+import pytest
+from app.user import User
+
+def test_user_create():
+    u = User("Alice", 30)
+    assert u.name == "Alice"
+    assert u.age == 30
+
+def test_user_greet():
+    u = User("Alice", 30)
+    assert u.greet() == "Hello, I'm Alice"
+
+# 参数化测试
+@pytest.mark.parametrize("age,expected", [
+    (10, "minor"),
+    (20, "adult"),
+    (65, "adult"),
+])
+def test_age_group(age, expected):
+    assert User("X", age).age_group == expected
+
+# 异常测试
+def test_invalid_age():
+    with pytest.raises(ValueError, match="invalid age"):
+        User("X", -1)
+```
+
+### Fixture（必背）
+
+```python
+@pytest.fixture
+def db():
+    """每个测试函数前后执行"""
+    conn = connect()
+    yield conn
+    conn.close()
+
+@pytest.fixture(scope="session")        # session / module / class / function
+def expensive_resource():
+    resource = create_expensive_thing()
+    yield resource
+    resource.cleanup()
+
+def test_query(db):
+    assert db.query("SELECT 1") == 1
+```
+
+### 异步测试
+
+```python
+import pytest
+
+@pytest.mark.asyncio
+async def test_async_fetch():
+    result = await fetch_data("url")
+    assert result is not None
+```
+
+### Mock
+
+```python
+from unittest.mock import Mock, AsyncMock, patch
+
+def test_user_service():
+    mock_db = Mock()
+    mock_db.find_user.return_value = User("Alice", 30)
+    
+    service = UserService(mock_db)
+    user = service.get_user(1)
+    
+    assert user.name == "Alice"
+    mock_db.find_user.assert_called_once_with(1)
+
+# patch 装饰器
+@patch("app.user.requests.get")
+def test_fetch(mock_get):
+    mock_get.return_value.json.return_value = {"name": "Alice"}
+    result = fetch_user(1)
+    assert result["name"] == "Alice"
+```
+
+### 运行
+
+```bash
+pytest                              # 跑所有 test_*.py
+pytest tests/test_user.py            # 单文件
+pytest -k "test_user"                # 按名字过滤
+pytest -v                            # 详细
+pytest -x                            # 第一个失败就停
+pytest --cov=app --cov-report=html   # 覆盖率（需 pytest-cov）
+pytest -n auto                       # 并行（需 pytest-xdist）
+```
+
+---
+
+## 日志与调试
+
+### logging（标准库）
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+logger.info("started")
+logger.warning("low memory: %s MB", 200)
+logger.error("failed", exc_info=True)            # 包含 stack trace
+
+# 结构化日志（生产推荐 structlog）
+import structlog
+
+log = structlog.get_logger()
+log.info("user.login", user_id=42, ip="1.2.3.4")
+# {"event": "user.login", "user_id": 42, "ip": "1.2.3.4", "timestamp": "..."}
+```
+
+### pdb / ipdb（断点调试）
+
+```python
+def buggy():
+    x = 10
+    y = 20
+    breakpoint()                          # ★ Python 3.7+ 内置（默认调 pdb）
+    z = x + y
+    return z
+
+# pdb 命令：
+# n - 下一行 / s - 步入 / c - 继续 / l - 列出代码
+# p var - 打印变量 / pp var - 美打 / q - 退出
+```
+
+### 性能分析
+
+```python
+import cProfile
+import pstats
+
+# 函数级 profile
+cProfile.run("slow_function()", "profile.out")
+stats = pstats.Stats("profile.out").sort_stats("cumtime")
+stats.print_stats(20)
+
+# 行级（line_profiler）
+@profile                                  # ★ 用 kernprof -l 跑
+def hot_function(): ...
+
+# 内存（memray，2024 主流）
+pip install memray
+memray run script.py
+memray flamegraph memray-script.bin       # 生成内存火焰图
+```
+
+---
+
+## Python 内存模型与 GC
+
+### 引用计数（主要回收机制）
+
+```python
+import sys
+
+a = [1, 2, 3]
+sys.getrefcount(a)                        # 2（变量 + getrefcount 参数）
+
+b = a
+sys.getrefcount(a)                        # 3
+
+del b
+sys.getrefcount(a)                        # 2
+```
+
+**特点**：
+- ✅ 引用 = 0 立即回收（确定性）
+- ❌ 无法处理**循环引用** → 需要 GC 兜底
+
+### 循环 GC（generational）
+
+```text
+3 代分代:
+   Gen 0 - 新对象（频繁扫描）
+   Gen 1 - 存活的提升
+   Gen 2 - 长期存活
+```
+
+```python
+import gc
+
+gc.collect()                              # 手动触发
+gc.disable()                              # 高性能场景禁用
+gc.set_threshold(700, 10, 10)             # 调阈值
+gc.get_stats()                            # 看统计
+```
+
+### 内存泄漏排查
+
+```python
+# tracemalloc（标准库）
+import tracemalloc
+
+tracemalloc.start()
+# ... 业务代码 ...
+snapshot = tracemalloc.take_snapshot()
+top = snapshot.statistics("lineno")[:10]
+for stat in top:
+    print(stat)
+
+# objgraph 看对象引用图
+import objgraph
+objgraph.show_most_common_types()
+objgraph.show_backrefs([obj], filename="refs.png")
+```
 
 ---
 
