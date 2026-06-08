@@ -4,7 +4,13 @@ title: Web 基础
 
 # Web 基础
 
-理解 Spring 之前必须搞清的 Web 底层知识。Servlet 是 Java Web 的基石，Spring MVC 本质上是对 Servlet 的封装。
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--medium">🔥 中频</span>
+
+::: tip 💡 核心要点
+Servlet 是 Java Web 的基石，Spring MVC 本质上是对 Servlet 的封装。掌握 **Servlet 生命周期**、**Filter vs Interceptor**、**Cookie/Session/Token 选型** 是理解后面所有 Spring 框架的前提。2026 还要补 **BFF 架构** 和 **HTTP/3 + Servlet 6** 现状。
+:::
+
+---
 
 ## 概念
 

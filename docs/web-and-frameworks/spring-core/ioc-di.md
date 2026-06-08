@@ -4,6 +4,14 @@ title: IoC 与依赖注入
 
 # IoC 与依赖注入
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Spring 最核心的概念：**对象不再 `new`，而由容器创建并注入依赖**。面试 Top 3：**三种注入方式选择**、**循环依赖三级缓存**、**@Primary / @Qualifier / @Resource 4 步消歧义**。2026 进阶：**ObjectProvider 全家桶** 与 **函数式 Bean 注册（BeanRegistrar 6.2+）**。
+:::
+
+---
+
 ## 核心思想
 
 **IoC（Inversion of Control，控制反转）**：对象的创建和依赖关系由 Spring 容器管理，而非对象自己 `new`。

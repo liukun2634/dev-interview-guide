@@ -4,7 +4,13 @@ title: Spring Cloud 速查
 
 # Spring Cloud 速查
 
-微服务基础设施的 Spring 实现。本节为轻量速查，覆盖核心组件和面试常考点。深度内容参见 [微服务架构](../system-design/microservices)。
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+微服务基础设施的 Spring 实现。**Netflix 全家桶（Eureka / Zuul / Hystrix）已 EOL**，2026 新项目用 **Nacos / Gateway / Sentinel / Seata / Resilience4j**。可观测性走 **Micrometer Tracing（Sleuth 已 EOL）+ OTLP + W3C TraceContext**。深度内容参见 [微服务架构](../system-design/microservices)。
+:::
+
+---
 
 ## 概念
 

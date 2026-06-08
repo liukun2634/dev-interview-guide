@@ -4,6 +4,14 @@ title: 事务管理与传播行为
 
 # 事务管理与传播行为
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+`@Transactional` 是面试**永恒 Top 1**。核心三问：**7 种传播行为（REQUIRED / REQUIRES_NEW / NESTED 必背）**、**5 大失效场景（自调用、非 public、异常吞、引擎不支持、rollbackFor 漏写）**、**`readOnly / timeout / rollbackOnly` 生产用法**。2026 必补：**虚拟线程下的事务陷阱**、**NESTED + Savepoint 局部回滚**。
+:::
+
+---
+
 ## 声明式事务 vs 编程式事务
 
 | 方式 | 实现 | 适用场景 |

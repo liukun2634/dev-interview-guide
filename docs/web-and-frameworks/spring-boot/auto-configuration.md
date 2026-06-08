@@ -4,6 +4,14 @@ title: 自动配置原理
 
 # 自动配置原理
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Spring Boot 面试 Top 1 题：**自动配置原理**。关键链路：`@SpringBootApplication` → `@EnableAutoConfiguration` → **`AutoConfiguration.imports`（Boot 3）** / `spring.factories`（Boot 2）→ **`@Conditional` 系列条件注解** → 注册 Bean。理解 **SPI 机制** + **SpringApplication.run 7 大启动阶段** 是高级岗加分项。
+:::
+
+---
+
 ## @SpringBootApplication 拆解
 
 ```java

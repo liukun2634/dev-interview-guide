@@ -4,6 +4,14 @@ title: 请求处理流程
 
 # 请求处理流程
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Spring MVC 一个请求的**完整 8 步流程**：DispatcherServlet → HandlerMapping → HandlerAdapter → Interceptor → Controller → 返回值处理 → ViewResolver → 渲染。面试核心：**HandlerMapping vs HandlerAdapter 各自职责**、**@Valid vs @Validated 分组校验**、**自定义 ArgumentResolver 实现透明参数注入**。
+:::
+
+---
+
 ## DispatcherServlet 完整流程
 
 一个 HTTP 请求在 Spring MVC 中的处理流程：

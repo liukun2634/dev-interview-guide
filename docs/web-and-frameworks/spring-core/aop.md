@@ -4,6 +4,14 @@ title: AOP 原理与实践
 
 # AOP 原理与实践
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+AOP 把 **横切关注点**（日志/事务/缓存/权限）从业务代码抽离。**Spring AOP = 运行时代理（JDK / CGLIB）**；**AspectJ = 编译期 / 类加载期织入**。面试核心：**5 大失效场景**（自调用、非 public、final、非 Bean、内部类）都是同一个原因 —— **不走代理就不生效**。2026 必补：**虚拟线程时代 @Async / ThreadLocal 陷阱**。
+:::
+
+---
+
 ## 核心概念
 
 AOP（Aspect-Oriented Programming，面向切面编程）把散布在多个类中的横切逻辑（日志、事务、权限）抽取到一个地方统一处理。

@@ -4,6 +4,14 @@ title: RESTful API 设计
 
 # RESTful API 设计
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+REST 的本质是**以资源为中心 + 用 HTTP 动词表达操作**。面试高频：**REST 六大原则**、**幂等性（PUT/PATCH/DELETE）**、**401 vs 403 区别**、**API 版本管理 3 种方式**。2026 必补：**OpenAPI 3.1 + springdoc**（springfox 已 EOL）、**REST vs GraphQL vs gRPC 选型矩阵**。
+:::
+
+---
+
 <span class="dig-tag dig-tag--category">Web 与框架</span>
 <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span>
 <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
@@ -300,6 +308,8 @@ API 设计不只有 REST。**2024-2026 大厂普遍三套并存**：对外 REST�
   </div>
 </div>
 
+## 面试常问 & 怎么答
+
 ### Q1: RESTful 设计原则
 
 **核心三条（必背）：**
@@ -328,3 +338,13 @@ API 设计不只有 REST。**2024-2026 大厂普遍三套并存**：对外 REST�
 - [RESTful API 设计规范 - Microsoft REST API Guidelines](https://github.com/microsoft/api-guidelines/blob/vNext/azure/Guidelines.md)
 - [HTTP API Design Guide - Heroku](https://github.com/interagent/http-api-design)
 - [Roy Fielding 博士论文：Architectural Styles and the Design of Network-based Software Architectures](https://ics.uci.edu/~fielding/pubs/dissertation/top.htm)
+
+## 看到什么就先想到这类
+
+- 出现 GET / POST / PUT / PATCH / DELETE 的语义对比 → REST 方法语义
+- 出现 401 vs 403、状态码分类 → HTTP 状态码规范
+- 出现 PUT vs PATCH、幂等性 → REST 幂等性原则
+- 出现 `/api/v1/`、API 版本、Accept Header → API 版本管理
+- 出现 Swagger / springfox / OpenAPI → API 文档（**新项目用 springdoc-openapi**）
+- 出现 GraphQL、gRPC、tRPC → REST 替代方案选型矩阵
+- 出现 HATEOAS、超媒体 → REST 成熟度模型 Richardson L3

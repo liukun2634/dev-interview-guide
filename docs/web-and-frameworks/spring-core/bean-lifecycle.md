@@ -4,6 +4,14 @@ title: Bean 生命周期与作用域
 
 # Bean 生命周期与作用域
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Bean 从生到死的 **8 步生命周期**（高级追问 13 步）是面试 Top 1 题。关键时机：**@Autowired 在属性填充阶段**、**@PostConstruct 在 init 前置处理**、**AOP 代理在 init 后置处理**。理解了这条时间线，就能解释循环依赖、@Transactional 失效、BeanPostProcessor 等几乎所有 Spring 高阶问题。
+:::
+
+---
+
 ## Bean 完整生命周期
 
 一个 Spring Bean 从创建到销毁经历以下阶段：

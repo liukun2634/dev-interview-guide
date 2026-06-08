@@ -4,7 +4,13 @@ title: Spring Security
 
 # Spring Security
 
-Spring 的安全框架，核心是基于 Servlet Filter 的过滤器链。理解过滤器链架构是掌握 Spring Security 的关键。
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Spring 安全框架，底层是 **Servlet Filter 过滤器链**。面试三大重点：**认证流程（AuthenticationManager → Provider → UserDetailsService）**、**JWT 实现思路 + 5 大坑**、**OAuth2 四种授权模式**。2026 必补：**Security 5→6 Lambda DSL 迁移**、**OAuth2 Resource Server JWT vs Opaque 决策**、**Method Security `@PreAuthorize` SpEL**。
+:::
+
+---
 
 ## 概念
 

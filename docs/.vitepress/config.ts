@@ -351,23 +351,11 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'Spring Security',
+          text: 'Spring 进阶专题',
           collapsed: false,
           items: [
             { text: 'Spring Security', link: '/web-and-frameworks/spring-security' },
-          ],
-        },
-        {
-          text: 'Spring Boot 3 与新特性',
-          collapsed: false,
-          items: [
             { text: 'Spring Boot 3 新特性', link: '/web-and-frameworks/spring-boot3-new-features' },
-          ],
-        },
-        {
-          text: 'Spring Cloud 速查',
-          collapsed: false,
-          items: [
             { text: 'Spring Cloud 速查', link: '/web-and-frameworks/spring-cloud-overview' },
           ],
         },

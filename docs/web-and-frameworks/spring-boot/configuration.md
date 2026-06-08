@@ -4,6 +4,14 @@ title: 配置体系与 Profile
 
 # 配置体系与 Profile
 
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+配置加载优先级、Profile 机制、`@Value` vs `@ConfigurationProperties` 是面试三连。2026 必背：**`spring.config.import`（Boot 2.4+ 替代 `bootstrap.yml`）**、**`@ConfigurationProperties + @Validated` 启动期校验**、**`@RefreshScope` 3 大坑**。生产经验：环境变量覆盖文件、不暴露 `/actuator/env`。
+:::
+
+---
+
 ## 配置文件格式
 
 Spring Boot 支持两种格式，功能等价：

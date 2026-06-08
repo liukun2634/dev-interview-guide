@@ -4,7 +4,13 @@ title: Spring Boot 3 新特性
 
 # Spring Boot 3 新特性
 
-Spring 6 / Spring Boot 3 引入了多项重要变化。这些新特性是近年面试中的新增热点。
+<span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
+
+::: tip 💡 核心要点
+Spring Boot 3（2022.11 GA）是 2014 以来**最大断代升级**。核心变化：**JDK 17 强制**、**Jakarta EE 9（`javax → jakarta`）**、**GraalVM Native Image 一等公民**、**虚拟线程（Boot 3.2+）一行开启**、**Observability 重构（Micrometer Observation）**、**ProblemDetail（RFC 9457）**、**Spring AI（2024-2025 重磅）**。2026 主流已到 3.4+。
+:::
+
+---
 
 ## 概念
 
