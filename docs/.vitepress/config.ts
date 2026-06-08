@@ -284,6 +284,7 @@ export default withMermaid(defineConfig({
             { text: '消息队列', link: '/engineering-practice/message-queue' },
             { text: '微服务治理', link: '/engineering-practice/microservice-governance' },
             { text: '监控与可观测性', link: '/engineering-practice/monitoring-observability' },
+            { text: '🔥 CPU / 内存 100% 排查（系统+Java+AKS）', link: '/engineering-practice/cpu-memory-troubleshooting' },
             { text: '分布式 ID 生成', link: '/engineering-practice/distributed-id' },
           ],
         },
