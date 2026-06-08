@@ -33,6 +33,286 @@ title: C++ 现代特性
 
 ---
 
+## C++ 基础（必备）
+
+### 1. 基本类型与初始化
+
+```cpp
+// 基本类型
+int n = 42;
+double d = 3.14;
+char c = 'A';
+bool b = true;
+std::string s = "hello";       // ★ 不是基本类型，是 std::string
+
+// 4 种初始化（必背）
+int a = 5;                      // 拷贝初始化
+int b(5);                       // 直接初始化
+int c{5};                       // ★ 列表初始化（C++11，推荐）
+int d = {5};                    // 拷贝列表初始化
+
+// 列表初始化优势：禁止窄化转换
+int x{3.14};                    // ❌ 编译错（避免精度丢失）
+int y = 3.14;                   // ⚠️ 通过但截断
+
+// auto 自动推导（C++11）
+auto i = 42;                    // int
+auto v = std::vector<int>{1,2,3};
+auto p = std::make_unique<User>("Alice");
+
+// constexpr 编译期常量
+constexpr int N = 100;
+constexpr auto fib(int n) -> int {
+    return n < 2 ? n : fib(n-1) + fib(n-2);
+}
+constexpr int x = fib(10);      // ★ 编译期计算
+```
+
+### 2. 指针与引用
+
+```cpp
+int n = 10;
+
+// 指针
+int* p = &n;                    // 指针指向 n
+*p = 20;                        // 解引用赋值
+p = nullptr;                    // ★ C++11，不用 NULL/0
+
+// 引用（不能为空，不能重新绑定）
+int& r = n;                     // r 是 n 的别名
+r = 30;                         // n 也变 30
+// int& r2;                     // ❌ 必须初始化
+
+// const 修饰
+const int* p1 = &n;             // 指向常量（不能改值）
+int* const p2 = &n;             // 常量指针（不能改地址）
+const int* const p3 = &n;       // 两者都不能
+
+// 引用 vs 指针
+// - 引用必须初始化、不可空、不可重新绑定
+// - 指针可以为空、可重新指向
+// 函数参数优先用引用（不需检查 null）
+void modify(int& x) { x = 100; }
+void modify_ptr(int* x) {       // 需检查
+    if (x) *x = 100;
+}
+```
+
+### 3. 类与继承
+
+```cpp
+// 基础类
+class User {
+public:                           // 公开成员
+    User(std::string name, int age)
+        : name_(std::move(name)), age_(age) {}     // ★ 成员初始化列表
+
+    std::string name() const { return name_; }     // ★ const 成员函数
+    int age() const { return age_; }
+
+    virtual std::string greet() const {            // ★ virtual 允许子类重写
+        return "Hello, I'm " + name_;
+    }
+
+    virtual ~User() = default;                      // ★ 基类必须有虚析构
+
+private:                          // 私有成员
+    std::string name_;
+    int age_;
+};
+
+// 继承
+class Admin : public User {
+public:
+    Admin(std::string name, int age, std::vector<std::string> perms)
+        : User(std::move(name), age), perms_(std::move(perms)) {}
+
+    std::string greet() const override {            // ★ override 显式标记
+        return User::greet() + " (admin)";
+    }
+
+private:
+    std::vector<std::string> perms_;
+};
+
+// 抽象类（纯虚函数）
+class Animal {
+public:
+    virtual std::string sound() const = 0;          // ★ = 0 纯虚
+    virtual ~Animal() = default;
+};
+
+class Dog : public Animal {
+public:
+    std::string sound() const override { return "Woof"; }
+};
+```
+
+### 4. 访问控制 + 友元
+
+```cpp
+class Box {
+public:                       // 公开（外部可访问）
+    void open();
+protected:                    // 子类可访问
+    int internalState;
+private:                      // 仅自己
+    int secret;
+
+    friend class Inspector;   // ★ 友元类可访问 private
+    friend std::ostream& operator<<(std::ostream&, const Box&);  // 友元函数
+};
+```
+
+### 5. 操作符重载
+
+```cpp
+class Complex {
+public:
+    Complex(double r, double i) : r_(r), i_(i) {}
+
+    // 成员函数重载
+    Complex operator+(const Complex& o) const {
+        return {r_ + o.r_, i_ + o.i_};
+    }
+
+    bool operator==(const Complex& o) const {
+        return r_ == o.r_ && i_ == o.i_;
+    }
+
+    // C++20 spaceship operator（自动生成 < > <= >= ==）
+    auto operator<=>(const Complex& o) const = default;
+
+    // friend 重载（左操作数非自身类）
+    friend std::ostream& operator<<(std::ostream& os, const Complex& c) {
+        return os << c.r_ << "+" << c.i_ << "i";
+    }
+
+private:
+    double r_, i_;
+};
+```
+
+### 6. 模板基础
+
+```cpp
+// 函数模板
+template<typename T>
+T max(T a, T b) {
+    return a > b ? a : b;
+}
+max(1, 2);                          // T = int
+max(1.5, 2.5);                       // T = double
+max<int>(1, 2);                      // 显式指定
+
+// 类模板
+template<typename T>
+class Stack {
+public:
+    void push(T value) { data_.push_back(value); }
+    T pop() { auto v = data_.back(); data_.pop_back(); return v; }
+private:
+    std::vector<T> data_;
+};
+
+Stack<int> s;
+s.push(1);
+s.push(2);
+
+// 变参模板（C++11）
+template<typename... Args>
+void print(Args... args) {
+    ((std::cout << args << " "), ...);    // C++17 fold expression
+    std::cout << "\n";
+}
+print(1, "hello", 3.14, 'c');
+```
+
+### 7. 命名空间
+
+```cpp
+namespace mylib {
+    class Helper { /* ... */ };
+    void log(const std::string& msg);
+
+    // 嵌套
+    namespace internal {
+        void detail();
+    }
+}
+
+// 使用
+mylib::Helper h;
+mylib::internal::detail();
+
+// using 简化
+using namespace std;        // ⚠️ 头文件中禁用
+using std::cout;            // ✅ 只导入特定符号
+using std::string;
+```
+
+### 8. 异常处理
+
+```cpp
+class FileError : public std::runtime_error {
+public:
+    FileError(const std::string& path)
+        : std::runtime_error("file error: " + path), path_(path) {}
+    const std::string& path() const { return path_; }
+private:
+    std::string path_;
+};
+
+try {
+    if (!found) throw FileError("/path/to/file");
+}
+catch (const FileError& e) {
+    std::cerr << "FileError on " << e.path() << ": " << e.what() << "\n";
+}
+catch (const std::exception& e) {           // ★ 一定捕获 const 引用
+    std::cerr << "Other: " << e.what() << "\n";
+}
+catch (...) {                                // 兜底捕获所有
+    std::cerr << "unknown\n";
+}
+
+// noexcept - 标记不抛异常（编译器可优化）
+void safe() noexcept { /* ... */ }
+
+// 析构必须 noexcept
+class File {
+public:
+    ~File() noexcept { /* 默认 noexcept(true) */ }
+};
+```
+
+### 9. 类型转换
+
+```cpp
+// 4 种 C++ 风格转换
+int n = 42;
+
+// static_cast - 编译期类型安全转换
+double d = static_cast<double>(n);
+int* p = static_cast<int*>(some_void_ptr);
+
+// dynamic_cast - 运行时多态转换（基类指针 → 派生类）
+Animal* a = new Dog();
+Dog* d = dynamic_cast<Dog*>(a);    // ★ 失败返 nullptr
+
+// const_cast - 移除 const
+const int* cp = &n;
+int* np = const_cast<int*>(cp);    // ⚠️ 危险
+
+// reinterpret_cast - 重新解释二进制位
+int* p = reinterpret_cast<int*>(0x1234);    // ⚠️ 最危险
+
+// ❌ C 风格强转（避免）
+double d = (double)n;
+```
+
+---
+
 ## RAII（Resource Acquisition Is Initialization）— C++ 灵魂
 
 **RAII** = **资源生命周期绑定到对象生命周期**。构造时获取，析构时释放。
@@ -553,6 +833,227 @@ std::jthread t([]() {
 });
 // 析构时自动 join，不需手动管理（解决 std::thread 忘记 join 崩溃问题）
 ```
+
+---
+
+## C++ 编译链接与构建系统
+
+### 编译流程（必背）
+
+```text
+.cpp 源码
+   ↓ 预处理（cpp / g++ -E）
+.i 展开宏 + #include
+   ↓ 编译（cc1 / g++ -S）
+.s 汇编代码
+   ↓ 汇编（as / g++ -c）
+.o 目标文件（机器码）
+   ↓ 链接（ld / g++）
+可执行文件 / 库
+```
+
+```bash
+# 单步看每个产物
+g++ -E hello.cpp -o hello.i        # 预处理
+g++ -S hello.cpp -o hello.s        # 汇编
+g++ -c hello.cpp -o hello.o        # 目标文件
+g++ hello.o -o hello                # 链接
+
+# 一步到位
+g++ -std=c++20 -O2 -g -Wall -Wextra hello.cpp -o hello
+#       ↑标准    ↑优化 ↑调试 ↑严格警告
+```
+
+### 头文件 vs 实现
+
+```cpp
+// user.h（声明）
+#pragma once                                  // ★ 比 #ifndef 简洁
+#include <string>
+
+class User {
+public:
+    User(std::string name);
+    std::string greet() const;
+private:
+    std::string name_;
+};
+
+// user.cpp（实现）
+#include "user.h"
+User::User(std::string name) : name_(std::move(name)) {}
+std::string User::greet() const { return "Hello, " + name_; }
+
+// main.cpp
+#include "user.h"
+int main() {
+    User u("Alice");
+    return 0;
+}
+```
+
+### 静态库 vs 动态库
+
+```bash
+# 静态库 .a（Linux）/ .lib（Windows）
+g++ -c utils.cpp -o utils.o
+ar rcs libutils.a utils.o
+
+# 动态库 .so（Linux）/ .dll（Windows）/ .dylib（Mac）
+g++ -shared -fPIC utils.cpp -o libutils.so
+
+# 链接使用
+g++ main.cpp -L. -lutils -o main           # -L 路径 -l 库名（去 lib 前缀）
+
+# 运行时找动态库
+LD_LIBRARY_PATH=. ./main                    # Linux
+```
+
+### CMake（事实标准构建工具）
+
+```cmake
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.20)
+project(MyApp LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)               # ★ 禁 GNU 扩展
+
+# 可执行文件
+add_executable(my-app
+    src/main.cpp
+    src/user.cpp
+)
+
+# 库
+add_library(utils STATIC
+    src/utils.cpp
+)
+target_include_directories(utils PUBLIC include)
+target_link_libraries(my-app PRIVATE utils)
+
+# 第三方依赖（fmt / spdlog 等）
+find_package(fmt CONFIG REQUIRED)
+target_link_libraries(my-app PRIVATE fmt::fmt)
+
+# 编译选项
+target_compile_options(my-app PRIVATE
+    -Wall -Wextra -Wpedantic
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Debug>:-g -O0>
+)
+```
+
+```bash
+# 构建
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j8
+
+# 运行
+./build/my-app
+```
+
+### 包管理：vcpkg / Conan
+
+```bash
+# vcpkg（Microsoft）
+vcpkg install fmt spdlog nlohmann-json
+
+# 配合 CMake
+cmake -DCMAKE_TOOLCHAIN_FILE=path/to/vcpkg/scripts/buildsystems/vcpkg.cmake -S . -B build
+
+# Conan（Python 实现，最流行）
+# conanfile.txt
+[requires]
+fmt/10.2.0
+spdlog/1.13.0
+boost/1.84.0
+[generators]
+CMakeDeps
+CMakeToolchain
+```
+
+---
+
+## C++ 调试与性能分析
+
+### gdb / lldb（命令行调试）
+
+```bash
+g++ -g -O0 main.cpp -o main           # ★ -g 必须，-O0 避免优化丢符号
+gdb ./main
+
+(gdb) break main.cpp:42                 # 断点
+(gdb) run                                # 启动
+(gdb) next        / n                    # 下一行
+(gdb) step        / s                    # 步入
+(gdb) continue    / c                    # 继续
+(gdb) print var   / p var                # 打印
+(gdb) backtrace   / bt                   # 调用栈
+(gdb) watch var                          # 监视变量
+(gdb) info locals                        # 局部变量
+(gdb) thread apply all bt                # 所有线程栈
+(gdb) quit / q
+```
+
+### Sanitizer（地址 / 数据竞争）
+
+```bash
+# AddressSanitizer - 检测内存错误（数组越界、UAF、内存泄漏）
+g++ -fsanitize=address -fno-omit-frame-pointer -g main.cpp -o main
+./main          # 自动报告
+
+# ThreadSanitizer - 检测数据竞争
+g++ -fsanitize=thread -g main.cpp -o main
+
+# UBSan - 未定义行为（如有符号溢出）
+g++ -fsanitize=undefined -g main.cpp -o main
+```
+
+### 性能 profile
+
+```bash
+# perf（Linux）
+g++ -O2 -g main.cpp -o main
+perf record -g ./main
+perf report                              # 火焰图首选
+
+# valgrind/callgrind
+valgrind --tool=callgrind ./main
+kcachegrind callgrind.out.<pid>
+
+# valgrind/memcheck - 检测内存错误（比 ASan 慢但更详细）
+valgrind --leak-check=full --show-leak-kinds=all ./main
+```
+
+### 静态分析
+
+```bash
+clang-tidy main.cpp -- -std=c++20
+cppcheck main.cpp
+include-what-you-use main.cpp            # 检查头文件依赖
+```
+
+---
+
+## 2026 C++ 必装工具链
+
+| 工具 | 用途 |
+|------|------|
+| **clang-format** | 代码格式化（必装）|
+| **clang-tidy** | 静态分析 + 自动修复 |
+| **clangd** | LSP，IDE/VSCode 智能提示 |
+| **ccache** | 编译缓存，重编译快 5-10× |
+| **mold** | 现代链接器（Rust 写，10× ld 速度）|
+| **lldb** | 调试器（Clang 系）|
+| **CMake** | 构建系统标准 |
+| **vcpkg / Conan** | 包管理 |
+| **Catch2 / GoogleTest** | 单元测试 |
+| **fmt / spdlog** | 格式化 / 日志 |
+| **nlohmann/json** | JSON 库 |
+| **Boost** | 大杂烩，部分进入标准 |
+| **{fmt}** | std::format 的实现源（更稳定）|
 
 ---
 
