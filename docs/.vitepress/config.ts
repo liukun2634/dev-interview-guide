@@ -439,7 +439,7 @@ export default withMermaid(defineConfig({
       '/ai-technology/': [
         {
           text: 'AI 基础',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'AI 概述与发展历程', link: '/ai-technology/ai-overview' },
             { text: 'LLM 大语言模型原理', link: '/ai-technology/llm-fundamentals' },
@@ -448,7 +448,7 @@ export default withMermaid(defineConfig({
         },
         {
           text: 'LLM 应用技术',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'Prompt Engineering 提示工程', link: '/ai-technology/prompt-engineering' },
             { text: 'Embedding 与向量数据库', link: '/ai-technology/embedding-and-vector-db' },
@@ -457,7 +457,7 @@ export default withMermaid(defineConfig({
         },
         {
           text: 'AI Agent 与工具',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
             { text: 'Agent Skills 编写指南', link: '/ai-technology/ai-agent-skills' },
@@ -467,7 +467,7 @@ export default withMermaid(defineConfig({
         },
         {
           text: 'AI 工程实践',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
             { text: '模型评估、对齐与 AI 安全', link: '/ai-technology/evaluation-and-alignment' },
@@ -480,7 +480,7 @@ export default withMermaid(defineConfig({
         },
         {
           text: 'AI 面试准备',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'AI 时代面试准备策略', link: '/ai-technology/ai-interview-prep' },
             { text: '全栈工程师 AI 实战能力', link: '/ai-technology/ai-for-fullstack' },
