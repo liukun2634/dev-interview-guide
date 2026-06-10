@@ -1,27 +1,43 @@
 ---
-title: Java环境配置
+title: Java 环境配置
 ---
 
-# Java环境配置
+# Java 环境配置（输入输出 / 容器 / 字符串 / 位运算 速查）
 
-<span class="dig-tag dig-tag--category">基础知识</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
+<span class="dig-tag dig-tag--category">基础知识</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
-::: tip 💡 核心要点
-如果你准备用 Java 刷题，先不要急着做复杂题。先把环境、输入输出模板、数组、字符串、哈希表、队列、堆、排序这些基础能力配齐，否则很多题会卡在语法和 API 上，而不是卡在算法上。
+::: tip 💡 章节范围
+本页是 **Java 刷题的 API 速查手册**——把面试/笔试常用 Java API（数组、字符串、List、Map、Set、TreeMap、Deque、PriorityQueue、位运算、Math、Comparator）按场景整理，每行代码都带行内注释和必踩坑。算法思路与套路见 [基础算法模板](./basic-templates) 和 [高阶算法模板](./advanced-templates)；Java 语言本身的语法、JVM、并发原理见 [Java 体系](../../programming-languages/java-fundamentals)。
 :::
 
-## 概念
+## 这页解决什么问题
 
-- Java 刷题最重要的不是记住所有库，而是先配好最低可用环境，再记住最常用的那一批命令。
-- 面试和 LeetCode 场景里，最常见的是数组操作、字符串处理、集合类、排序、优先队列。
-- 如果是 ACM 输入输出模式，还要把快读快写的模板准备好。
+- **没坑也能写错 API**：Java 集合命名长、重载多（`remove(int)` vs `remove(Integer)`、`Arrays.asList(int[])` 陷阱），不查就翻车。
+- **写代码 = 查 API**：刷题白板上没有 IDE 提示，模板必须烂熟于心。
+- **看到题秒选容器**：哪些用 `HashMap`、哪些用 `TreeMap`、哪些用 `Deque`、哪些用 `PriorityQueue`，一图速查表里直接对应。
+- **大数据知道换 IO**：默认 `Scanner` 就够；数据 ≥ 10⁵ 立刻换 `BufferedReader`，不要等 TLE 才反应。
 
-## 怎么处理
+## 怎么使用本页
 
-1. 先准备一份固定模板，至少包含 `Arrays`、`List`、`Map`、`Deque`、`PriorityQueue`。
-2. 刷题时尽量优先用你熟悉的标准库写法，不要一上来自己造轮子。
-3. 如果题目是 ACM 模式，优先用 `BufferedReader` 或 `BufferedInputStream`，不要默认上 `Scanner`。
-4. 每做完一道题，把这题用到的 Java API 补进自己的命令清单。
+1. **新手起步**：先抄一份 `Scanner` 模板 + `Arrays / String / HashMap / Deque / PriorityQueue` 的常用 5-10 个方法，能跑通 LeetCode 前 100 题。
+2. **打 ACM / 牛客 / Codeforces**：直接用 `BufferedReader + PrintWriter` 快读快写模板，输出大量数据时记得 `flush()`。
+3. **遇到不会的 API**：用 `Ctrl+F` 搜本页关键词（如 `floorKey` / `computeIfAbsent` / `bitCount`），右边都有行内注释和必踩坑说明。
+4. **复盘归档**：每做完一题，把这题用到的 API 加进自己的私人 cheatsheet；本页是底线，不是天花板。
+
+## 容器选型一图速查
+
+| 场景 | 首选容器 | 关键 API |
+|------|---------|---------|
+| **频次统计 / 键值映射** | `HashMap<K, V>` | `getOrDefault` / `merge` / `computeIfAbsent` |
+| **按插入序遍历 / LRU** | `LinkedHashMap` | + `removeEldestEntry` 重写 |
+| **范围查询 / 找上下界** | `TreeMap` / `TreeSet` | `floorKey` / `ceilingKey` / `subMap` |
+| **去重 / 是否存在 O(1)** | `HashSet` | `add` / `contains` |
+| **动态数组** | `ArrayList` | `add` / `get` / `set` |
+| **栈** | `ArrayDeque`（**不用 `Stack`**）| `push` / `pop` / `peek` |
+| **队列 / BFS** | `ArrayDeque`（**不用 `LinkedList`**）| `offer` / `poll` / `peek` |
+| **单调队列 / 双端** | `ArrayDeque` | `offerFirst` / `pollLast` / `peekLast` |
+| **Top K / 堆排序** | `PriorityQueue` | `offer` / `poll`，大顶堆用 `Comparator.reverseOrder()` |
+| **静态常量集合** | `List.of` / `Map.of`（JDK 9+） | 不可变，写起来短 |
 
 ## 高频命令
 

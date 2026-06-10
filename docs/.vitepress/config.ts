@@ -47,7 +47,7 @@ export default withMermaid(defineConfig({
             { text: '算法技巧', link: '/data-structures-and-algorithms/foundations/algorithm-patterns' },
             { text: '基础算法模板', link: '/data-structures-and-algorithms/foundations/basic-templates' },
             { text: '高阶算法模板', link: '/data-structures-and-algorithms/foundations/advanced-templates' },
-            { text: 'Java环境配置', link: '/data-structures-and-algorithms/foundations/java-problem-solving-basics' },
+            { text: 'Java 环境配置', link: '/data-structures-and-algorithms/foundations/java-problem-solving-basics' },
             { text: '调试技巧', link: '/data-structures-and-algorithms/foundations/debug-and-review' },
             { text: 'AI 时代刷题', link: '/data-structures-and-algorithms/foundations/ai-assisted-practice' },
           ],

@@ -16,7 +16,7 @@ title: 数据结构与算法
 
 | 类别 | 概念 | 怎么处理 | 典型实例 |
 |------|------|------|------|
-| [基础知识](./foundations/) | 刷题流程、算法技巧、复杂度直觉和 Java 落地能力是所有题型的共同底座 | 先建立做题顺序，再根据题目特征和数据范围判断方法与复杂度 | [一般流程](./foundations/problem-solving-workflow)、[算法技巧](./foundations/algorithm-patterns)、[Java环境配置](./foundations/java-problem-solving-basics) |
+| [基础知识](./foundations/) | 刷题流程、算法技巧、复杂度直觉和 Java 落地能力是所有题型的共同底座 | 先建立做题顺序，再根据题目特征和数据范围判断方法与复杂度 | [一般流程](./foundations/problem-solving-workflow)、[算法技巧](./foundations/algorithm-patterns)、[Java 环境配置](./foundations/java-problem-solving-basics) |
 | [数组与字符串](./arrays/) | 处理顺序扫描、连续区间、字符统计问题 | 先判断是单点扫描、区间维护还是区间统计 | [线性扫描与区间处理](./arrays/array-basics)、[双指针](./arrays/two-pointers)、[滑动窗口](./arrays/sliding-window) |
 | [链表](./linked-list/) | 处理节点重连、反转、快慢指针问题 | 先画指针关系，再决定删除、插入还是反转 | [链表题处理框架](./linked-list/linked-list-basics) |
 | [栈与队列](./stack-queue/) | 处理最近元素、配对关系、层次推进问题 | 先判断需要的是回退顺序还是推进顺序 | [顺序结构处理框架](./stack-queue/stack-queue-basics) |

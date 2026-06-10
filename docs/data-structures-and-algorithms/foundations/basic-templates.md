@@ -7,7 +7,7 @@ title: 基础算法模板
 <span class="dig-tag dig-tag--category">基础知识</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-本页收录 **面试和刷题最高频的 10 个基础模板**：二分查找、双指针、滑动窗口、前缀和/差分、单调栈、BFS、DFS、回溯、并查集、拓扑排序。**记不住没关系，但要做到"看到题目特征 → 30 秒内联想到模板"**。所有代码都用 Java，可直接复制使用。需要 KMP / 线段树 / 树状数组 等更高阶模板请看 [高阶算法模板](./advanced-templates)。
+本页收录 **面试和刷题最高频的 14 个基础模板**：二分查找、双指针、滑动窗口、前缀和/差分、单调栈、BFS、DFS、回溯、并查集、拓扑排序，以及 **DP 四套核心模板**（0/1 背包 / 完全背包 / LIS / 编辑距离）。**记不住没关系，但要做到“看到题目特征 → 30 秒内联想到模板”**。所有代码都用 Java，可直接复制使用。需要 KMP / 线段树 / 树状数组 等更高阶模板请看 [高阶算法模板](./advanced-templates)。
 :::
 
 ## 一图速查：什么时候用哪个模板
@@ -37,6 +37,10 @@ title: 基础算法模板
 | **回溯** | O(指数) | 全排列 / 所有组合 / 棋盘 | 全排列、子集、N 皇后 |
 | **并查集** | O(α(n)) ≈ O(1) | 合并 + 同组判断 | 朋友圈、冗余连接 |
 | **拓扑排序** | O(V+E) | 依赖顺序 / DAG | 课程表、任务调度 |
+| **DP：0/1 背包** | O(n×C) | 每个物品选/不选 + 容量限制 | 分割等和子集、目标和 |
+| **DP：完全背包** | O(n×C) | 每种物品无限取 + 求方案 | 零钱兑换、单词拆分 |
+| **DP：LIS** | O(n log n) | 最长 / 严格递增 | 最长递增子序列、俄罗斯套娃 |
+| **DP：编辑距离 (序列 DP)** | O(n×m) | 双序列对齐 / 修改 | 编辑距离、最长公共子序列 LCS |
 
 ---
 
@@ -488,6 +492,282 @@ public int[] topoSort(int n, int[][] edges) {
 
 ---
 
+## 动态规划（DP）四套核心模板
+
+::: tip 💡 DP 识别信号
+- 题目说“最长 / 最短 / 最多 / 最少 / 有多少种方案” 且 **状态能递推**。
+- 暴力是指数（回溯），但子问题重叠 → 记忆化 / DP。
+- **DP 三要素**：状态定义 + 状态转移 + 初始值 / 边界。题难不在写代码，而在设计 `dp[i]` 到底表示什么。
+:::
+
+### DP 问题分类快查
+
+| 类型 | 状态定义 | 转移方程骨架 | 典型题 |
+|------|---------|------------|--------|
+| **线性 DP** | `dp[i]` = 以 `i` 结尾的某个值 | `dp[i] = f(dp[i-1], dp[i-2], ...)` | 打家劫舍、LIS、股票买卖 |
+| **区间 DP** | `dp[i][j]` = 区间 `[i, j]` 的解 | 枚举分割点 `k` | 石子合并、最长回文子序列 |
+| **背包 DP** | `dp[i][c]` = 前 `i` 个物品容量 `c` 的最优值 | 0/1、完全、多重 | 分割等和子集、零钱兑换、目标和 |
+| **序列 DP（双序列）** | `dp[i][j]` = `s1[0..i]` 与 `s2[0..j]` 的解 | 匹配 / 修改 / 删除 | 编辑距离、LCS、交错字符串 |
+| **状态压 DP（高阶）** | `dp[mask]` = 集合状态 | 位运算枚举子集 | TSP、合夈3 的最少划分 |
+| **树形 DP（高阶）** | `dp[node][0/1]` = 节点选/不选 | 后序遍历 | 打家劫舍 III、树的直径 |
+
+---
+
+### 模板 1：0/1 背包
+
+**定义**：N 件物品，重量 `w[i]`，价值 `v[i]`，**每个物品只能选 0 次或1 次**。包容量 `W`，问能装的最大价值。
+
+#### 识别信号
+
+- “每个选/不选”、“子集划分”、“能不能凑出某个和”
+- 典型题：分割等和子集、目标和（子集赋号）、最后一块石头的重量
+
+#### 状态转移
+
+```
+dp[i][c] = max(不选第 i 个, 选第 i 个)
+         = max(dp[i-1][c],  dp[i-1][c - w[i]] + v[i])    且 c ≥ w[i]
+```
+
+#### 模板代码（二维 → 一维滚动压缩）
+
+```java
+// 二维原型（满足可读性）
+public int knapsack01_2D(int[] w, int[] v, int W) {
+    int n = w.length;
+    int[][] dp = new int[n + 1][W + 1];
+    for (int i = 1; i <= n; i++) {
+        for (int c = 0; c <= W; c++) {
+            dp[i][c] = dp[i - 1][c];                           // 不选
+            if (c >= w[i - 1]) {
+                dp[i][c] = Math.max(dp[i][c], dp[i - 1][c - w[i - 1]] + v[i - 1]);  // 选
+            }
+        }
+    }
+    return dp[n][W];
+}
+
+// 一维滚动压缩（推荐背：c 倒序枚举 → 避免同一件物品被选多次）
+public int knapsack01(int[] w, int[] v, int W) {
+    int[] dp = new int[W + 1];
+    for (int i = 0; i < w.length; i++) {
+        for (int c = W; c >= w[i]; c--) {                      // ★ 倒序！
+            dp[c] = Math.max(dp[c], dp[c - w[i]] + v[i]);
+        }
+    }
+    return dp[W];
+}
+```
+
+#### 典型变形：分割等和子集（判能否凑出 sum/2）
+
+```java
+public boolean canPartition(int[] nums) {
+    int sum = Arrays.stream(nums).sum();
+    if ((sum & 1) == 1) return false;                          // 奇数不可能划分
+    int target = sum / 2;
+    boolean[] dp = new boolean[target + 1];
+    dp[0] = true;                                              // 凑 0 总是成立
+    for (int x : nums) {
+        for (int c = target; c >= x; c--) {                    // 倒序
+            dp[c] = dp[c] || dp[c - x];
+        }
+    }
+    return dp[target];
+}
+```
+
+::: warning ⚠️ 必踩坑
+- **一维压缩后容量 `c` 必须倒序枚举**，升序会让同一件物品被重复选择。
+- 初始值。`dp[0] = 0`（最大价值）或 `dp[0] = true`（能否凑出），其余默认即可。
+- “求方案数”变体：dp 变成 `int`，转移从 `max` 改为 `dp[c] += dp[c - w[i]]`。
+:::
+
+---
+
+### 模板 2：完全背包（零钱兑换型）
+
+**定义**：每种物品**可取无限多次**。主流说法：“零钱兑换”。
+
+#### 识别信号
+
+- “**每种物品无限取**”
+- “凑金额的最少硬币数”、“凑 N 的方案数”、“单词拆分 (Word Break)”
+
+#### 状态转移
+
+```
+// 求最少个数
+dp[c] = min(dp[c],  dp[c - coin] + 1)             // c 升序枚举——这是与 0/1 背包唯一区别
+
+// 求方案数
+dp[c] += dp[c - coin]
+```
+
+#### 模板代码
+
+```java
+// 零钱兑换——最少硬币个数
+public int coinChange(int[] coins, int amount) {
+    int[] dp = new int[amount + 1];
+    Arrays.fill(dp, amount + 1);                               // “不可达”哨兵
+    dp[0] = 0;
+    for (int coin : coins) {
+        for (int c = coin; c <= amount; c++) {                 // ★ 升序！
+            dp[c] = Math.min(dp[c], dp[c - coin] + 1);
+        }
+    }
+    return dp[amount] > amount ? -1 : dp[amount];
+}
+
+// 零钱兑换 II——凑金额的方案数
+public int change(int amount, int[] coins) {
+    int[] dp = new int[amount + 1];
+    dp[0] = 1;
+    for (int coin : coins) {                                   // ★ 外层物品、内层容量：避免重复计数
+        for (int c = coin; c <= amount; c++) {
+            dp[c] += dp[c - coin];
+        }
+    }
+    return dp[amount];
+}
+```
+
+::: warning ⚠️ 完全背包 vs 0/1 背包
+| 差别 | 0/1 背包 | 完全背包 |
+|------|---------|----------|
+| 容量循环方向 | `for c = W; c >= w; c--` | `for c = w; c <= W; c++` |
+| 每件物品 | 最多取 1 次 | 取无限次 |
+| **方案数变体：外层 vs 内层** | 外层物品 / 内层容量倒序 | 外层物品 / 内层容量升序 |
+| **排列数 (顺序敏感)** | — | 外层容量 / 内层物品 |
+:::
+
+---
+
+### 模板 3：最长递增子序列 LIS
+
+**定义**：给定数组求严格递增子序列的最长长度。
+
+#### 识别信号
+
+- “最长 / 严格递增子序列”、“最长携手链”、“俄罗斯套娃”、“最长锻炼周期”
+- 只要能转为“求一组数的最长递增”都是 LIS
+
+#### 两个模板
+
+##### ① 基础 O(n²) DP
+
+```java
+public int lengthOfLIS_DP(int[] nums) {
+    int n = nums.length;
+    int[] dp = new int[n];                          // dp[i] = 以 nums[i] 结尾的最长递增子序列长度
+    Arrays.fill(dp, 1);
+    int ans = 1;
+    for (int i = 1; i < n; i++) {
+        for (int j = 0; j < i; j++) {
+            if (nums[j] < nums[i]) dp[i] = Math.max(dp[i], dp[j] + 1);
+        }
+        ans = Math.max(ans, dp[i]);
+    }
+    return ans;
+}
+```
+
+##### ② 优化 O(n log n)：贪心 + 二分（耐心牌游戏 / patience sort）
+
+```java
+public int lengthOfLIS(int[] nums) {
+    List<Integer> tails = new ArrayList<>();                   // tails[k] = 长度为 k+1 的递增子序列的最小结尾
+    for (int x : nums) {
+        int lo = 0, hi = tails.size();
+        while (lo < hi) {                                      // lowerBound: 第一个 ≥ x 的位置
+            int mid = (lo + hi) >>> 1;
+            if (tails.get(mid) < x) lo = mid + 1;
+            else hi = mid;
+        }
+        if (lo == tails.size()) tails.add(x);                  // 扩展
+        else tails.set(lo, x);                                 // 替换 (保持结尾最小)
+    }
+    return tails.size();                                       // 注意：tails 中的元素不一定是真正的 LIS，但长度是正确的
+}
+```
+
+::: tip 💡 变体提示
+- “非严格递增”：二分改 `lowerBound` 为 `upperBound`（判断从 `<` 改为 `≤`）。
+- “最长递减”：翻转数组后跑 LIS。
+- “俄罗斯套娃”：二维按第一维升序、第二维限制同均 → 第一维升序 + 第二维 LIS。
+:::
+
+---
+
+### 模板 4：编辑距离 / LCS（双序列 DP）
+
+**定义**：两个字符串 `s1`、`s2`，求互相转换的最少操作（插入 / 删除 / 替换）数。
+
+#### 识别信号
+
+- “两个字符串 / 序列的对齐 / 最多公共 / 最少修改”
+- 典型题：编辑距离、最长公共子序列 (LCS)、不同的子序列、交织字符串
+
+#### 状态定义（通用）
+
+```
+dp[i][j] = s1 的前 i 个 与 s2 的前 j 个 的某种解。
+```
+
+#### 编辑距离模板
+
+```java
+public int minDistance(String s1, String s2) {
+    int n = s1.length(), m = s2.length();
+    int[][] dp = new int[n + 1][m + 1];
+    for (int i = 0; i <= n; i++) dp[i][0] = i;                 // s2 为空：删 i 次
+    for (int j = 0; j <= m; j++) dp[0][j] = j;                 // s1 为空：插入 j 次
+    for (int i = 1; i <= n; i++) {
+        for (int j = 1; j <= m; j++) {
+            if (s1.charAt(i - 1) == s2.charAt(j - 1)) {
+                dp[i][j] = dp[i - 1][j - 1];                   // 字符相同，不需操作
+            } else {
+                dp[i][j] = 1 + Math.min(
+                    dp[i - 1][j - 1],                          // 替换
+                    Math.min(dp[i - 1][j], dp[i][j - 1])       // 删除 / 插入
+                );
+            }
+        }
+    }
+    return dp[n][m];
+}
+```
+
+#### LCS（最长公共子序列）模板
+
+```java
+public int longestCommonSubsequence(String s1, String s2) {
+    int n = s1.length(), m = s2.length();
+    int[][] dp = new int[n + 1][m + 1];                        // dp[i][j] = s1[0..i] 与 s2[0..j] 的 LCS 长度
+    for (int i = 1; i <= n; i++) {
+        for (int j = 1; j <= m; j++) {
+            if (s1.charAt(i - 1) == s2.charAt(j - 1)) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+    }
+    return dp[n][m];
+}
+```
+
+::: tip 💡 双序列 DP 公式骨架
+```
+if (s1[i-1] == s2[j-1])  dp[i][j] = f(dp[i-1][j-1])
+else                     dp[i][j] = g(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+```
+只是 `f / g` 随题意不同（最长取 +1，编辑取 min+1，LCS 取 max）。背住骨架，变体题都是填空。
+:::
+
+---
+
 ## 面试怎么用这页
 
 1. **看到题先识别信号**：把题目关键词（"连续"、"最短"、"所有方案"、"区间和"、"下一个更大" ...）映射到模板。
@@ -515,6 +795,12 @@ public int[] topoSort(int n, int[][] edges) {
 | **全排列 / 子集 / N 皇后** | 回溯 |
 | **判断两点连通 / 朋友圈** | 并查集 |
 | **任务依赖排序 / 课程表** | 拓扑排序 |
+| **“能否划分为 2 组等和” “目标和”** | DP - 0/1 背包 |
+| **“零钱兑换” “单词拆分”** | DP - 完全背包 |
+| **“最长递增子序列” “俄罗斯套娃”** | DP - LIS (n log n) |
+| **“两个字符串的最少操作 / 最长公共”** | DP - 编辑距离 / LCS |
+| **“最长回文子串 / 石子合并”** | DP - 区间 DP |
+| **“打家劫舍 / 股票买卖 / 状态机”** | DP - 线性 DP |
 | **字符串匹配 / 最长回文** | 见 [高阶算法模板](./advanced-templates) — KMP / Manacher |
 | **区间改 + 区间查** | 见 [高阶算法模板](./advanced-templates) — 树状数组 / 线段树 |
 
