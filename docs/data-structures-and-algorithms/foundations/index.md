@@ -20,6 +20,8 @@ title: 基础知识
 |------|------|
 | [一般流程](./problem-solving-workflow) | 把读题、暴力、优化、实现、检查、复盘串成固定顺序 |
 | [算法技巧](./algorithm-patterns) | 把题目特征、数据范围、复杂度目标和常用方法整合到一张总表里，看到信号就能快速联想入口 |
+| [基础算法模板](./basic-templates) | 二分 / 双指针 / 滑窗 / 前缀和 / 单调栈 / BFS / DFS / 回溯 / 并查集 / 拓扑 — 10 个面试必背模板 |
+| [高阶算法模板](./advanced-templates) | KMP / Manacher / 树状数组 / 线段树 — 大厂高阶题型必备 |
 | [Java环境配置](./java-problem-solving-basics) | 把 Java 的输入输出、数组、集合、排序、队列和堆这些最低可用模板先配好 |
 | [调试技巧](./debug-and-review) | 建立边界检查、手推调试和错题记录的固定方法 |
 | [AI 时代刷题](./ai-assisted-practice) | 说明 AI 已经能生成代码后，刷题为什么仍然重要，以及 AI 应该放在流程里的什么位置 |
@@ -28,9 +30,11 @@ title: 基础知识
 
 1. 先看 [一般流程](./problem-solving-workflow)，把做题顺序先固定下来。
 2. 再看 [算法技巧](./algorithm-patterns)，把题目特征、复杂度判断和方法入口放到同一个框架里。
-3. 然后看 [Java环境配置](./java-problem-solving-basics)，把常用模板和实现成本压下来。
-4. 再看 [调试技巧](./debug-and-review)，把做题闭环补齐。
-5. 最后看 [AI 时代刷题](./ai-assisted-practice)，明确 AI 该怎么用，而不是被它替代。
+3. 然后看 [基础算法模板](./basic-templates)，把 10 个面试高频模板（二分 / 双指针 / 滑窗 / 前缀和 / 单调栈 / BFS / DFS / 回溯 / 并查集 / 拓扑）记到反射级别。
+4. 进阶看 [高阶算法模板](./advanced-templates)，覆盖 KMP / Manacher / 树状数组 / 线段树 等大厂高阶题型。
+5. 然后看 [Java环境配置](./java-problem-solving-basics)，把常用模板和实现成本压下来。
+6. 再看 [调试技巧](./debug-and-review)，把做题闭环补齐。
+7. 最后看 [AI 时代刷题](./ai-assisted-practice)，明确 AI 该怎么用，而不是被它替代。
 
 ## 当前范围
 

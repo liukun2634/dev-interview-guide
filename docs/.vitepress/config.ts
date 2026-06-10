@@ -45,6 +45,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: '一般流程', link: '/data-structures-and-algorithms/foundations/problem-solving-workflow' },
             { text: '算法技巧', link: '/data-structures-and-algorithms/foundations/algorithm-patterns' },
+            { text: '基础算法模板', link: '/data-structures-and-algorithms/foundations/basic-templates' },
             { text: '高阶算法模板', link: '/data-structures-and-algorithms/foundations/advanced-templates' },
             { text: 'Java环境配置', link: '/data-structures-and-algorithms/foundations/java-problem-solving-basics' },
             { text: '调试技巧', link: '/data-structures-and-algorithms/foundations/debug-and-review' },

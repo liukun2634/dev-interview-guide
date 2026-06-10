@@ -25,7 +25,53 @@ title: Java环境配置
 
 ## 高频命令
 
-### 输入输出模板
+### 简单输入模板（Scanner，学习/小数据用）
+
+**Scanner** 是 JDK 自带的最易用输入工具，**学习算法、刷小数据题、面试白板**首选。语法直白、几乎不会写错；**唯一缺点是慢**（内部基于正则切分），数据量 ≥ 10⁵ 时才需要换 BufferedReader。
+
+```java
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+
+        // 1. 读单个值
+        int n = sc.nextInt();                 // 读一个 int
+        long x = sc.nextLong();               // 读一个 long
+        double d = sc.nextDouble();           // 读一个 double
+        String word = sc.next();              // 读一个单词（按空白分隔）
+        String line = sc.nextLine();          // 读一整行（含空格，到换行符）
+
+        // 2. 读一行数组（空格分隔）
+        int[] arr = new int[n];
+        for (int i = 0; i < n; i++) arr[i] = sc.nextInt();
+
+        // 3. 读 n 行
+        for (int i = 0; i < n; i++) {
+            int a = sc.nextInt(), b = sc.nextInt();
+            System.out.println(a + b);
+        }
+
+        // 4. 读到 EOF（ACM 多组数据）
+        while (sc.hasNextInt()) {
+            int v = sc.nextInt();
+            // ...
+        }
+
+        sc.close();
+    }
+}
+```
+
+**Scanner 常见坑**：
+
+- `nextInt()` 之后再 `nextLine()`，会读到空字符串（因为 `nextInt` 不消费换行）。混用时在 `nextInt` 后多调一次 `sc.nextLine()` 吃掉换行。
+- 大数据（10⁵ 行以上）必超时，立即换下面的 BufferedReader 模板。
+
+### 快读快写模板（BufferedReader / PrintWriter，大数据/ACM 必备）
+
+数据量 ≥ 10⁵ 时，`Scanner` 会从 "刚刚好" 变 "TLE"。换 `BufferedReader + StringTokenizer + PrintWriter` 通常能快 10 倍以上。
 
 ```java
 import java.io.*;
@@ -34,12 +80,32 @@ import java.util.*;
 public class Main {
     public static void main(String[] args) throws Exception {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        StringTokenizer tokenizer = new StringTokenizer(reader.readLine());
-        int n = Integer.parseInt(tokenizer.nextToken());
-        System.out.println(n);
+        PrintWriter writer = new PrintWriter(new BufferedWriter(new OutputStreamWriter(System.out)));
+
+        // 读第一行：n m
+        StringTokenizer st = new StringTokenizer(reader.readLine());
+        int n = Integer.parseInt(st.nextToken());
+        int m = Integer.parseInt(st.nextToken());
+
+        // 读 n 行数组
+        int[] arr = new int[n];
+        st = new StringTokenizer(reader.readLine());
+        for (int i = 0; i < n; i++) arr[i] = Integer.parseInt(st.nextToken());
+
+        // 输出（必须 flush 否则可能丢数据）
+        writer.println(n + m);
+        writer.flush();
     }
 }
 ```
+
+**选型一句话**：
+
+| 场景 | 用哪个 |
+|------|------|
+| LeetCode / 力扣 / 函数式输入 | **都不用**，方法签名直接给参数 |
+| 学习算法 / ACM 小数据（< 10⁵）| **Scanner** |
+| ACM 大数据（≥ 10⁵）/ 牛客 / Codeforces | **BufferedReader + PrintWriter** |
 
 ### 数组与排序
 
