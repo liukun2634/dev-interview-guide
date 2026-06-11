@@ -270,6 +270,126 @@ public int maxDepthBFS(TreeNode root) {
 }
 ```
 
+## 高频题型 1：二叉树的序列化与反序列化（[LC 297](https://leetcode.cn/problems/serialize-and-deserialize-binary-tree/)）
+
+::: warning 🔥 面试高频 + 设计题交叉
+序列化常被包装成“怎么存一棵树到 Redis”“怎么在服务间传输树”这类设计题。
+:::
+
+### 为什么选前序
+
+三种 DFS 遍历都能序列化，但反序列化能不能唯一重建是关键：
+
+| 序列化方式 | 输出 | 能否唯一重建 | 原因 |
+|------|------|------|------|
+| **前序 + null 占位** | `1,2,#,#,3,4,#,#,5,#,#` | ✅ | 首个值就是根，下路递归拆左右 |
+| **后序 + null 占位** | `#,#,2,#,#,4,#,#,5,3,1` | ✅（从末尾读） | 末位值是根 |
+| **中序 + null 占位** | — | ❌ | 根位置不确定，无法定位 |
+| **层序 BFS + null 占位** | `1,2,3,#,#,4,5` | ✅ | LeetCode 官方表示法，最直观 |
+
+**口诀：能序列化的劣根必须能从序列端头立刻定位。**前序 → 头部是根；后序 → 尾部是根；中序 不行。
+
+### 完整代码（前序 + null 占位）
+
+```java
+public class Codec {
+    private static final String NULL = "#";
+    private static final String SEP = ",";
+
+    public String serialize(TreeNode root) {
+        StringBuilder sb = new StringBuilder();
+        dfsSer(root, sb);
+        return sb.toString();
+    }
+
+    private void dfsSer(TreeNode node, StringBuilder sb) {
+        if (node == null) {
+            sb.append(NULL).append(SEP);              // ★ 必须用占位符，否则反序列化会歧义
+            return;
+        }
+        sb.append(node.val).append(SEP);
+        dfsSer(node.left, sb);
+        dfsSer(node.right, sb);
+    }
+
+    public TreeNode deserialize(String data) {
+        Deque<String> queue = new ArrayDeque<>(Arrays.asList(data.split(SEP)));
+        return dfsDes(queue);
+    }
+
+    private TreeNode dfsDes(Deque<String> queue) {
+        String s = queue.poll();
+        if (NULL.equals(s)) return null;
+        TreeNode node = new TreeNode(Integer.parseInt(s));
+        node.left = dfsDes(queue);                    // ★ 顺序必须与序列化严格一致
+        node.right = dfsDes(queue);
+        return node;
+    }
+}
+```
+
+### 关键点
+
+- **占位符不能省**：不记录 null，`[1, null, 2]` 和 `[1, 2]` 会产生相同序列
+- **反序列化要用队列而不是下标**：递归中下标需要互相同步，用队列自然 `poll` 一个少一个
+- **复杂度**：序列化/反序列化都是 O(n)，输出长度 O(n)
+
+### 追问：怎么在跨服务传输二叉树
+
+面试中会追问“你怎么把一棵树传给另一个服务”：
+
+- **文本格式（前序 + #）**：人可读、调试友好，但体积大 ≈ 6× 节点数
+- **层序 BFS 格式**：LeetCode 官方选，体积中等，适合 JSON
+- **二进制 + Protobuf**：体积最小、性能最佳，生产首选。递归定义 `message TreeNode { int val; TreeNode left; TreeNode right; }`
+
+## 高频题型 2：从遍历序列重建二叉树
+
+### 三组组合可不可重建
+
+| 组合 | 能否唯一重建 | 例题 |
+|------|------|------|
+| **前序 + 中序** | ✅ | LC 105 |
+| **后序 + 中序** | ✅ | LC 106 |
+| **前序 + 后序** | ❌（多棵树可能满足） | — |
+| 只有一个序列 | ❌ | — |
+
+**为什么中序是必需的**：中序能把根节点为界划分左右子树；前序/后序提供根位置。两者缺一不可。
+
+### 通用思路（3 步）
+
+1. 从前序首位（或后序末位）拿出**根节点值**
+2. 在中序中定位根节点位置，拆出左子树中序、右子树中序
+3. 根据左子树节点个数，在前序中拆出左子树前序、右子树前序，递归重建
+
+### 完整代码（LC 105）
+
+```java
+private Map<Integer, Integer> idxMap;       // ★ 中序值 → 下标，避免每次 O(n) 查找
+
+public TreeNode buildTree(int[] preorder, int[] inorder) {
+    idxMap = new HashMap<>();
+    for (int i = 0; i < inorder.length; i++) idxMap.put(inorder[i], i);
+    return build(preorder, 0, preorder.length - 1, 0, inorder.length - 1);
+}
+
+private TreeNode build(int[] pre, int preL, int preR, int inL, int inR) {
+    if (preL > preR) return null;
+    int rootVal = pre[preL];                // 前序首位 = 根
+    int rootIdx = idxMap.get(rootVal);      // 中序中的位置
+    int leftSize = rootIdx - inL;           // ★ 左子树在中序中的节点个数
+
+    TreeNode root = new TreeNode(rootVal);
+    root.left  = build(pre, preL + 1, preL + leftSize,       inL, rootIdx - 1);
+    root.right = build(pre, preL + leftSize + 1, preR,       rootIdx + 1, inR);
+    return root;
+}
+```
+
+**关键细节：**
+- **必须预处理中序下标**：不用 HashMap 每次线性查找会从 O(n) 退化成 O(n²)
+- **leftSize 计算是错误重灾区**：是 `rootIdx - inL` 不是 `rootIdx`
+- **拆分边界要画图**：前序拆点是 `preL + 1 + leftSize`，中序拆点是 `rootIdx`
+
 ## 延伸题目
 
 | 题目 | 链接 | 与典型题的区别 | 关键技巧 |

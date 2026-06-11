@@ -60,6 +60,51 @@ while (n != 0) {
 }
 ```
 
+## x & (-x) 与 lowbit（树状数组基石）
+
+这是上表里“保留最低位 1”的详细展开。面试问“树状数组怎么快速跳到上一个区间”时，答案就是它。
+
+**原理：为什么 `x & (-x)` 能素出最低位 1？**
+
+```
+以 x = 12 为例（int，补码表示）：
+x  =  00000000 00000000 00000000 00001100
+-x =  11111111 11111111 11111111 11110100   (~x + 1)
+x & -x = 00000000 00000000 00000000 00000100 = 4 = 最低位 1 的权值
+```
+
+补码 `-x = ~x + 1` 的性质：`~x` 把所有位取反，加 1 使得原本 x 的最低位 1 及其右边的 0 **复原**为原样，而更高位全部取反。与原值相与，只有那一位同时为 1。
+
+**三大应用：**
+
+```java
+// 1）树状数组（BIT）的核心。lowbit(i) = i 负责管理的区间长度
+int lowbit(int x) { return x & -x; }
+
+void update(int i, int delta) {
+    for (; i <= n; i += lowbit(i)) tree[i] += delta;   // ★ 向上跳到父亲
+}
+int query(int i) {
+    int sum = 0;
+    for (; i > 0; i -= lowbit(i)) sum += tree[i];      // ★ 向下跳到前个区间
+    return sum;
+}
+
+// 2）枚举二进制中所有 1 的位置（状压 DP 常用）
+for (int s = mask; s > 0; s -= s & -s) {
+    int bit = s & -s;       // bit 是最低位 1 的权值
+    int idx = Integer.numberOfTrailingZeros(bit);  // 转为位置下标
+    // process(idx);
+}
+
+// 3）枚举状压 DP 中某状态的所有子集
+for (int sub = mask; sub > 0; sub = (sub - 1) & mask) {
+    // sub 是 mask 的一个非空子集
+}
+```
+
+**口诀：看到 `x & -x` 就要能说出**：“BIT 的 lowbit、枚举位、枚举子集这三个场景都用它。”面试官问到“树状数组为什么能 O(log n)”时，答案就是“lowbit 跳跃 → 每次取掉一个二进制位 → 最多 log n 位”。
+
 ## 例题 1：[只出现一次的数字（LeetCode 136）](https://leetcode.cn/problems/single-number/)
 
 ### 题目描述

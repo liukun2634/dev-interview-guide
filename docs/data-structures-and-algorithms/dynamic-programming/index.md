@@ -260,6 +260,69 @@ private int dfs(int n, int[] memo) {
 
 **面试建议**：先用记忆化递归理清思路，确认状态和转移没问题后，再改写成递推表。面试官会认为你的思维过程很清晰。
 
+### 演化链路完整示例（以斐波那契为例）
+
+上面三种写法本质是同一问题的 4 个阶段。面试官问“说一下你怎么一步步优化”时，能连贯说出这 4 步会加分：
+
+```java
+// 阶段 1：暴力递归 — O(2^n) 时间、O(n) 递归栈
+// 问题：fib(40) 已经要算几秒，fib(50) 会超时。f(3) 被重复计算了很多次。
+int fib1(int n) {
+    if (n <= 1) return n;
+    return fib1(n - 1) + fib1(n - 2);
+}
+
+// 阶段 2：记忆化递归 — O(n) 时间、O(n) 空间（memo + 递归栈）
+// 变化：每个状态只计算一次，二次访问直接读表
+int fib2(int n) {
+    int[] memo = new int[n + 1];
+    Arrays.fill(memo, -1);
+    return helper(n, memo);
+}
+int helper(int n, int[] memo) {
+    if (n <= 1) return n;
+    if (memo[n] != -1) return memo[n];          // ★ 命中直接返
+    memo[n] = helper(n - 1, memo) + helper(n - 2, memo);
+    return memo[n];
+}
+
+// 阶段 3：递推表 — O(n) 时间、O(n) 空间，去掉递归栈
+// 变化：反转方向，从小到大填表
+int fib3(int n) {
+    if (n <= 1) return n;
+    int[] dp = new int[n + 1];
+    dp[0] = 0; dp[1] = 1;
+    for (int i = 2; i <= n; i++) {
+        dp[i] = dp[i - 1] + dp[i - 2];
+    }
+    return dp[n];
+}
+
+// 阶段 4：滚动变量 — O(n) 时间、O(1) 空间
+// 变化：观察到 dp[i] 只依赖前两个状态，用两个变量滚动
+int fib4(int n) {
+    if (n <= 1) return n;
+    int prev = 0, curr = 1;
+    for (int i = 2; i <= n; i++) {
+        int next = prev + curr;
+        prev = curr;
+        curr = next;
+    }
+    return curr;
+}
+```
+
+**4 阶段对比表：**
+
+| 阶段 | 时间 | 空间 | 思维难点 |
+|------|------|------|------|
+| 66b4力递归 | O(2^n) | O(n) | ​**定义递归函数语义**（这一步对了后面都是机械动作） |
+| 记忆化递归 | O(n) | O(n) | 识别重叠子问题 → 加 memo |
+| 递推表 | O(n) | O(n) | 反转计算顺序，确定初始值 |
+| 滚动变量 | O(n) | O(1) | 观察状态依赖范围，用变量代替数组 |
+
+**面试误区：不要一上来就写阶段 4**。面试官看不到你的思路，反而认为你是背题。正确姿势是：口头说“先写阶段 2 记忆化递归”→ 写完后补一句“如果需要可以改成递推表 + O(1) 空间” → 面试官点头你再写。
+
 ---
 
 ## 空间优化技巧

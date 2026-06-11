@@ -210,6 +210,68 @@ public int lengthOfLongestSubstring(String s) {
 
 ---
 
+## 典型例题（求最短）：最小覆盖子串（[LeetCode 76](https://leetcode.cn/problems/minimum-window-substring/)）
+
+::: warning 🔥 必背手撕题
+求最短窗口的经典代表，和 LC 3（求最长）正好形成对照——核心差异只有**答案更新时机**和**收缩条件**。
+:::
+
+**题目**：给你字符串 `s` 和 `t`，返回 `s` 中涵盖 `t` 所有字符的**最小子串**。若不存在，返回 `""`。如 `s = "ADOBECODEBANC"`、`t = "ABC"` → `"BANC"`。
+
+### 求最长 vs 求最短：对比框架
+
+| 维度 | LC 3 求最长 | LC 76 求最短 |
+|------|------|------|
+| 答案更新时机 | while 收缩**后**（窗口此时合法） | while 收缩**内**（窗口此时合法） |
+| 收缩条件 | 窗口**不合法**时（有重复字符） | 窗口**合法**时（已覆盖所有字符） |
+| 答案变量 | `max(ans, right - left + 1)` | `min(ans, right - left + 1)` |
+| 命中位置 | for 循环末尾 | while 循环内首行 |
+
+### 完整代码
+
+```java
+public String minWindow(String s, String t) {
+    if (s.length() < t.length()) return "";
+
+    int[] need = new int[128];               // t 中每个字符需要多少个
+    for (char c : t.toCharArray()) need[c]++;
+
+    int required = t.length();               // ★ 还需要凑齐多少个字符（含重复）
+    int left = 0, minLen = Integer.MAX_VALUE, minStart = 0;
+
+    for (int right = 0; right < s.length(); right++) {
+        char c = s.charAt(right);
+        if (need[c] > 0) required--;         // ★ 只有当 t 还需要这字符时才减
+        need[c]--;                           // 不论是否需要都减（多余字符变负）
+
+        while (required == 0) {              // ★ 求最短：合法时进 while
+            if (right - left + 1 < minLen) { // ★ 答案在 while 内更新
+                minLen = right - left + 1;
+                minStart = left;
+            }
+            char lc = s.charAt(left);
+            need[lc]++;
+            if (need[lc] > 0) required++;    // ★ 复原回正才算"缺货"
+            left++;
+        }
+    }
+    return minLen == Integer.MAX_VALUE ? "" : s.substring(minStart, minStart + minLen);
+}
+```
+
+### 关键细节
+
+- **`required` 维护剩余缺口**：只在 `need[c] > 0` 时（即 t 真的还需要这个字符）才减，避免被冗余字符误导。这是最难想到也最容易写错的一点。
+- **`need[c]--` 不论是否需要都减**：让多余字符变为负数，弹出时也对称 `++`，保证 `need[c] > 0` 判断的对称性。
+- **答案在 while 内**：求最短时窗口越短越好，必须先记录答案再收缩。如果像 LC 3 那样把答案放外面，会错过当前的合法窗口。
+
+### 复杂度
+
+- **时间**：O(n + m)，n 为 s 长度，m 为 t 长度；每个字符最多被 left/right 各访问一次
+- **空间**：O(|Σ|)，need 数组大小固定 128
+
+---
+
 ## 延伸题目
 
 | 题号 | 题名 | 难度 | 关键差异 | 一句话提示 |

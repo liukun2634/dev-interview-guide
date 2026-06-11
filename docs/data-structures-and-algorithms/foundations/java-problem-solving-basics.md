@@ -256,17 +256,26 @@ String s3 = String.format("%03d", 7);               // 格式化 → "007"
 
 ### List / ArrayList
 
+**ArrayList** 是 Java 刷题用得最多的"动态数组"：底层一根 `Object[]`，元素按下标随机访问 `O(1)`、末尾追加均摊 `O(1)`、中间插入/删除 `O(n)`。**它就是数组的可变长封装**，几乎所有需要"长度不固定的数组"场景都用它（DFS 回溯收集路径、分组、邻接表、按行存二维结果）。
+
+- **vs 数组 `int[]`**：数组长度定死、性能极致、但要装箱才能放进集合；`ArrayList` 长度自动扩容（每次 1.5×），但只能存 `Integer` 等包装类型，**不能直接存 `int`**。
+- **vs `LinkedList`**：刷题**永远用 `ArrayList`**——`LinkedList` 的 `get(i)` 是 `O(n)`，缓存不友好，几乎一无是处。需要双端队列用 `ArrayDeque`，不用 `LinkedList`。
+- **初始容量**：能预估大小时给 `new ArrayList<>(n)`，避免反复扩容；默认初始容量 10。
+
 ```java
-List<Integer> list = new ArrayList<>();
+List<Integer> list = new ArrayList<>();             // 默认容量 10
+List<Integer> list2 = new ArrayList<>(1024);        // ★ 预知大小先给容量，避免多次扩容拷贝
 
 // === 增 ===
 list.add(1);                                        // 末尾追加，O(1) 均摊
 list.add(0, 99);                                    // 在下标 0 插入，O(n)
 list.addAll(Arrays.asList(2, 3, 4));                // 批量加
+list.addAll(0, Arrays.asList(7, 8));                // 在指定位置批量插入
 
 // === 删 ===
 list.remove(0);                                     // ⚠️ 按下标删 (int)
 list.remove(Integer.valueOf(99));                   // ⚠️ 按值删 (Object) —— 装箱区分
+list.removeIf(x -> x % 2 == 0);                     // ★ 条件删（边遍历边删的正确姿势）
 list.clear();                                       // 清空
 
 // === 查 / 改 ===
@@ -274,28 +283,96 @@ int v = list.get(0);                                // 读 O(1)
 list.set(0, 100);                                   // 写 O(1)
 boolean has = list.contains(2);                     // O(n)
 int idx = list.indexOf(3);                          // O(n)，找不到 -1
+int last = list.lastIndexOf(3);                     // 最后一次出现
 int size = list.size();
 boolean empty = list.isEmpty();
+
+// === 切片（视图，不是拷贝）===
+List<Integer> view = list.subList(1, 4);            // ⚠️ 共享底层数组，改 view 会改 list
+List<Integer> slice = new ArrayList<>(list.subList(1, 4));  // 要独立副本必须再 new 一次
 
 // === 遍历 ===
 for (int x : list) { /* ... */ }                    // 增强 for（最常用）
 for (int i = 0; i < list.size(); i++) { /* ... */ }
 list.forEach(x -> System.out.println(x));           // Lambda
+// ⚠️ 增强 for 中调 list.remove(x) 会抛 ConcurrentModificationException，要用 Iterator 或 removeIf
 
 // === 排序 ===
 Collections.sort(list);                             // 升序
 list.sort(null);                                    // 等价，原生比较器
-list.sort((a, b) -> b - a);                         // 降序
+list.sort((a, b) -> b - a);                         // 降序（小心溢出，建议 Integer.compare(b, a)）
 Collections.reverse(list);                          // 反转
 Collections.shuffle(list);                          // 随机打乱（写洗牌算法验证用）
 
-// === 拷贝 / 转数组 ===
-List<Integer> copy = new ArrayList<>(list);         // 浅拷贝
-Integer[] arr = list.toArray(new Integer[0]);       // List → 数组
-int[] prim = list.stream().mapToInt(Integer::intValue).toArray();  // → int[]
+// === 二维 List（DFS 回溯结果集 / 邻接表标配）===
+List<List<Integer>> res = new ArrayList<>();
+res.add(new ArrayList<>(path));                     // ★ 回溯收集结果必须深拷贝 path，否则全是同一引用
+List<List<Integer>> graph = new ArrayList<>();
+for (int i = 0; i < n; i++) graph.add(new ArrayList<>());   // 邻接表初始化
 
 // === 不可变 List（JDK 9+，常用作常量）===
 List<Integer> fixed = List.of(1, 2, 3);             // 不可修改，调 add 抛异常
+```
+
+#### 数组 ↔ ArrayList 互转（必背）
+
+Java 里最容易写错的就是这一块——`int[]`、`Integer[]`、`List<Integer>` 三者互转**没有统一 API**，且 `Arrays.asList` 对基本类型数组有陷阱。
+
+```java
+// =============== 数组 → List ===============
+
+// ① int[] → List<Integer>：必须 boxed 或 mapToObj
+int[] nums = {1, 2, 3};
+List<Integer> a1 = Arrays.stream(nums).boxed().collect(Collectors.toList());
+List<Integer> a2 = new ArrayList<>();
+for (int x : nums) a2.add(x);                       // 朴素写法，最易读
+
+// ⚠️ 错误示范：Arrays.asList(nums) 得到的是 List<int[]>，size=1
+List<int[]> wrong = Arrays.asList(nums);            // ❌ 不是你想要的
+
+// ② Integer[] → List<Integer>：可以直接 asList，但是固定大小
+Integer[] boxed = {1, 2, 3};
+List<Integer> b1 = Arrays.asList(boxed);            // ⚠️ 固定长度，add/remove 抛 UnsupportedOperationException
+List<Integer> b2 = new ArrayList<>(Arrays.asList(boxed));   // ★ 可变 List，刷题首选
+
+// ③ 可变参数风格（最简洁，常用于写测试用例）
+List<Integer> c1 = Arrays.asList(1, 2, 3);          // 固定长度
+List<Integer> c2 = new ArrayList<>(Arrays.asList(1, 2, 3));  // 可变
+List<Integer> c3 = List.of(1, 2, 3);                // JDK 9+，不可变，元素不能为 null
+
+// =============== List → 数组 ===============
+
+List<Integer> list = new ArrayList<>(Arrays.asList(1, 2, 3));
+
+// ① List<Integer> → Integer[]
+Integer[] arr1 = list.toArray(new Integer[0]);      // ★ 推荐写法，长度 0 即可，JVM 内部会重新分配
+Integer[] arr2 = list.toArray(Integer[]::new);      // JDK 11+ 等价写法
+
+// ② List<Integer> → int[]：必须 stream + mapToInt 拆箱
+int[] arr3 = list.stream().mapToInt(Integer::intValue).toArray();
+// ⚠️ list.toArray() 返回 Object[]，不能直接转 int[]
+
+// =============== 数组之间互转 ===============
+
+// int[] → Integer[]
+Integer[] boxed2 = Arrays.stream(nums).boxed().toArray(Integer[]::new);
+// Integer[] → int[]（要防 null）
+int[] prim = Arrays.stream(boxed).mapToInt(Integer::intValue).toArray();
+
+// =============== 二维数组互转 ===============
+
+int[][] grid = {{1, 2}, {3, 4}};
+// int[][] → List<List<Integer>>
+List<List<Integer>> g = new ArrayList<>();
+for (int[] row : grid) {
+    List<Integer> r = new ArrayList<>();
+    for (int x : row) r.add(x);
+    g.add(r);
+}
+// List<List<Integer>> → int[][]
+int[][] back = g.stream()
+    .map(r -> r.stream().mapToInt(Integer::intValue).toArray())
+    .toArray(int[][]::new);
 ```
 
 ### 哈希表 HashMap 与 HashSet

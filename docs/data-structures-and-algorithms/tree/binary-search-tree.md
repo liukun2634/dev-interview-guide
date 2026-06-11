@@ -134,6 +134,73 @@ public int kthSmallest(TreeNode root, int k) {
 - **时间**：O(H + k)，H 为树高
 - **空间**：O(H)
 
+## 例题 3：[删除二叉搜索树中的节点（LeetCode 450）](https://leetcode.cn/problems/delete-node-in-a-bst/)
+
+::: warning 🔥 必背手撕题
+BST 删除是面试高频题，能否分清三种情况、能否正确处理"双子树用后继替换"是核心考点。
+:::
+
+### 题目描述
+
+给定 BST 的根节点 `root` 和值 `key`，删除 BST 中 `key` 对应的节点，并保持 BST 性质，返回根节点的引用。
+
+### 三种情况的分类
+
+删除 BST 节点比插入难，根本原因是**删完之后还得保持 BST 性质**。把要删的节点分三类讨论：
+
+| 情况 | 子树形态 | 处理方式 | 原理 |
+|------|------|------|------|
+| **① 叶子** | 无左无右 | 直接返回 `null` | 删了不影响任何子树 |
+| **② 单子树** | 只有左 / 只有右 | 用唯一的子树替换当前节点 | 单子树本身就是合法 BST |
+| **③ 双子树** | 左右都有 | 找**中序后继**（右子树最左）替换 val，再递归删除后继 | 后继是右子树中**最小**的，替换后仍满足"左 < 根 < 右" |
+
+**为什么用后继不用前驱？** 用前驱（左子树最右）也行，效果对称。约定俗成用后继，因为推导更直观。
+
+### 完整代码
+
+```java
+public TreeNode deleteNode(TreeNode root, int key) {
+    if (root == null) return null;
+
+    if (key < root.val) {
+        root.left = deleteNode(root.left, key);     // 去左子树删
+    } else if (key > root.val) {
+        root.right = deleteNode(root.right, key);   // 去右子树删
+    } else {
+        // ★ 找到要删的节点
+        if (root.left == null) return root.right;   // 情况①②：叶子返回 null；只有右子树返回右
+        if (root.right == null) return root.left;   // 情况②：只有左子树返回左
+
+        // 情况③：双子树，找中序后继（右子树最左节点）
+        TreeNode successor = root.right;
+        while (successor.left != null) {
+            successor = successor.left;
+        }
+        root.val = successor.val;                   // ★ 替换 val（不真删当前节点）
+        root.right = deleteNode(root.right, successor.val);  // ★ 在右子树中递归删除后继
+    }
+    return root;
+}
+```
+
+### 关键细节与陷阱
+
+| 陷阱 | 后果 | 正确做法 |
+|------|------|---------|
+| 直接 `return null` 删节点 | 子树没接回，结构断了 | 必须 `root.left = deleteNode(...)`，**用返回值接住** |
+| 找后继时从 `root` 出发 | 找成自己 | 必须从 `root.right` 出发再一路往左 |
+| 双子树时不递归删除后继 | 后继的 val 出现两次 | 替换 val 后必须再递归把后继节点删掉 |
+| 忘记 `if (root == null)` 终止 | 空树或递归到底时 NPE | 第一行必须判空返回 |
+
+### 复杂度分析
+
+- **时间**：O(H)，H 为树高（平均 O(log n)，最差 O(n)）
+- **空间**：O(H)，递归栈
+
+### 追问：能否不替换 val，直接重连节点
+
+可以，但代码复杂得多——要找到后继节点和它的父节点，重新串接 4 条指针。**面试中"替换 val 法"是首选**，代码短、不易错。只有当节点 val 是大对象、复制代价高时才考虑重连指针法。
+
 ## 推荐练习
 
 | 题号 | 题名 | 难度 | 一句话提示 |
@@ -157,7 +224,7 @@ public int kthSmallest(TreeNode root, int k) {
 
 ### 删除 BST 节点的三种情况？
 
-1. **叶子节点**：直接删除。2. **只有一个子树**：用子树替换当前节点。3. **有两个子树**：找中序后继（右子树最左节点）替换当前节点值，然后删除后继。
+1. **叶子节点**：直接删除。2. **只有一个子树**：用子树替换当前节点。3. **有两个子树**：找中序后继（右子树最左节点）替换当前节点值，然后删除后继。详细代码见上面例题 3。
 
 ## 看到什么就先想到这类
 

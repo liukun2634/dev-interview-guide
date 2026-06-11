@@ -96,6 +96,7 @@ export default withMermaid(defineConfig({
             { text: '二叉搜索树', link: '/data-structures-and-algorithms/tree/binary-search-tree' },
             { text: '堆与优先队列', link: '/data-structures-and-algorithms/tree/heap-priority-queue' },
             { text: 'Trie 字典树', link: '/data-structures-and-algorithms/tree/trie' },
+            { text: 'Radix Tree（压缩 Trie）', link: '/data-structures-and-algorithms/tree/radix-tree' },
             { text: '并查集', link: '/data-structures-and-algorithms/tree/union-find' },
           ],
         },

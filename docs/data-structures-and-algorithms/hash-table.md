@@ -309,6 +309,138 @@ class Solution {
 
 ---
 
+## 典型例题：LRU 缓存（必背手撕题）
+
+[LeetCode 146](https://leetcode.cn/problems/lru-cache/) · 中等 · 🔥🔥🔥 **大厂面试出现率 Top 5**
+
+**题目**：实现 `LRUCache` 类，支持 `get(key)` 和 `put(key, value)`，要求**两个操作都 O(1)**。容量满时淘汰最久未使用的 key。
+
+### 为什么要 HashMap + 双向链表
+
+这道题是"两种数据结构互补"的经典案例，关键是想清楚**单独用任一种数据结构都做不到 O(1)**：
+
+| 方案 | get | put | 淘汰最久未用 | 问题 |
+|------|------|------|------|------|
+| 只用 HashMap | O(1) | O(1) | ❌ 无法知道顺序 | 没有访问顺序信息 |
+| 只用数组 / ArrayList | O(n) | O(1) 末尾 | O(n) 移到末尾 | 找 key 要遍历 |
+| 只用双向链表 | O(n) | O(1) 头插 | O(1) 删尾 | 找 key 要遍历 |
+| **HashMap + 双向链表** | **O(1)** | **O(1)** | **O(1)** | ✅ map 定位节点，链表维护顺序 |
+
+**核心设计：**
+- **HashMap**：`key → 链表节点`，让我们能 O(1) 拿到节点引用
+- **双向链表**：维护"最近访问"的顺序，头部 = 最新，尾部 = 最久未用
+- **双向**而非单向：要 O(1) 删除任意节点，必须能直接拿到前驱
+- **伪头伪尾哨兵节点**：避免每次 add/remove 都判空，所有操作都变成"在中间"
+
+### 完整代码（必须能默写）
+
+```java
+class LRUCache {
+    // 双向链表节点
+    private static class Node {
+        int key, value;
+        Node prev, next;
+        Node(int k, int v) { key = k; value = v; }
+    }
+
+    private final int capacity;
+    private final Map<Integer, Node> map;
+    private final Node head, tail;  // ★ 伪头伪尾，简化边界
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.map = new HashMap<>();
+        this.head = new Node(0, 0);
+        this.tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        Node node = map.get(key);
+        if (node == null) return -1;
+        moveToHead(node);                       // ★ 命中即视为"最近使用"
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        Node node = map.get(key);
+        if (node != null) {
+            node.value = value;                 // 已存在：更新值 + 移到头
+            moveToHead(node);
+            return;
+        }
+        // 不存在：新建插入头部
+        Node newNode = new Node(key, value);
+        map.put(key, newNode);
+        addToHead(newNode);
+        if (map.size() > capacity) {
+            Node lru = tail.prev;               // ★ 淘汰尾部（最久未用）
+            removeNode(lru);
+            map.remove(lru.key);                // ★ 别忘了同步删 map
+        }
+    }
+
+    // ===== 双向链表 3 个原子操作 =====
+    private void addToHead(Node node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(Node node) {
+        removeNode(node);
+        addToHead(node);
+    }
+}
+```
+
+### 关键细节与陷阱
+
+| 陷阱 | 后果 | 正确做法 |
+|------|------|---------|
+| 节点只存 value 不存 key | 淘汰尾节点时无法从 map 删除 | **节点必须存 key**，删除时 `map.remove(node.key)` |
+| 用单向链表 | 删除任意节点要 O(n) 找前驱 | 必须双向 |
+| 不用伪头伪尾 | 头/尾节点的 add/remove 都要判 null，代码翻倍 | 用 dummy head/tail |
+| `get` 命中时忘记 moveToHead | 顺序错乱，淘汰错对象 | 命中也算"最近使用" |
+| 更新已有 key 时忘记 moveToHead | 同上 | put 已存在 key 时也要移到头 |
+
+### 追问：直接用 `LinkedHashMap` 行不行
+
+可以，**面试时面试官会先问"会不会自己实现"，答完手撕版本后再提 `LinkedHashMap` 加分**：
+
+```java
+class LRUCache extends LinkedHashMap<Integer, Integer> {
+    private final int capacity;
+    public LRUCache(int capacity) {
+        super(capacity, 0.75f, true);           // ★ accessOrder=true，按访问顺序排
+        this.capacity = capacity;
+    }
+    public int get(int key) { return super.getOrDefault(key, -1); }
+    public void put(int key, int value) { super.put(key, value); }
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<Integer, Integer> eldest) {
+        return size() > capacity;               // ★ 重写淘汰条件
+    }
+}
+```
+
+`LinkedHashMap` 底层就是"哈希表 + 双向链表"，`accessOrder=true` 让它每次访问后把节点移到链表尾。**面试中通常先写手撕版再提这个**，纯写 LinkedHashMap 会被判定"不会原理"。
+
+### 追问：并发安全的 LRU 怎么做
+
+- **简单方案**：`Collections.synchronizedMap(...)` 或所有方法加 `synchronized`，但吞吐量差
+- **生产方案**：[Caffeine](https://github.com/ben-manes/caffeine) — 采用 **W-TinyLFU** 算法（不是纯 LRU），用 ring buffer 缓冲访问记录、异步维护顺序，吞吐量比 `ConcurrentHashMap + 锁`高一个数量级
+- **Redis**：用近似 LRU（采样 N 个 key 选最旧的），不保存完整顺序信息，省内存
+
+---
+
 ## 延伸题目
 
 | 题目 | 链接 | 与典型题的区别 | 关键技巧 |

@@ -65,6 +65,58 @@ class Trie {
 
 **要点：** `children[26]` 对应 26 个小写字母。`isEnd` 标记是否有单词在此结束。如果字符集不只是小写字母，可以用 `HashMap<Character, Trie>` 代替数组。
 
+## 字符集选型与空间权衡
+
+面试中面试官很可能追问“字符集不是 26 个字母怎么办”。提前准备三个档位的选型：
+
+| 场景 | 存储 | 单节点空间 | 访问速度 | 适用 |
+|------|------|------|------|------|
+| 小写字母 × 26 / 数字 × 10 | `Trie[26]` / `Trie[10]` | 26 个指针（多数为 null） | O(1) 最快 | 90% 面试题默认 |
+| ASCII × 128 | `Trie[128]` | 128 个指针 | O(1) | 含标点符号、大小写混合 |
+| Unicode / 任意字符集 | `HashMap<Character, Trie>` | 按实际子节点数动态增长 | O(1) 但常数大 | 中文、外语学习应用 |
+| 路径有大量“单一子节点”链 | **压缩 Trie / Radix Tree** | 合并连续面点 | O(1) 平均 | URL / IP 路由表（Nginx / etcd） |
+
+**口诀：**字符集 ≤ 26 用数组，距面试进阶只要提一句“Unicode 场景改 HashMap”就够；Radix Tree 只需知道是“压缩了单孩子节点”的 Trie。
+
+## Trie 节点删除（面试进阶）
+
+插入和查询人人会写，**删除是面试区分度**。删除一个单词要同时避免误伤其他共享路径：
+
+```java
+// 返回 true 表示当前节点可以被父节点回收（无子且不是别的词末尾）
+public boolean delete(String word) {
+    return deleteHelper(this, word, 0);
+}
+
+private boolean deleteHelper(Trie node, String word, int depth) {
+    if (depth == word.length()) {
+        if (!node.isEnd) return false;       // 单词不存在，什么都不做
+        node.isEnd = false;
+        return isEmpty(node);                // ★ 如果该节点不再是任何词的末尾且无子节点，可被回收
+    }
+    int i = word.charAt(depth) - 'a';
+    Trie child = node.children[i];
+    if (child == null) return false;         // 路径不存在
+
+    boolean canDeleteChild = deleteHelper(child, word, depth + 1);
+    if (canDeleteChild) {
+        node.children[i] = null;             // ★ 真正划断引用，交给 GC
+        return !node.isEnd && isEmpty(node); // 本节点是否也可被上层回收
+    }
+    return false;
+}
+
+private boolean isEmpty(Trie node) {
+    for (Trie c : node.children) if (c != null) return false;
+    return true;
+}
+```
+
+**三条必背原则：**
+1. **只能从叶子往上递归删**，不能看到创建路径就直接拆
+2. **三个不能删的信号**：节点仍是别的词末尾（`isEnd=true`）、节点还有子节点、递归中途失败
+3. **Java GC 需要显式 `children[i] = null`**，不赋值 null 子树如果被其他引用护住会造成内存泄漏
+
 ## 例题 1：[实现 Trie（LeetCode 208）](https://leetcode.cn/problems/implement-trie-prefix-tree/)
 
 ### 题目描述

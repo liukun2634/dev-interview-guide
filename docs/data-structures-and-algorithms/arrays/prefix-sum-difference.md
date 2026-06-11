@@ -130,6 +130,40 @@ for (int i = 1; i < n; i++) {
 
 **为什么这样有效？** 当你对 diff 求前缀和时，`diff[l] += val` 的效果会从位置 `l` 一路"传播"到数组末尾；而 `diff[r+1] -= val` 则从位置 `r+1` 开始"抵消"这个传播。两者叠加，恰好只有区间 `[l, r]` 被加上了 val。
 
+**2D 差分（[LC 2536](https://leetcode.cn/problems/increment-submatrices-by-one/) 等高频考点）**
+
+2D 差分把 1D 的"两端打标记"扩展到"矩形四角打标记"。对左上 `(r1,c1)` 到右下 `(r2,c2)` 的子矩阵整体加 `val`：
+
+```java
+int[][] diff = new int[m + 1][n + 1];        // ★ 多开一行一列，承接 r2+1 / c2+1
+
+// 子矩阵 [r1..r2] × [c1..c2] 整体加 val，O(1)
+void add(int r1, int c1, int r2, int c2, int val) {
+    diff[r1][c1]     += val;
+    diff[r2+1][c1]   -= val;                 // 下边界抵消向下传播
+    diff[r1][c2+1]   -= val;                 // 右边界抵消向右传播
+    diff[r2+1][c2+1] += val;                 // ★ 容斥：右下角被减了两次，补回来
+}
+
+// 还原：对 diff 做 2D 前缀和
+int[][] result = new int[m][n];
+for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+        diff[i][j] += (i > 0 ? diff[i-1][j] : 0) + (j > 0 ? diff[i][j-1] : 0)
+                    - (i > 0 && j > 0 ? diff[i-1][j-1] : 0);
+        result[i][j] = diff[i][j];
+    }
+}
+```
+
+**口诀对照（与 2D 前缀和符号正好相反）：**
+
+| 操作 | 左上 | 下侧 | 右侧 | 右下 |
+|------|------|------|------|------|
+| 2D 前缀和（构建） | `+matrix` | `+pre[i-1]` | `+pre[j-1]` | `-pre[i-1][j-1]` |
+| 2D 前缀和（查询） | `+pre` | `-pre` | `-pre` | `+pre` |
+| **2D 差分（打标记）** | **`+val`** | **`-val`** | **`-val`** | **`+val`** |
+
 ### 第四步：选择合适的变体
 
 ```

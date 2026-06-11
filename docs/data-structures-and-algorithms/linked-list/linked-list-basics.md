@@ -225,6 +225,72 @@ public ListNode detectCycle(ListNode head) {
 
 ---
 
+## 必背手撕题：反转链表 II（[LeetCode 92](https://leetcode.cn/problems/reverse-linked-list-ii/)）
+
+::: warning 🔥 高频
+这是 LC 206（反转全链表）的进阶版，也是 LC 25（K 个一组翻转）的基础。考点：**dummy + 穿针引线**。
+:::
+
+**题目**：给你单链表的头节点 `head` 和两个整数 `left`、`right`，反转从位置 `left` 到 `right` 的节点（1-indexed），返回反转后的链表。
+
+### 思路：找前驱 + 头插法
+
+反转一个区间，比反转整条链表多两件事：(1) 定位区间前驱节点；(2) 反转结束后把区间两端接回原链表。最干净的写法是**头插法**——从 `left` 后面的节点开始，依次把后续节点插到 `pre.next` 处，反转就自然完成。
+
+### 完整代码
+
+```java
+public ListNode reverseBetween(ListNode head, int left, int right) {
+    ListNode dummy = new ListNode(0, head);   // ★ left 可能从 1 开始，dummy 避免特判
+    ListNode pre = dummy;
+    for (int i = 1; i < left; i++) {
+        pre = pre.next;                       // pre 停在反转区间的前驱（位置 left-1）
+    }
+
+    ListNode curr = pre.next;                 // curr 始终是反转区间的第一个节点
+    for (int i = 0; i < right - left; i++) {  // ★ 做 right-left 次头插
+        ListNode next = curr.next;            // 待头插的节点
+        curr.next = next.next;                // curr 跨过 next
+        next.next = pre.next;                 // next 插到 pre 后
+        pre.next = next;
+    }
+    return dummy.next;
+}
+```
+
+### 头插法演示
+
+```
+初始：dummy → 1 → 2 → 3 → 4 → 5     (left=2, right=4)
+pre 指向 1，curr 指向 2
+
+第1轮：next=3，把 3 头插到 pre 后
+       dummy → 1 → 3 → 2 → 4 → 5
+       pre=1，curr=2，curr.next=4
+
+第2轮：next=4，把 4 头插到 pre 后
+       dummy → 1 → 4 → 3 → 2 → 5
+       pre=1，curr=2，curr.next=5
+
+结束：2 次头插完成区间 [2,4] 的反转
+```
+
+### 关键细节
+
+| 陷阱 | 后果 | 正确做法 |
+|------|------|---------|
+| 不用 dummy | `left=1` 时反转头节点要特判 | 必加 dummy |
+| 用三指针 prev/curr/next 反转再接回 | 边界容易错（要接 4 条线） | 头插法只动 3 条线，且 curr 不变 |
+| 循环次数写错 | 区间长度算错 | `right - left` 次头插（区间内节点数为 `right - left + 1`） |
+| curr 移动了 | 头插后 curr 指向新位置 | curr 始终不动，只动 next |
+
+### 复杂度
+
+- **时间**：O(n)，最坏遍历到 right
+- **空间**：O(1)
+
+---
+
 ## 必背手撕题：K 个一组翻转链表（LeetCode 25）
 
 **这道题是大厂面试 Top 1 链表手撕题**——能现场写出干净版本，立刻区分初级和中高级。

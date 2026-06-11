@@ -136,6 +136,19 @@ public int upperBound(int[] nums, int target) {
 - 找"第一个满足条件" → lower_bound（左闭右开，`right=mid`）
 - 找"最后一个满足条件" → upper_bound（左闭右开，`left=mid+1`，返回 `left-1`）
 
+**三个模板边界一览（背下这张表，写代码不用想）：**
+
+| 维度 | 标准二分 | lower_bound | upper_bound |
+|------|------|------|------|
+| 区间 | `[left, right]` 左闭右闭 | `[left, right)` 左闭右开 | `[left, right)` 左闭右开 |
+| `right` 初值 | `nums.length - 1` | `nums.length` | `nums.length` |
+| 循环条件 | `left <= right` | `left < right` | `left < right` |
+| 命中分支 | `return mid` | — | — |
+| 太小（`< target`） | `left = mid + 1` | `left = mid + 1` | `left = mid + 1` |
+| 太大（`>= target`） | `right = mid - 1` | `right = mid` | — |
+| 命中或太大（`> target`） | — | — | `right = mid` |
+| 返回 | `-1`（未找到） | `left` | `left - 1` |
+
 ---
 
 ### 第四步：处理特殊情况
@@ -165,6 +178,48 @@ while (lo < hi) {
 }
 return lo;
 ```
+
+**完整例题：爱吃香蕉的珂珂（[LeetCode 875](https://leetcode.cn/problems/koko-eating-bananas/)）**
+
+珂珂有 N 堆香蕉 `piles[i]`，要在 H 小时内吃完。每小时吃 K 根，吃完一堆就停。求**最小**的 K。
+
+**怎么想到二分答案：** 直接对 K 二分。K 越大越容易吃完（单调性 ✓），定义 `check(K)` 验证给定速度能否在 H 小时内吃完。
+
+```java
+public int minEatingSpeed(int[] piles, int h) {
+    int lo = 1;                              // 速度至少 1
+    int hi = Arrays.stream(piles).max().getAsInt();  // 速度上限：最大那堆一小时吃完
+
+    while (lo < hi) {                        // ★ 求最小可行 K，用 lower_bound 模板
+        int mid = lo + (hi - lo) / 2;
+        if (canFinish(piles, mid, h)) {
+            hi = mid;                        // 这速度够，尝试更慢
+        } else {
+            lo = mid + 1;                    // 这速度不够，必须更快
+        }
+    }
+    return lo;
+}
+
+private boolean canFinish(int[] piles, int k, int h) {
+    long hours = 0;
+    for (int p : piles) {
+        hours += (p + k - 1) / k;            // ★ 向上取整：吃一堆需要 ceil(p/k) 小时
+    }
+    return hours <= h;
+}
+```
+
+**关键细节：**
+- **lo 和 hi 的范围**：速度至少 1（不能为 0），最多等于最大堆（再大也无用）
+- **向上取整 `(p + k - 1) / k`**：吃 7 根速度 3，要 3 小时不是 2 小时（吃 3+3+1）
+- **`long hours`**：防 `piles.length × max(piles) / 1` 溢出 int
+- **套 lower_bound 模板**：找最小可行解，`check(mid)` 成立时 `hi = mid`
+
+**二分答案的题目特征：**
+- 求"最大化最小值" / "最小化最大值"（LC 410 分割数组）
+- 求"最少天数 / 最少容量"（LC 1011 运货能力、LC 410）
+- 直接对答案数值二分，配 `check(x)` 验证
 
 **情况三：二维矩阵**
 

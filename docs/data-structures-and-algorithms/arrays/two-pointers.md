@@ -126,6 +126,50 @@ public int fastSlowPointer(int[] nums) {
 }
 ```
 
+### slow 的两种语义：写入位置 vs 已保留个数
+
+刷快慢指针时最大的混淆点：到底 `slow` 是"下一个写入的位置"还是"已保留的最后一个元素的下标"。两种语义都对，但要**全程一致**。下面用一组高频对照题演示：
+
+```java
+// LC 27 移除元素（保留所有不等于 val 的元素）
+// slow 语义：[0, slow) 已保留，初值 0
+public int removeElement(int[] nums, int val) {
+    int slow = 0;
+    for (int fast = 0; fast < nums.length; fast++) {
+        if (nums[fast] != val) {                 // ★ 保留条件
+            nums[slow] = nums[fast];
+            slow++;
+        }
+    }
+    return slow;                                 // 返回有效长度
+}
+
+// LC 26 删除有序数组中的重复项（每个值只保留 1 个）
+// slow 语义：[0, slow] 是去重后的有效区，初值 0
+// ★ 注意：slow 从 0 开始而不是 1，配合 slow+1 写入更整齐
+public int removeDuplicates(int[] nums) {
+    if (nums.length == 0) return 0;
+    int slow = 0;
+    for (int fast = 1; fast < nums.length; fast++) {  // ★ fast 从 1 开始
+        if (nums[fast] != nums[slow]) {          // ★ 跟 slow 比，不是跟 fast-1 比
+            slow++;
+            nums[slow] = nums[fast];
+        }
+    }
+    return slow + 1;                             // ★ 返回长度 = 下标 + 1
+}
+```
+
+**初值对比表（这是 P0 bug 重灾区）：**
+
+| 题目 | slow 初值 | fast 初值 | slow 语义 | 返回 |
+|------|------|------|------|------|
+| LC 27 移除元素 | 0 | 0 | `[0, slow)` 已保留 | `slow` |
+| LC 26 删除重复 | 0 | **1** | `[0, slow]` 已保留 | `slow + 1` |
+| LC 283 移动零 | 0 | 0 | `[0, slow)` 是非零 | `slow`（后面补 0）|
+
+**口诀：要么"区间是 [0, slow)、写完再 ++"，要么"区间是 [0, slow]、++ 再写"，混用必踩坑**。
+
 ---
 
 ## 典型例题：两数之和 II（LeetCode 167）

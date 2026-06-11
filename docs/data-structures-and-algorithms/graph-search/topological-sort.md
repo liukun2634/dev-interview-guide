@@ -110,6 +110,66 @@ public List<Integer> topologicalSort(int numNodes, int[][] edges) {
 
 ---
 
+## DFS 三色标记版（面试进阶设问）
+
+Kahn 在 90% 场景均适用，但以下三种场景**需要 DFS 后序版**，面试中起码要能说出：
+
+- 需要同时输出拓扑序**和**环上具体节点（调试依赖环）
+- 递归天然适合的场景（如表达式求值的拓扑顺序）
+- 在递归中顺便计算其它属性（如深度/独立集）
+
+**三色标记是什么：**
+- `0 = WHITE`：未访问
+- `1 = GRAY`：访问中（在当前 DFS 路径上）
+- `2 = BLACK`：已完成（本节点及其后代都处理完）
+
+**为什么要三色**：只用 visited 布尔数组无法区分“环”和“交叉路径”。`A → B → C` 和 `A → C` 同时存在时，C 被访问两次但没环。只有**遇到 GRAY 节点才是环**（在当前路径上遇到自己的祖先）。
+
+```java
+public List<Integer> topologicalSortDFS(int n, int[][] edges) {
+    List<List<Integer>> graph = new ArrayList<>();
+    for (int i = 0; i < n; i++) graph.add(new ArrayList<>());
+    for (int[] e : edges) graph.get(e[0]).add(e[1]);
+
+    int[] color = new int[n];                // 0 白 / 1 灰 / 2 黑
+    Deque<Integer> stack = new ArrayDeque<>(); // ★ 后序压栈，最后逆序即拓扑序
+
+    for (int i = 0; i < n; i++) {
+        if (color[i] == 0 && !dfs(i, graph, color, stack)) {
+            return new ArrayList<>();         // 有环
+        }
+    }
+    return new ArrayList<>(stack);            // ★ Deque 迭代顺序 = 压栈逆序 = 拓扑序
+}
+
+private boolean dfs(int u, List<List<Integer>> graph, int[] color, Deque<Integer> stack) {
+    color[u] = 1;                             // 标为 GRAY：进入当前路径
+    for (int v : graph.get(u)) {
+        if (color[v] == 1) return false;      // ★ 遇到 GRAY = 环
+        if (color[v] == 0 && !dfs(v, graph, color, stack)) return false;
+        // color[v] == 2 时直接跳过（已处理）
+    }
+    color[u] = 2;                             // 标为 BLACK：后代都走完
+    stack.push(u);                            // 后序压栈
+    return true;
+}
+```
+
+## 字典序最小拓扑序（[LC 1203](https://leetcode.cn/problems/sort-items-by-groups-respecting-dependencies/) 类题高频考点）
+
+题目要求输出**字典序最小**的拓扑序时，只需一个改动：
+
+```java
+// 小改动：将 Queue 换成 PriorityQueue
+PriorityQueue<Integer> queue = new PriorityQueue<>();      // ★ 小根堆
+// for (int i = 0; i < n; i++) if (indegree[i] == 0) queue.offer(i);
+// while (!queue.isEmpty()) { int u = queue.poll(); ... }
+```
+
+复杂度从 O(V+E) 变为 O((V+E) log V)，换取“任何时刻优先选最小编号节点”的性质。面试会考这一点。
+
+---
+
 ## 典型例题：课程表（[LeetCode 207](https://leetcode.cn/problems/course-schedule/)）
 
 **题目：** 你需要修 `numCourses` 门课，给定先修关系 `prerequisites[i] = [a, b]` 表示学 a 之前要先学 b。判断能否修完所有课程。

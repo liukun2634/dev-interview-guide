@@ -481,6 +481,128 @@ if (!lock.validate(stamp)) {              // 验证读期间是否有写
 
 :::
 
+### 生产者-消费者模式（Producer-Consumer）
+
+最经典的**并发解耦模式**：生产者只造数据、消费者只处理数据，中间通过**有界队列**隔开，两边速度不一致由队列吸收。Java 的线程池、Reactor 事件循环、Kafka 消费者，本质都是这个模式的不同形态。
+
+#### 模型与三要素
+
+```
+┌──────────┐   put()    ┌─────────────┐   take()   ┌──────────┐
+│ Producer │ ────────▶ │  Buffer     │ ────────▶ │ Consumer │
+│  (N 个)  │  满则阻塞  │ (有界队列)  │  空则阻塞  │  (M 个)  │
+└──────────┘            └─────────────┘            └──────────┘
+```
+
+| 角色 | 职责 | 阻塞条件 |
+|------|------|---------|
+| **生产者** | 生成任务放进队列 | 队列**满** → 阻塞 / 丢弃 / 降级 |
+| **缓冲区** | 线程安全的有界容器 | — |
+| **消费者** | 从队列取任务处理 | 队列**空** → 阻塞 |
+
+**为什么必须有界？** 无界队列 = 没有背压，生产者一旦快于消费者就会堆积到 OOM（`Executors.newFixedThreadPool` 的著名陷阱）。
+
+#### Java 三种实现
+
+**① BlockingQueue（首选）**
+
+```java
+BlockingQueue<Task> queue = new ArrayBlockingQueue<>(1000);
+
+// 生产者
+Runnable producer = () -> {
+    while (running) {
+        Task t = produce();
+        queue.put(t);                                // 满则阻塞
+        // 或 queue.offer(t, 100, MILLISECONDS);     // 带超时
+    }
+};
+
+// 消费者
+Runnable consumer = () -> {
+    while (running) {
+        try {
+            Task t = queue.take();                   // 空则阻塞
+            consume(t);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+        }
+    }
+};
+```
+
+**② BlockingQueue 选型**
+
+| 实现 | 特点 | 适用 |
+|------|------|------|
+| `ArrayBlockingQueue` | 数组、有界、单锁、可选公平 | **生产首选** |
+| `LinkedBlockingQueue` | 链表、双锁（put/take 分离）、**默认无界** | 吞吐高，但**容量必须显式传** |
+| `SynchronousQueue` | 容量 0，直接交接 | `newCachedThreadPool` 底层 |
+| `LinkedTransferQueue` | `transfer()` 等消费者拿走才返回 | 极致低延迟 |
+| `PriorityBlockingQueue` | 堆排序、**无界** | 任务有优先级 |
+| `DelayQueue` | 元素到期才能取出 | 定时任务、缓存过期 |
+
+**③ Lock + Condition（手写，面试题原型）**
+
+```java
+public class BoundedBuffer<T> {
+    private final Object[] items;
+    private int putIdx, takeIdx, count;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition notFull  = lock.newCondition();
+    private final Condition notEmpty = lock.newCondition();
+
+    public BoundedBuffer(int cap) { items = new Object[cap]; }
+
+    public void put(T x) throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == items.length) notFull.await();   // while 防虚假唤醒
+            items[putIdx] = x;
+            putIdx = (putIdx + 1) % items.length;
+            count++;
+            notEmpty.signal();                                // 只唤醒消费者
+        } finally { lock.unlock(); }
+    }
+
+    @SuppressWarnings("unchecked")
+    public T take() throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == 0) notEmpty.await();
+            T x = (T) items[takeIdx];
+            items[takeIdx] = null;
+            takeIdx = (takeIdx + 1) % items.length;
+            count--;
+            notFull.signal();
+            return x;
+        } finally { lock.unlock(); }
+    }
+}
+```
+
+::: warning 手写题 4 大易错点
+1. `await()` 必须用 **`while` 而不是 `if`** —— 防虚假唤醒（spurious wakeup）
+2. 用**两个独立 Condition**（notFull / notEmpty）—— 一个 Condition + `signalAll()` 会有惊群
+3. **业务处理放在锁外** —— 临界区只保留入队/出队，缩短持锁时间
+4. 释放锁必须放 `finally` —— 否则异常时永久占锁
+:::
+
+#### 工程化关键点
+
+| 维度 | 方案 |
+|------|------|
+| **优雅关闭** | 毒丸（Poison Pill）/ `interrupt()` + 检查标志 / `ExecutorService.shutdown()` |
+| **背压策略** | 4 种线程池拒绝策略：Abort / CallerRuns / Discard / DiscardOldest |
+| **批量消费** | `queue.drainTo(buffer, 100)` 一次取多条，**减少锁竞争 10×+** |
+| **监控指标** | 队列长度、入队/出队 TPS、阻塞次数、平均等待时间 |
+| **持久化版本** | Kafka / RocketMQ —— 跨进程、跨机器的"分布式生产者-消费者" |
+
+::: tip 一句话本质
+**Java 线程池就是生产者-消费者**：`submit()` 是生产，Worker 线程是消费者，`workQueue` 是缓冲区，拒绝策略就是队列满的降级方案。
+:::
+
 ### Disruptor：单机百万 TPS 的无锁队列
 
 LMAX Disruptor 是 2010 年开源的**高性能内存队列**，性能比 `BlockingQueue` 高 10-100 倍。**Log4j 2、Apache Storm、Spring Cloud Stream** 都在底层使用它。
@@ -676,6 +798,121 @@ long v = (long) VALUE_HANDLE.getAcquire(this);     // Acquire 语义
 
 **何时用 VarHandle**：库作者、需要细粒度内存语义控制。**应用层用 `AtomicXxx` / `LongAdder` 即可**。
 
+### 限流器：从 Guava RateLimiter 到分布式令牌桶
+
+限流是高并发系统的标配防线。Java 单机方案首选 Guava `RateLimiter`（令牌桶），多实例部署必须升级到 **Redis + Lua 的分布式令牌桶**才能跨节点共享状态。
+
+#### 四大算法心智模型
+
+| 算法 | 一句话 | 突发流量 | 平滑度 | 实现复杂度 |
+|------|--------|---------|--------|-----------|
+| **计数器（固定窗口）** | 每秒清零计数 | 容许 | ❌ 边界双倍流量 | ⭐ |
+| **滑动窗口** | 用环形数组细分小窗口 | 部分 | ✅ | ⭐⭐ |
+| **漏桶（Leaky Bucket）** | 出口恒定速率，水太多就溢出 | ❌ 严格匀速 | ✅✅ | ⭐⭐ |
+| **令牌桶（Token Bucket）** | 桶里攒令牌，请求扣令牌 | ✅ 允许突发 | ✅ | ⭐⭐ |
+
+**业务首选令牌桶** —— 既能限平均速率，又允许短时突发（攒着的令牌可一次性消费）。
+
+#### 单机：Guava RateLimiter（令牌桶）
+
+```java
+// 每秒 100 个令牌，允许预热 1 秒（SmoothWarmingUp 慢启动防冷启动雪崩）
+RateLimiter limiter = RateLimiter.create(100, 1, TimeUnit.SECONDS);
+
+if (limiter.tryAcquire(1, 50, TimeUnit.MILLISECONDS)) {
+    handleRequest();              // 50ms 内拿到令牌 → 放行
+} else {
+    rejectFastFail();             // 拿不到 → 立即拒绝
+}
+```
+
+**两种模式**：
+- `SmoothBursty`（默认）—— 允许突发，桶最多攒 `permitsPerSecond` 个令牌
+- `SmoothWarmingUp` —— 慢启动，冷却后速率从低到高线性增长，**防数据库刚启动被打挂**
+
+::: warning Guava RateLimiter 的硬伤
+1. **仅单机**：8 个实例 × 100 QPS = 实际 800 QPS，与目标偏差 8 倍
+2. **不能动态调整阈值**：改值要重启
+3. **不支持分布式协同**：跨节点不感知
+:::
+
+#### 分布式：Redis + Lua 手写令牌桶（面试高频手写题）
+
+**核心思路**：把"桶状态（剩余令牌数 + 上次补令牌时间）"放 Redis Hash，每次请求用 **Lua 脚本** 原子地完成"惰性补令牌 + 扣减 + 写回"。
+
+```lua
+-- KEYS[1] = bucket:userId
+-- ARGV   = capacity, rate(每秒令牌), now_ms, requested
+local capacity  = tonumber(ARGV[1])
+local rate      = tonumber(ARGV[2])
+local now       = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+
+local data = redis.call('HMGET', KEYS[1], 'tokens', 'ts')
+local tokens = tonumber(data[1]) or capacity
+local lastTs = tonumber(data[2]) or now
+
+-- 惰性补令牌（不开后台线程）
+local delta = math.max(0, now - lastTs) * rate / 1000
+tokens = math.min(capacity, tokens + delta)
+
+local allowed = 0
+if tokens >= requested then
+    tokens = tokens - requested
+    allowed = 1
+end
+
+redis.call('HMSET', KEYS[1], 'tokens', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], 60000)
+return allowed
+```
+
+**Java 调用端**：
+
+```java
+@Component
+public class DistributedRateLimiter {
+    private final StringRedisTemplate redis;
+    private final DefaultRedisScript<Long> script;          // 加载上面的 Lua
+
+    public boolean tryAcquire(String key, int capacity, int rate, int permits) {
+        Long ok = redis.execute(script,
+            List.of("bucket:" + key),
+            String.valueOf(capacity),
+            String.valueOf(rate),
+            String.valueOf(System.currentTimeMillis()),
+            String.valueOf(permits));
+        return ok != null && ok == 1L;
+    }
+}
+```
+
+#### 关键设计点（面试加分）
+
+| 维度 | 要点 |
+|------|------|
+| **原子性** | 必须 Lua —— `GET → 计算 → SET` 三步走会产生并发覆盖 |
+| **时间源** | 用客户端 `now` 可能时钟漂移，用 Redis `TIME` 命令更稳但有 RTT |
+| **惰性补令牌** | 不开后台定时任务 —— 用 `now - lastTs` 反推应补多少，省 CPU |
+| **降级** | Redis 挂了 → 回退本地 Guava RateLimiter（双层防线） |
+| **热 Key** | 同一 userId 打到同一槽 → **本地预扣 N 个 + 批量同步**（类 Sentinel cluster-flow） |
+| **Cluster 模式** | Lua 涉及多 key 时必须 hash tag：`bucket:{userId}` |
+| **生产替代** | **Redisson `RRateLimiter`** / **Sentinel 集群流控** / **Resilience4j RateLimiter** |
+
+#### 生产框架对比
+
+| 框架 | 算法 | 分布式 | 适用 |
+|------|------|-------|------|
+| **Guava RateLimiter** | 令牌桶 | ❌ | 单机限流、防自家爬虫 |
+| **Bucket4j** | 令牌桶 | ✅（Hazelcast/Ignite/Redis） | 优雅 API、生产推荐 |
+| **Redisson `RRateLimiter`** | 令牌桶 | ✅ | 已用 Redis 的项目 |
+| **Sentinel** | 滑动窗口 + 令牌桶 + 漏桶 | ✅ 集群流控 | 阿里系、Spring Cloud Alibaba |
+| **Resilience4j RateLimiter** | 信号量 + 时间窗口 | ❌（自己接 Redis） | 函数式风格、与 CircuitBreaker 同体系 |
+
+::: tip 一句话答题
+**"单机用 Guava，多实例必须 Redis+Lua 令牌桶；生产直接上 Sentinel / Bucket4j 别造轮子；时钟漂移和 Redis 宕机要有双层降级。"**
+:::
+
 ### 选型速查（生产黄金一张表）
 
 | 场景 | 选什么 |
@@ -683,10 +920,13 @@ long v = (long) VALUE_HANDLE.getAcquire(this);     // Acquire 语义
 | 高并发计数 | **LongAdder**（高并发） / AtomicLong（低并发）|
 | 读极多 + 短写（配置/路由表） | **StampedLock** + 乐观读 |
 | 读多写少（缓存等）| `ReentrantReadWriteLock` |
+| 简单线程间通信 / 生产者-消费者 | **`ArrayBlockingQueue`**（有界、单锁、生产首选）|
 | 极致单机消息队列 | **Disruptor** |
 | 本地缓存 | **Caffeine**（替代 Guava）|
 | CPU 密集分治计算 | **ForkJoinPool** + 自定义实例 |
 | 库级原子字段 + 内存屏障 | **VarHandle**（替代 Unsafe）|
+| 单机限流 | **Guava `RateLimiter`** / **Bucket4j** |
+| 分布式限流 | **Redis + Lua 令牌桶** / **Sentinel** / **Redisson `RRateLimiter`** |
 | 异步编排 | `CompletableFuture` / `StructuredTaskScope`（JDK 21+）|
 
 ---
