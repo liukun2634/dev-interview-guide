@@ -40,13 +40,18 @@ title: 树与堆
 | [二叉树](../binary-tree) | 先把遍历、递归和层序处理讲清楚 |
 | [二叉搜索树](./binary-search-tree) | 看有序性如何减少搜索范围 |
 | [堆与优先队列](./heap-priority-queue) | 看 top-k 和局部最值如何维护 |
+| [Trie 字典树](./trie) | 看前缀问题如何建模 |
+| [并查集](./union-find) | 看连通性问题如何处理 |
+
+### 工程实战题
+
+| 专题 | 先看什么 |
+|------|------|
 | [数据流中位数（工程）](./data-stream-median) | 双堆配合 — 金融/监控 p50/p99 分位数场景 |
 | [跳表 SkipList（工程）](./skip-list) | Redis ZSet / ConcurrentSkipListMap / LevelDB MemTable 的核心 |
-| [Trie 字典树](./trie) | 看前缀问题如何建模 |
 | [Radix Tree（压缩 Trie，工程）](./radix-tree) | URL / IP 路由表等工程场景为何不用裸 Trie |
 | [Merkle Tree（工程）](./merkle-tree) | Git / 区块链 / IPFS / S3 / Dynamo 反熵的底层 |
 | [撮合引擎（工程）](./matching-engine) | 交易所订单簿，Price-Time Priority 核心结构 |
-| [并查集](./union-find) | 看连通性问题如何处理 |
 
 ## 看到什么就先想到这类
 

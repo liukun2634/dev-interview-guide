@@ -258,6 +258,143 @@ class Trie {
 - **时间**：O(m × n × 4^L)，L 为最长单词长度，Trie 剪枝大幅减少实际搜索量
 - **空间**：O(T + L)，T 为 Trie 节点数，L 为递归深度
 
+## 另一种写法：独立 TrieNode 类（推荐生产代码用）
+
+上面例题里我们都把"节点"和"管理 API"塞进同一个 `Trie` 类——刷题足够简洁，但**生产代码几乎一律分离**成两个类：
+
+- `TrieNode`：纯数据节点，可灵活扩展业务字段
+- `Trie`：API 入口，持有 root，提供 insert / search / startsWith / delete
+
+### 完整代码
+
+```java
+class TrieNode {
+    TrieNode[] children = new TrieNode[26];
+    boolean isEnd = false;
+    // ★ 业务字段按需扩展，节点写法的最大价值在这里：
+    // int frequency;            // 该词被插入的次数（自动补全用）
+    // String wordOriginal;      // 末尾节点保存完整词（DFS 时用）
+    // int weight;               // 权重（带权 Trie / 模糊匹配）
+    // List<Long> docIds;        // 倒排索引（搜索引擎用）
+}
+
+class Trie {
+    private final TrieNode root = new TrieNode();      // ★ API 类只持有 root
+
+    public void insert(String word) {
+        TrieNode node = root;
+        for (char c : word.toCharArray()) {
+            int i = c - 'a';
+            if (node.children[i] == null) {
+                node.children[i] = new TrieNode();
+            }
+            node = node.children[i];
+        }
+        node.isEnd = true;
+        // node.frequency++;                          // ★ 业务扩展：记录词频
+        // node.wordOriginal = word;                  // ★ 业务扩展：末尾保存完整词
+    }
+
+    public boolean search(String word) {
+        TrieNode node = searchPrefix(word);
+        return node != null && node.isEnd;
+    }
+
+    public boolean startsWith(String prefix) {
+        return searchPrefix(prefix) != null;
+    }
+
+    private TrieNode searchPrefix(String prefix) {
+        TrieNode node = root;
+        for (char c : prefix.toCharArray()) {
+            int i = c - 'a';
+            if (node.children[i] == null) return null;
+            node = node.children[i];
+        }
+        return node;
+    }
+}
+```
+
+### 两种写法对比
+
+| 维度 | 内嵌写法（Trie 自身作节点）| 独立 TrieNode 类 |
+|------|------|------|
+| 代码量 | 短（一个类）| 长（两个类）|
+| 职责清晰 | 弱（既是节点又是 API） | **强（节点 / API 分离）** |
+| 扩展业务字段 | 难（要在 API 类里加字段） | **易（只改 TrieNode）** |
+| 单元测试 | 一起测 | **可分别测 Node 和 API** |
+| LeetCode 提交 | ✅ 更短 | ✅ 也能过 |
+| 适用 | **刷题白板** | **生产代码 / 库** |
+
+**面试建议**：
+
+- 时间紧、白板手写 → 用**内嵌写法**（少 5 行代码）
+- 系统设计题 / "如果让你做一个自动补全服务" → 用**独立 TrieNode 写法**，方便扩展 frequency / wordOriginal / docIds
+
+### 业务扩展：自动补全 Top-K 推荐
+
+独立 TrieNode 的真正威力在业务字段上。以下是"输入前缀返回 top-3 高频词"的典型扩展：
+
+```java
+class AutocompleteTrie {
+    private final TrieNode root = new TrieNode();
+
+    public void insert(String word) {
+        TrieNode node = root;
+        for (char c : word.toCharArray()) {
+            int i = c - 'a';
+            if (node.children[i] == null) node.children[i] = new TrieNode();
+            node = node.children[i];
+        }
+        node.isEnd = true;
+        node.frequency++;                                // ★ 累加词频
+        node.wordOriginal = word;
+    }
+
+    /** 给定前缀，返回频次最高的 k 个词 */
+    public List<String> topK(String prefix, int k) {
+        TrieNode node = searchPrefix(prefix);
+        if (node == null) return Collections.emptyList();
+
+        // 从前缀末尾节点向下 DFS，收集所有终止节点
+        List<TrieNode> all = new ArrayList<>();
+        dfs(node, all);
+
+        // 按频次降序，取前 k
+        return all.stream()
+            .sorted((a, b) -> b.frequency - a.frequency)
+            .limit(k)
+            .map(n -> n.wordOriginal)
+            .collect(Collectors.toList());
+    }
+
+    private void dfs(TrieNode node, List<TrieNode> result) {
+        if (node.isEnd) result.add(node);
+        for (TrieNode child : node.children) {
+            if (child != null) dfs(child, result);
+        }
+    }
+
+    private TrieNode searchPrefix(String prefix) {
+        TrieNode node = root;
+        for (char c : prefix.toCharArray()) {
+            int i = c - 'a';
+            if (node.children[i] == null) return null;
+            node = node.children[i];
+        }
+        return node;
+    }
+}
+
+// 用法
+trie.insert("apple"); trie.insert("apple"); trie.insert("application");
+trie.insert("apricot"); trie.insert("app");
+trie.topK("app", 3);  // [apple, app, application]（apple 频次 2）
+```
+
+**进一步优化**：节点上挂一个 `PriorityQueue<TopK>` 或 `TreeSet` 直接维护，查询 O(K log K)、不用 DFS 整棵子树。这是搜索引擎自动补全的标配（百度 Suggest、Google Suggest）。
+
 ## 推荐练习
 
 | 题号 | 题名 | 难度 | 一句话提示 |
