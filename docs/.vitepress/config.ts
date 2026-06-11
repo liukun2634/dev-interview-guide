@@ -61,6 +61,7 @@ export default withMermaid(defineConfig({
             { text: '滑动窗口', link: '/data-structures-and-algorithms/arrays/sliding-window' },
             { text: '前缀和与差分', link: '/data-structures-and-algorithms/arrays/prefix-sum-difference' },
             { text: '二分查找', link: '/data-structures-and-algorithms/arrays/binary-search' },
+            { text: 'Fisher-Yates 洗牌（工程）', link: '/data-structures-and-algorithms/arrays/shuffle' },
           ],
         },
         {
@@ -85,6 +86,9 @@ export default withMermaid(defineConfig({
           items: [
             { text: '概念与处理', link: '/data-structures-and-algorithms/hash/' },
             { text: '哈希表', link: '/data-structures-and-algorithms/hash-table' },
+            { text: 'LFU 缓存（工程）', link: '/data-structures-and-algorithms/hash/lfu-cache' },
+            { text: 'O(1) 插删随机（工程）', link: '/data-structures-and-algorithms/hash/randomized-set' },
+            { text: '设计 Twitter（工程）', link: '/data-structures-and-algorithms/hash/twitter-design' },
           ],
         },
         {
@@ -95,8 +99,11 @@ export default withMermaid(defineConfig({
             { text: '二叉树', link: '/data-structures-and-algorithms/binary-tree' },
             { text: '二叉搜索树', link: '/data-structures-and-algorithms/tree/binary-search-tree' },
             { text: '堆与优先队列', link: '/data-structures-and-algorithms/tree/heap-priority-queue' },
+            { text: '数据流中位数（工程）', link: '/data-structures-and-algorithms/tree/data-stream-median' },
+            { text: '跳表 SkipList（工程）', link: '/data-structures-and-algorithms/tree/skip-list' },
             { text: 'Trie 字典树', link: '/data-structures-and-algorithms/tree/trie' },
-            { text: 'Radix Tree（压缩 Trie）', link: '/data-structures-and-algorithms/tree/radix-tree' },
+            { text: 'Radix Tree（压缩 Trie，工程）', link: '/data-structures-and-algorithms/tree/radix-tree' },
+            { text: '撮合引擎（工程）', link: '/data-structures-and-algorithms/tree/matching-engine' },
             { text: '并查集', link: '/data-structures-and-algorithms/tree/union-find' },
           ],
         },

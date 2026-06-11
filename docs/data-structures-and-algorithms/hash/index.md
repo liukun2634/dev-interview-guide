@@ -45,6 +45,9 @@ title: 哈希
 | 专题 | 关键差异 | 先看什么 |
 |------|------|------|
 | [哈希表](../hash-table) | 覆盖 Key/Value 设计方法论、底层原理、常见陷阱 | key/value 设计三问 + HashMap 内部实现 |
+| [LFU 缓存（工程）](./lfu-cache) | LRU 进阶 — 双哈希 + N 条双向链表手撕 | 为什么 Redis 4.0+ 上了 allkeys-lfu |
+| [O(1) 插删随机（工程）](./randomized-set) | HashMap + ArrayList 双向映射 | 抽奖系统 / 连接池随机选择 |
+| [设计 Twitter（工程）](./twitter-design) | Feed 流最小可面试版 | 推/拉/推拉结合三大模型 |
 
 ## 看到什么就先想到这类
 
