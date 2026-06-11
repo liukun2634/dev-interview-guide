@@ -58,6 +58,8 @@ title: 系统设计
 | [分布式理论](./distributed-theory) | 分布式系统的理论基石 | CAP/BASE、一致性模型、Paxos/Raft/ZAB、一致性哈希、分布式时钟 |
 | [分布式事务](./distributed-transaction) | 跨服务数据一致性方案 | 2PC/3PC、TCC、Saga、本地消息表、事务消息 |
 | [高可用架构](./high-availability) | 保障系统持续可用的设计原则 | SLA、冗余设计、故障转移、限流熔断降级、负载均衡、蓝绿部署 |
+| [高并发读架构](./high-concurrency-read) | 百万 QPS 读怎么扶 | 全链路逐级削峰（CDN/网关/多级缓存/读写分离）、商品详情/热搜/抢票案例 |
+| [高并发写架构](./high-concurrency-write) | 秒杀/抢单/发帖怎么扶 | CDN 验证码降速 + 网关限流 + Redis 预扣 + MQ 削峰 + 分库分表 |
 | [缓存策略](./caching-strategies) | 缓存的使用模式与一致性 | 读写策略、缓存更新、一致性方案、Bloom Filter、HyperLogLog |
 | [限流与熔断](./rate-limiting) | 流量控制与故障隔离 | 令牌桶/漏桶、熔断状态机、降级策略、Sentinel/Hystrix |
 | [消息队列](./message-queue) | 异步解耦与削峰填谷 | Kafka/RocketMQ/RabbitMQ、消息可靠性、顺序消息、幂等消费 |
@@ -74,5 +76,5 @@ title: 系统设计
 
 1. **方法论**：先看 [系统设计方法论](./system-design-methodology)，掌握面试答题框架，避免在没有结构的情况下陷入细节
 2. **理论基础**：阅读 [分布式理论](./distributed-theory) 和 [分布式事务](./distributed-transaction)，建立 CAP/BASE/一致性的认知底座
-3. **技术组件**：依次学习 [高可用架构](./high-availability)、[缓存策略](./caching-strategies)、[限流与熔断](./rate-limiting)、[消息队列](./message-queue)、[存储选型](./database-selection)、[API 设计](./api-design)
+3. **技术组件**：依次学习 [高可用架构](./high-availability)、[高并发读架构](./high-concurrency-read)、[高并发写架构](./high-concurrency-write)、[缓存策略](./caching-strategies)、[限流与熔断](./rate-limiting)、[消息队列](./message-queue)、[存储选型](./database-selection)、[API 设计](./api-design)
 4. **综合应用**：结合 [微服务架构](./microservices)、[搜索与推荐](./search-and-recommendation) 和 [综合案例](./real-world-cases)，做到融会贯通

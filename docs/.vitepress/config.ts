@@ -250,6 +250,8 @@ export default withMermaid(defineConfig({
             { text: '分布式理论', link: '/system-design/distributed-theory' },
             { text: '分布式事务', link: '/system-design/distributed-transaction' },
             { text: '高可用架构', link: '/system-design/high-availability' },
+            { text: '高并发读架构', link: '/system-design/high-concurrency-read' },
+            { text: '高并发写架构', link: '/system-design/high-concurrency-write' },
             { text: '缓存策略', link: '/system-design/caching-strategies' },
             { text: '限流与熔断', link: '/system-design/rate-limiting' },
             { text: '幂等性与热点 Key', link: '/system-design/hot-key-and-idempotency' },
