@@ -62,6 +62,10 @@ export default withMermaid(defineConfig({
             { text: '前缀和与差分', link: '/data-structures-and-algorithms/arrays/prefix-sum-difference' },
             { text: '二分查找', link: '/data-structures-and-algorithms/arrays/binary-search' },
             { text: 'Fisher-Yates 洗牌（工程）', link: '/data-structures-and-algorithms/arrays/shuffle' },
+            { text: 'AC 自动机（工程）', link: '/data-structures-and-algorithms/arrays/aho-corasick' },
+            { text: 'RoaringBitmap（工程）', link: '/data-structures-and-algorithms/arrays/roaring-bitmap' },
+            { text: 'GeoHash 附近搜索（工程）', link: '/data-structures-and-algorithms/arrays/geohash' },
+            { text: '令牌桶/漏桶手撕（工程）', link: '/data-structures-and-algorithms/arrays/rate-limiter' },
           ],
         },
         {
@@ -103,6 +107,7 @@ export default withMermaid(defineConfig({
             { text: '跳表 SkipList（工程）', link: '/data-structures-and-algorithms/tree/skip-list' },
             { text: 'Trie 字典树', link: '/data-structures-and-algorithms/tree/trie' },
             { text: 'Radix Tree（压缩 Trie，工程）', link: '/data-structures-and-algorithms/tree/radix-tree' },
+            { text: 'Merkle Tree（工程）', link: '/data-structures-and-algorithms/tree/merkle-tree' },
             { text: '撮合引擎（工程）', link: '/data-structures-and-algorithms/tree/matching-engine' },
             { text: '并查集', link: '/data-structures-and-algorithms/tree/union-find' },
           ],
@@ -119,6 +124,7 @@ export default withMermaid(defineConfig({
             { text: '最短路', link: '/data-structures-and-algorithms/graph-search/shortest-path' },
             { text: '回溯', link: '/data-structures-and-algorithms/graph-search/backtracking' },
             { text: '并查集', link: '/data-structures-and-algorithms/graph-search/union-find' },
+            { text: 'Tarjan 强连通分量（工程）', link: '/data-structures-and-algorithms/graph-search/tarjan-scc' },
           ],
         },
         {

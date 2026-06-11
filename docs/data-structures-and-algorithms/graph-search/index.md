@@ -253,6 +253,7 @@ for (int[] d : dirs) {
 | 最短路 | Dijkstra、Bellman-Ford、Floyd | ⭐⭐⭐ | 🔥🔥 | [最短路](./shortest-path) |
 | 回溯 | 排列/组合/子集、棋盘、剪枝 | ⭐⭐ | 🔥🔥🔥 | [回溯](./backtracking) |
 | 并查集 | 动态连通性、集合合并查询 | ⭐⭐ | 🔥🔥 | [并查集](./union-find) |
+| Tarjan 强连通分量（工程） | 有向图找环 / 缩点 / Spring 循环依赖检测 | ⭐⭐⭐ | 🔥🔥 | [Tarjan SCC](./tarjan-scc) |
 
 ### 建议学习顺序
 

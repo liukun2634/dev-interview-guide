@@ -250,8 +250,10 @@ public boolean isAnagram(String s, String t) {
 | [滑动窗口](./sliding-window) | 最长/最短连续区间 | 窗口状态可增量更新，左右指针单向移动 | 最长无重复子串 |
 | [前缀和与差分](./prefix-sum-difference) | 区间和统计、批量区间更新 | 前缀和做查询 O(1)，差分做更新 O(1)，互为逆运算 | 和为 K 的子数组 |
 | [二分查找](./binary-search) | 有序数组查找、边界定位 | 依赖单调性，每次排除一半搜索空间 | 搜索旋转数组 |
-| [Fisher-Yates 洗牌（工程）](./shuffle) | 等概率随机排列 | 5 行代码考“等概率”的严谨证明 | 抽奖 / A/B 分流 / 抽样 |
-
+| [Fisher-Yates 洗牌（工程）](./shuffle) | 等概率随机排列 | 5 行代码考“等概率”的严谨证明 | 抽奖 / A/B 分流 / 抽样 || [AC 自动机（工程）](./aho-corasick) | 同时查找 N 个模式串 | Trie + KMP fail 指针，与 N 无关的 O(n+z) | 敏感词过滤 / IDS |
+| [RoaringBitmap（工程）](./roaring-bitmap) | 大数据精确去重 / 集合运算 | 分桶 + 三种 container 自适应编码 | ES / ClickHouse / Druid 的底层 |
+| [GeoHash 附近搜索（工程）](./geohash) | 地理位置查询 | 二维 → 一维字符串，前缀匹配 + 9 格子扫描 | Redis GEO / 附近的人 / 派单 |
+| [令牌桶/漏桶手撕（工程）](./rate-limiter) | 限流算法实现 | 令牌桶允许突发、漏桶强制平滑、滑动窗口精准 | Guava RateLimiter / Nginx limit_req / Sentinel |
 ## 面试常问 & 怎么答
 
 ### 数组和链表的区别？

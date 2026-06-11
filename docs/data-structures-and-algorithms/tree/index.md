@@ -44,6 +44,7 @@ title: 树与堆
 | [跳表 SkipList（工程）](./skip-list) | Redis ZSet / ConcurrentSkipListMap / LevelDB MemTable 的核心 |
 | [Trie 字典树](./trie) | 看前缀问题如何建模 |
 | [Radix Tree（压缩 Trie，工程）](./radix-tree) | URL / IP 路由表等工程场景为何不用裸 Trie |
+| [Merkle Tree（工程）](./merkle-tree) | Git / 区块链 / IPFS / S3 / Dynamo 反熵的底层 |
 | [撮合引擎（工程）](./matching-engine) | 交易所订单簿，Price-Time Priority 核心结构 |
 | [并查集](./union-find) | 看连通性问题如何处理 |
 
