@@ -36,6 +36,10 @@ Tomcat / Jetty（Servlet 容器）          Netty / Undertow（非 Servlet 容�
 | 适用场景 | CRUD 业务系统、传统 Web 应用 | 高并发网关、流式数据、实时推送 |
 | 学习曲线 | 低 | 高（响应式思维转换） |
 
+::: tip 💡 想深入 Reactor 本身？
+本页聚焦 WebFlux 框架；**Project Reactor 的操作符 / 调度器 / 错误处理 / Context / Sinks / 测试** 详见 [Project Reactor 深度](../project-reactor)。
+:::
+
 ## 核心概念
 
 ### Reactive Streams 规范

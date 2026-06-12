@@ -198,7 +198,8 @@ Spring 面试最爱问"XX 什么时候会失效"。理解失效原因就是理�
 |------|---------|---------|---------|
 | 🔥 Java 云原生 | Quarkus / Micronaut / Helidon vs Spring Boot、Native Image 实测、CRaC | 🔥🔥（外企/云原生） | [Java 云原生框架](./java-cloud-native) |
 | 🔥 Apache Dubbo 3 | Triple 协议、应用级注册、SPI、Dubbo vs Spring Cloud vs gRPC | 🔥🔥🔥（国内必考） | [Apache Dubbo 3](./dubbo) |
-| 响应式 Java | Reactor / RxJava / Vert.x / Mutiny / Pekko、虚拟线程时代选型 | 🔥（金融/网关） | [响应式 Java](./reactive-java) |
+| 🔥 Project Reactor 深度 | Mono/Flux、Cold/Hot Stream、Context、6 种错误处理、Sinks API、StepVerifier | 🔥🔥（响应式必考） | [Project Reactor 深度](./project-reactor) |
+| 响应式 Java 框架横评 | Reactor / RxJava / Vert.x / Mutiny / Pekko、虚拟线程时代选型 | 🔥（金融/网关） | [响应式 Java](./reactive-java) |
 
 ### 前端：主流框架
 

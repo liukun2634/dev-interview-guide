@@ -440,7 +440,8 @@ export default withMermaid(defineConfig({
           items: [
             { text: '🔥 Java 云原生（Quarkus / Micronaut / Helidon）', link: '/web-and-frameworks/java-cloud-native' },
             { text: '🔥 Apache Dubbo 3', link: '/web-and-frameworks/dubbo' },
-            { text: '响应式 Java（Vert.x / Reactor / Mutiny）', link: '/web-and-frameworks/reactive-java' },
+            { text: '🔥 Project Reactor 深度', link: '/web-and-frameworks/project-reactor' },
+            { text: '响应式 Java 框架横评（Vert.x / RxJava / Mutiny / Pekko）', link: '/web-and-frameworks/reactive-java' },
           ],
         },
         {

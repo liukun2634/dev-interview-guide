@@ -97,7 +97,7 @@ Mono.fromCallable(() -> jdbcQuery())   // 阻塞 JDBC
 3. **Stack Trace 难追踪**——`Hooks.onOperatorDebug()` 开启全量栈（性能差，仅开发用）
 :::
 
-详见 [Spring WebFlux](./spring-mvc/webflux)。
+详见 [Spring WebFlux](./spring-mvc/webflux)。**Reactor 操作符 / Cold vs Hot Stream / Context / Sinks / StepVerifier 等深度内容** → [Project Reactor 深度](./project-reactor)。
 
 ---
 
