@@ -603,6 +603,291 @@ public class BoundedBuffer<T> {
 **Java 线程池就是生产者-消费者**：`submit()` 是生产，Worker 线程是消费者，`workQueue` 是缓冲区，拒绝策略就是队列满的降级方案。
 :::
 
+#### 端到端可运行示例（main + 监控 + 优雅关闭 + 毒丸）
+
+下面是一个**完整可运行**的版本，包含面试官常追问的所有细节：多生产者多消费者、毒丸停机、监控线程、批量消费、性能统计。
+
+```java
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.LongAdder;
+
+public class ProducerConsumerDemo {
+
+    /** 任务对象 */
+    record Task(long id, String payload) {}
+
+    /** 毒丸：消费者收到它就退出，避免硬中断丢任务 */
+    private static final Task POISON_PILL = new Task(-1L, "POISON");
+
+    public static void main(String[] args) throws InterruptedException {
+        final int PRODUCERS = 3;
+        final int CONSUMERS = 4;
+        final int QUEUE_CAP = 1000;
+        final int RUN_SECONDS = 10;
+
+        BlockingQueue<Task> queue = new ArrayBlockingQueue<>(QUEUE_CAP);
+
+        // ====== 指标 ======
+        LongAdder produced = new LongAdder();
+        LongAdder consumed = new LongAdder();
+        LongAdder rejected = new LongAdder();
+        volatile boolean running = true;
+
+        // ====== 监控线程 ======
+        ScheduledExecutorService monitor = Executors.newSingleThreadScheduledExecutor(
+            r -> { Thread t = new Thread(r, "monitor"); t.setDaemon(true); return t; });
+        monitor.scheduleAtFixedRate(() -> System.out.printf(
+            "[mon] qsize=%4d  produced=%d  consumed=%d  rejected=%d%n",
+            queue.size(), produced.sum(), consumed.sum(), rejected.sum()),
+            1, 1, TimeUnit.SECONDS);
+
+        // ====== 启动生产者 ======
+        ExecutorService producerPool = Executors.newFixedThreadPool(PRODUCERS,
+            namedThread("producer"));
+        for (int i = 0; i < PRODUCERS; i++) {
+            final int pid = i;
+            producerPool.submit(() -> {
+                long seq = 0;
+                while (running) {
+                    Task t = new Task(seq++, "p" + pid + "-" + seq);
+                    try {
+                        // 满则等待最多 100ms,超时则计入拒绝
+                        if (queue.offer(t, 100, TimeUnit.MILLISECONDS)) {
+                            produced.increment();
+                        } else {
+                            rejected.increment();    // 背压：可改成丢弃 / CallerRuns / 入 DB
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            });
+        }
+
+        // ====== 启动消费者（批量消费 + 毒丸优雅退出）======
+        ExecutorService consumerPool = Executors.newFixedThreadPool(CONSUMERS,
+            namedThread("consumer"));
+        for (int i = 0; i < CONSUMERS; i++) {
+            consumerPool.submit(() -> {
+                List<Task> batch = new ArrayList<>(64);
+                try {
+                    while (true) {
+                        // 阻塞拿第一条
+                        Task first = queue.take();
+                        if (first == POISON_PILL) return;       // ★ 收到毒丸退出
+                        batch.add(first);
+
+                        // 顺手批量取（减少锁竞争）
+                        queue.drainTo(batch, 63);
+
+                        for (Task t : batch) {
+                            if (t == POISON_PILL) return;
+                            handle(t);                          // 真正业务
+                            consumed.increment();
+                        }
+                        batch.clear();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+
+        // ====== 运行 N 秒后优雅关闭 ======
+        Thread.sleep(Duration.ofSeconds(RUN_SECONDS).toMillis());
+        System.out.println("[main] stop signal sent");
+
+        running = false;                                        // 1) 生产者退出循环
+        producerPool.shutdown();
+        producerPool.awaitTermination(5, TimeUnit.SECONDS);
+
+        // 2) 给每个消费者投一颗毒丸
+        for (int i = 0; i < CONSUMERS; i++) queue.put(POISON_PILL);
+
+        consumerPool.shutdown();
+        consumerPool.awaitTermination(10, TimeUnit.SECONDS);
+        monitor.shutdownNow();
+
+        System.out.printf("[main] DONE  produced=%d  consumed=%d  rejected=%d  remain=%d%n",
+            produced.sum(), consumed.sum(), rejected.sum(), queue.size());
+    }
+
+    private static void handle(Task t) {
+        // 模拟业务耗时
+        try { Thread.sleep(1); } catch (InterruptedException ignored) {}
+    }
+
+    private static ThreadFactory namedThread(String prefix) {
+        var counter = new java.util.concurrent.atomic.AtomicInteger();
+        return r -> new Thread(r, prefix + "-" + counter.incrementAndGet());
+    }
+}
+```
+
+**重点解读**：
+
+| 设计点 | 为什么 |
+|--------|--------|
+| **`offer(t, 100ms)` 而非 `put()`** | 队列满时**有限等待 + 计数**，不会让生产者无限阻塞 → 实现背压可观测 |
+| **批量 `drainTo(batch, 63)`** | 第一条阻塞拿到后顺手取一批，**锁竞争减少 64×** |
+| **毒丸（Poison Pill）退出** | 消费者**自然处理完队列剩余消息再退出**，不丢任务（vs `interrupt()` 会丢未处理的） |
+| **`LongAdder` 计数** | 高并发计数比 `AtomicLong` 性能高 5-10×（分段累加） |
+| **`shutdown()` + `awaitTermination()`** | 两步走优雅关闭，给业务时间完成；超时再 `shutdownNow()` 兜底 |
+| **守护线程做监控** | 主流程退出时监控自动跟着退出，不卡进程 |
+
+#### 4 种线程池拒绝策略对比（追问必备）
+
+当线程池满 + 队列满，新任务怎么办？**RejectedExecutionHandler** 决定：
+
+```java
+new ThreadPoolExecutor(2, 4, 60L, TimeUnit.SECONDS,
+    new ArrayBlockingQueue<>(100),
+    new ThreadPoolExecutor.CallerRunsPolicy());   // ★ 选一种
+```
+
+| 策略 | 行为 | 适合 |
+|------|------|------|
+| **`AbortPolicy`**（默认）| 抛 `RejectedExecutionException` | 失败必须感知 |
+| **`CallerRunsPolicy`** | **让提交者自己执行**（变相限流）| 不能丢任务（如日志写入） |
+| **`DiscardPolicy`** | 静默丢弃 | 可丢的监控数据 |
+| **`DiscardOldestPolicy`** | 丢队列最老任务，腾位置给新任务 | 只关心最新数据（如行情） |
+
+::: warning ⚠️ 生产推荐 `CallerRunsPolicy`
+1. 失败有反压（提交者被卡住，自然慢下来）
+2. 不会悄无声息丢任务
+3. 但要确保**提交者线程能接受偶尔被业务卡住**——一般业务线程都可以；如果提交者是 EventLoop / Netty IO 线程**绝对不能**用 CallerRuns
+:::
+
+---
+
+### 现代版生产者-消费者：CompletableFuture / 虚拟线程
+
+**JDK 21+ 时代**，传统"线程池 + BlockingQueue"在很多场景被两个新方案替代。**面试 2026 高频追问**：「**有了虚拟线程，还需要 BlockingQueue 吗？**」
+
+#### 版本 A：CompletableFuture 异步编排
+
+适合**已知数量的并行任务 fan-out / fan-in**（如批量调用 N 个下游接口聚合结果）：
+
+```java
+public class CompletableFutureDemo {
+
+    public static void main(String[] args) {
+        // 业务线程池（IO 密集型用大池，CPU 密集型用 ForkJoinPool.commonPool 即可）
+        ExecutorService pool = Executors.newFixedThreadPool(16);
+
+        List<Long> userIds = List.of(1L, 2L, 3L, 4L, 5L);
+
+        // fan-out: 并行查 5 个用户
+        List<CompletableFuture<User>> futures = userIds.stream()
+            .map(id -> CompletableFuture.supplyAsync(() -> fetchUser(id), pool)
+                .orTimeout(3, TimeUnit.SECONDS)                  // 单个任务超时
+                .exceptionally(ex -> User.empty(id)))            // 兜底
+            .toList();
+
+        // fan-in: 等全部完成后聚合
+        List<User> users = futures.stream()
+            .map(CompletableFuture::join)
+            .filter(u -> !u.isEmpty())
+            .toList();
+
+        System.out.println("got " + users.size() + " users");
+        pool.shutdown();
+    }
+
+    record User(Long id, String name, boolean isEmpty) {
+        static User empty(Long id) { return new User(id, null, true); }
+    }
+
+    static User fetchUser(Long id) {
+        try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+        return new User(id, "user-" + id, false);
+    }
+}
+```
+
+**与传统生产者-消费者的区别**：
+
+| 维度 | 传统 BlockingQueue | CompletableFuture |
+|------|------------------|-------------------|
+| **任务数** | 流式无限 | **已知有限**（数组 / 列表） |
+| **生产-消费解耦** | 生产/消费独立线程 | 任务在 `supplyAsync` 时就关联好线程池 |
+| **结果获取** | 消费者无返回值 | 天然有 `Future<T>` 返回值 |
+| **错误处理** | 各自 try-catch | `exceptionally / handle` 链式 |
+| **适合** | 持续投递的事件流 | 批量并行 + 聚合 |
+
+#### 版本 B：虚拟线程 + 直接 `Thread.startVirtualThread`（JDK 21+）
+
+虚拟线程的革命：**每个任务一个线程**变得免费——**抛弃线程池 + 队列**，直接 spawn：
+
+```java
+public class VirtualThreadDemo {
+
+    public static void main(String[] args) throws InterruptedException {
+        // ① 持续投递的事件流：用虚拟线程替代生产者-消费者
+        BlockingQueue<Task> queue = new LinkedBlockingQueue<>();
+
+        // 生产者：1 个虚拟线程持续生产
+        Thread producer = Thread.ofVirtual().name("vt-producer").start(() -> {
+            for (long i = 0; i < 10_000; i++) {
+                queue.offer(new Task(i, "p-" + i));
+            }
+            queue.offer(POISON_PILL);
+        });
+
+        // 消费者：每条消息起一个虚拟线程（不再需要"消费者池"！）
+        Thread.ofVirtual().name("vt-dispatcher").start(() -> {
+            try {
+                while (true) {
+                    Task t = queue.take();
+                    if (t == POISON_PILL) return;
+                    // 每条消息一个虚拟线程处理 —— JDK 21 之前绝对不敢这么写
+                    Thread.startVirtualThread(() -> handle(t));
+                }
+            } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }).join();
+    }
+
+    /** ② 批量任务并行：直接用 newVirtualThreadPerTaskExecutor */
+    public static List<User> batchFetch(List<Long> ids) {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            return ids.stream()
+                .map(id -> executor.submit(() -> fetchUser(id)))
+                .map(f -> { try { return f.get(); } catch (Exception e) { return User.empty(); } })
+                .toList();
+        }   // try-with-resources 自动 shutdown + awaitTermination
+    }
+
+    record Task(long id, String payload) {}
+    record User(Long id, String name) { static User empty() { return new User(-1L, null); } }
+    private static final Task POISON_PILL = new Task(-1L, "POISON");
+
+    static void handle(Task t) { try { Thread.sleep(10); } catch (InterruptedException ignored) {} }
+    static User fetchUser(Long id) { try { Thread.sleep(50); } catch (InterruptedException ignored) {} return new User(id, "u-" + id); }
+}
+```
+
+#### 三方案决策表（2026 必备）
+
+| 场景 | 推荐方案 |
+|------|---------|
+| **持续无界事件流**（监控、日志、Kafka 消费）| **BlockingQueue + 线程池**（资源可控）或 **虚拟线程 + 直接 spawn**（JDK 21+ 简单场景）|
+| **已知数量批量任务 fan-out**（聚合 N 个 RPC）| **CompletableFuture + 线程池** 或 **`newVirtualThreadPerTaskExecutor()`** |
+| **高并发 I/O 业务（API 处理）** | **虚拟线程**（一行 `spring.threads.virtual.enabled=true`） |
+| **CPU 密集型并行** | `ForkJoinPool` / `parallelStream` |
+| **百万级 TPS 单机内存队列** | **Disruptor**（详见下节） |
+| **跨进程跨机器** | Kafka / RocketMQ / RabbitMQ |
+
+::: tip 💡 「虚拟线程让 BlockingQueue 过时了吗？」标准回答
+**没有**，定位变了：
+- **队列依然是"背压 + 削峰"工具**——虚拟线程能轻松创建 100 万个，但**不代表下游能处理 100 万 QPS**；队列是显式的"系统消化能力"声明
+- **虚拟线程让"消费者池"几乎消失**——每条消息直接 `Thread.startVirtualThread()`，不再为线程数量设计
+- **CompletableFuture 仍然有用**——它是"**异步编排表达式**"，虚拟线程是"**廉价线程**"，两者正交
+:::
+
 ### Disruptor：单机百万 TPS 的无锁队列
 
 LMAX Disruptor 是 2010 年开源的**高性能内存队列**，性能比 `BlockingQueue` 高 10-100 倍。**Log4j 2、Apache Storm、Spring Cloud Stream** 都在底层使用它。
