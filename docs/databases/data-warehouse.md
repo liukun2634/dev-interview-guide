@@ -439,7 +439,160 @@ GRANT SELECT ON COLUMN sales.users.email TO ROLE pii_reader;
 | **DuckDB** | **嵌入式 OLAP**（SQLite for analytics）| 单机 | 单机分析、Notebook |
 | **Trino** / **Presto** | **联邦查询**（Hive + S3 + MySQL）| 不存数据 | Lakehouse 查询引擎 |
 
-详见 [向量数据库选型](./vector-database-selection)（如果业务有向量）。
+### ClickHouse 深度：分布式与 ReplicatedMergeTree（2026 必考）
+
+::: tip 💡 国内大厂为什么都用 ClickHouse
+字节、快手、B 站、携程、腾讯都把 ClickHouse 作为实时数仓主力。**单核扫描 1 亿行 / 秒**，亿级表 GROUP BY 秒级返回。**面试金句**：「ClickHouse 之所以快 100×，是**列存 + MergeTree 部分预排序 + LZ4/ZSTD 压缩 + SIMD 向量化执行 + 跳数索引**五者协同的结果，不是单一优化」。
+:::
+
+#### MergeTree 家族：核心存储引擎
+
+```
+ClickHouse 存储引擎全家桶
+├── MergeTree（基础）       — 按 ORDER BY 排序，类似 LSM
+├── ReplacingMergeTree      — 同主键去重（保留最新版本）
+├── SummingMergeTree        — 同主键自动 SUM 聚合
+├── AggregatingMergeTree    — 同主键自动聚合（任意函数）
+├── CollapsingMergeTree     — 状态合并（适合"撤销"语义）
+├── ReplicatedMergeTree     — ★ 加副本（ZooKeeper 协调）
+└── Distributed             — ★ 不是表，是分布式视图
+```
+
+#### 三大核心概念
+
+**1. 主键 ≠ 排序键 ≠ 唯一索引**
+
+```sql
+CREATE TABLE events (
+    event_date Date,
+    user_id UInt64,
+    event_type String,
+    amount Decimal(10, 2)
+) ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_date)            -- 分区（一般按时间）
+ORDER BY (user_id, event_date)               -- 排序键 = 默认主键
+PRIMARY KEY (user_id)                         -- 可单独指定（主键 ⊆ 排序键）
+SETTINGS index_granularity = 8192;            -- 每 8192 行一个稀疏索引项
+```
+
+- **PARTITION BY**：物理目录隔离，**删分区是 O(1) 操作**（不锁表、不扫描）
+- **ORDER BY**：决定数据排序 + 稀疏索引
+- **PRIMARY KEY**：可选，**仅用于内存索引**，不强制唯一性（ClickHouse 不约束唯一）
+- **index_granularity**：稀疏索引粒度，默认 8192 行一个 mark；牺牲精度换内存
+
+**2. 稀疏索引（关键性能来源）**
+
+```
+传统 B+ 树：每行都有索引项 → 100 亿行 → 100 亿条索引
+ClickHouse：每 8192 行才有一条索引 → 100 亿行 → 122 万条
+            完整索引可常驻内存
+```
+
+**3. 跳数索引（Skip Index）**
+
+```sql
+ALTER TABLE events ADD INDEX idx_amount amount TYPE minmax GRANULARITY 4;
+ALTER TABLE events ADD INDEX idx_type event_type TYPE set(100) GRANULARITY 4;
+ALTER TABLE events ADD INDEX idx_user user_id TYPE bloom_filter(0.01) GRANULARITY 8;
+```
+
+| 索引类型 | 原理 | 适合 |
+|---------|------|------|
+| `minmax` | 记录每个 granule 的 min/max | 数值范围查询 |
+| `set(N)` | 每个 granule 的 distinct value 集合 | 低基数枚举值 |
+| `bloom_filter(fpr)` | Bloom Filter | 字符串等值查询 |
+| `ngrambf_v1` | N-gram + Bloom | 字符串 LIKE 模糊匹配 |
+| `tokenbf_v1` | Token + Bloom | 全文检索 |
+
+#### 分布式集群架构
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    ZooKeeper / ClickHouse Keeper          │
+│              （副本协调、元数据、DDL 同步）                  │
+└──────────────────────────────────────────────────────────┘
+       ↑                    ↑                    ↑
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Shard 1    │    │   Shard 2    │    │   Shard 3    │
+│  ┌────────┐  │    │  ┌────────┐  │    │  ┌────────┐  │
+│  │Replica1│  │    │  │Replica1│  │    │  │Replica1│  │
+│  └────────┘  │    │  └────────┘  │    │  └────────┘  │
+│  ┌────────┐  │    │  ┌────────┐  │    │  ┌────────┐  │
+│  │Replica2│  │    │  │Replica2│  │    │  │Replica2│  │
+│  └────────┘  │    │  └────────┘  │    │  └────────┘  │
+└──────────────┘    └──────────────┘    └──────────────┘
+       ↑                    ↑                    ↑
+       └────────────────────┴────────────────────┘
+              查询路由（Distributed 引擎散列）
+```
+
+**关键设计**：
+- **Shard（分片）**：数据按 hash 切分；不同分片**数据完全不重叠**
+- **Replica（副本）**：同一分片的多副本；通过 ZooKeeper 协调
+- **ClickHouse Keeper**（22.3+）：用 Raft 替代 ZooKeeper（性能更好、运维更简）
+
+#### ReplicatedMergeTree + Distributed 两步走
+
+```sql
+-- ① 在每个节点创建 ReplicatedMergeTree 表
+CREATE TABLE events_local ON CLUSTER my_cluster (
+    event_date Date, user_id UInt64, ...
+) ENGINE = ReplicatedMergeTree(
+    '/clickhouse/tables/{shard}/events_local',   -- ZooKeeper 路径
+    '{replica}'                                   -- 副本标识
+)
+ORDER BY (user_id, event_date);
+
+-- ② 创建 Distributed 表（不存数据，是"路由视图"）
+CREATE TABLE events_all ON CLUSTER my_cluster AS events_local
+ENGINE = Distributed(
+    my_cluster,         -- 集群名
+    default,            -- 库
+    events_local,       -- 本地表名
+    cityHash64(user_id) -- 分片键（决定数据落到哪个 shard）
+);
+
+-- 查询走 Distributed 表
+SELECT user_id, COUNT(*) FROM events_all GROUP BY user_id;
+-- ClickHouse 自动：① 路由到所有 shard 并行执行；② 合并结果
+```
+
+#### 写入策略：两种模式
+
+| 模式 | 写入位置 | 优点 | 缺点 |
+|------|---------|------|------|
+| **写 Distributed 表** | 任意节点 | 简单 | 写放大；分发延迟；网络开销 |
+| **写本地 Local 表**（推荐）| 客户端按 shard key 路由 | 高吞吐、低开销 | 客户端要实现路由逻辑 |
+
+**生产实战**：
+- **小流量** → 直接写 Distributed
+- **大流量**（>10 万行/秒） → 写 Local 表（用 Kafka Engine 或客户端 sharding）
+
+#### 性能 Tips（生产经验）
+
+| Tip | 收益 |
+|-----|------|
+| **批量插入 ≥ 1000 行**（默认 max_insert_block_size=1048576） | 单行插入 100 行/秒 → 批量 100 万行/秒（差 1 万倍）|
+| **不要频繁删/更新** | ALTER MUTATIONS 异步 + 重写 part 文件，**生产应改用 ReplacingMergeTree + version 列** |
+| **避免 GROUP BY 高基数** | 几亿 distinct 内存爆炸；用 `uniqCombined` / `uniqHLL12` 近似函数 |
+| **JOIN 慎用** | 默认 Hash JOIN 把右表全部加载内存；优先 dictionary JOIN 或反规范化 |
+| **物化视图（MATERIALIZED VIEW）** | 写入时自动聚合，查询时直接读结果 |
+| **TTL 自动清理** | `TTL event_date + INTERVAL 90 DAY` 自动删过期数据 |
+| **压缩**：默认 LZ4，冷数据可换 `ZSTD(3)` | 压缩比 +30%，CPU +20% |
+
+#### ClickHouse vs Doris/StarRocks：选型决策
+
+| 维度 | ClickHouse | Doris / StarRocks |
+|------|-----------|-------------------|
+| **单表聚合** | ★★★★★ 业界标杆 | ★★★★ |
+| **多表 JOIN** | ★★ 弱 | ★★★★★ **强** |
+| **SQL 兼容** | 部分非标准 | **MySQL 协议 100% 兼容** |
+| **物化视图** | ✅ 强 | ✅ 强 |
+| **实时写入** | 批量优于流式 | **流式更友好**（Routine Load） |
+| **运维** | ZooKeeper / Keeper 协调 | 内置 FE/BE 自治 |
+| **典型用户** | Uber、Yandex、字节、B 站 | 美团、腾讯、京东、小米 |
+
+**一句话定位**：「**单表大宽表选 ClickHouse；多表 JOIN + MySQL 协议选 Doris / StarRocks**」。
 
 ---
 

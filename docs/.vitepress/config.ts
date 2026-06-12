@@ -93,6 +93,7 @@ export default withMermaid(defineConfig({
             { text: 'LFU 缓存（工程）', link: '/data-structures-and-algorithms/hash/lfu-cache' },
             { text: 'O(1) 插删随机（工程）', link: '/data-structures-and-algorithms/hash/randomized-set' },
             { text: '设计 Twitter（工程）', link: '/data-structures-and-algorithms/hash/twitter-design' },
+            { text: '🔥 Bloom Filter 与变种（工程）', link: '/data-structures-and-algorithms/hash/bloom-filter' },
           ],
         },
         {
@@ -297,6 +298,7 @@ export default withMermaid(defineConfig({
             { text: '设计模式', link: '/engineering-practice/design-patterns' },
             { text: 'Docker 容器化', link: '/engineering-practice/docker' },
             { text: 'Kubernetes', link: '/engineering-practice/kubernetes' },
+            { text: '🔥 GitOps 与 Argo CD', link: '/engineering-practice/gitops-argo-cd' },
             { text: 'Redis 实战', link: '/engineering-practice/redis' },
             { text: '消息队列', link: '/engineering-practice/message-queue' },
             { text: '微服务治理', link: '/engineering-practice/microservice-governance' },
@@ -323,6 +325,8 @@ export default withMermaid(defineConfig({
             { text: 'Java 集合框架', link: '/programming-languages/java-collections' },
             { text: 'JVM 深入', link: '/programming-languages/jvm-internals' },
             { text: 'Java 新特性', link: '/programming-languages/java-modern-features' },
+            { text: '🔥 Java 工程实战（JVM 调优 / Native / CRaC）', link: '/programming-languages/java-engineering' },
+            { text: '🔥 JMH 基准测试', link: '/programming-languages/java-jmh' },
           ],
         },
         {
