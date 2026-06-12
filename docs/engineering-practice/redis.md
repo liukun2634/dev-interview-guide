@@ -386,6 +386,234 @@ XPENDING orders order-group - + 10
 | Pub/Sub | ❌ | ❌ | ❌ | 实时广播通知 |
 | **Stream** | ✅ | ✅ | ✅ | **可靠消息队列** |
 
+#### Spring Boot 完整生产者 / 消费者代码
+
+##### 1. 消息载体
+
+```java
+public record OrderEvent(String orderId, Long userId, BigDecimal amount, Instant createdAt) {
+    public Map<String, String> toMap() {
+        return Map.of(
+            "orderId",   orderId,
+            "userId",    userId.toString(),
+            "amount",    amount.toPlainString(),
+            "createdAt", createdAt.toString()
+        );
+    }
+    public static OrderEvent fromMap(Map<Object, Object> m) {
+        return new OrderEvent(
+            (String) m.get("orderId"),
+            Long.parseLong((String) m.get("userId")),
+            new BigDecimal((String) m.get("amount")),
+            Instant.parse((String) m.get("createdAt"))
+        );
+    }
+}
+```
+
+##### 2. 生产者（Producer）
+
+```java
+@Service
+@RequiredArgsConstructor
+public class OrderEventProducer {
+
+    private static final String STREAM_KEY = "stream:orders";
+    private static final int MAX_LEN = 100_000;   // 限制 Stream 长度，防止无限增长
+
+    private final StringRedisTemplate redis;
+
+    /** 投递订单事件，返回消息 ID */
+    public RecordId publish(OrderEvent event) {
+        // MAXLEN ~ 近似裁剪（性能比精确裁剪好）
+        ObjectRecord<String, Map<String, String>> record = StreamRecords
+            .objectBacked(event.toMap())
+            .withStreamKey(STREAM_KEY);
+
+        RecordId id = redis.opsForStream()
+            .add(record, RedisStreamCommands.XAddOptions.maxlen(MAX_LEN).approximateTrimming(true));
+
+        log.info("Published order {} → stream id={}", event.orderId(), id);
+        return id;
+    }
+}
+```
+
+##### 3. 消费者配置（Consumer Group）
+
+```java
+@Configuration
+@RequiredArgsConstructor
+public class OrderStreamConsumerConfig {
+
+    private static final String STREAM_KEY  = "stream:orders";
+    private static final String GROUP_NAME  = "order-group";
+    private static final String CONSUMER    = "consumer-" + UUID.randomUUID();
+
+    private final StringRedisTemplate redis;
+    private final RedisConnectionFactory connectionFactory;
+    private final OrderEventHandler handler;
+
+    /** 创建 Consumer Group（应用启动时调用一次，已存在会抛异常被忽略） */
+    @PostConstruct
+    public void initGroup() {
+        try {
+            redis.opsForStream().createGroup(STREAM_KEY, ReadOffset.from("0"), GROUP_NAME);
+        } catch (RedisSystemException e) {
+            // BUSYGROUP: Consumer Group name already exists
+            log.info("Consumer group {} already exists", GROUP_NAME);
+        }
+    }
+
+    /** Spring Data Redis 提供的 StreamMessageListenerContainer */
+    @Bean(destroyMethod = "stop")
+    public StreamMessageListenerContainer<String, ObjectRecord<String, Map<String, String>>>
+            container() {
+
+        var options = StreamMessageListenerContainer
+            .StreamMessageListenerContainerOptions.builder()
+            .pollTimeout(Duration.ofSeconds(2))            // 阻塞拉取超时
+            .batchSize(10)                                 // 一次最多拉 10 条
+            .targetType(Map.class)                         // 自动反序列化
+            .errorHandler(e -> log.error("Stream listener error", e))
+            .executor(Executors.newFixedThreadPool(4))     // 业务线程池（自定义）
+            .build();
+
+        var container = StreamMessageListenerContainer.create(connectionFactory, options);
+
+        // 注册监听器：从 ">" 读取新消息（auto-ack=false 手动 ACK）
+        container.receive(
+            Consumer.from(GROUP_NAME, CONSUMER),
+            StreamOffset.create(STREAM_KEY, ReadOffset.lastConsumed()),
+            handler                                        // ★ 消息处理器
+        );
+
+        container.start();
+        log.info("Stream consumer started: group={}, consumer={}", GROUP_NAME, CONSUMER);
+        return container;
+    }
+}
+```
+
+##### 4. 消息处理器 + 手动 ACK + 重试
+
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class OrderEventHandler
+        implements StreamListener<String, ObjectRecord<String, Map<String, String>>> {
+
+    private static final String STREAM_KEY = "stream:orders";
+    private static final String GROUP_NAME = "order-group";
+    private static final int MAX_RETRY = 3;
+
+    private final StringRedisTemplate redis;
+    private final OrderService orderService;
+
+    @Override
+    public void onMessage(ObjectRecord<String, Map<String, String>> record) {
+        RecordId id = record.getId();
+        try {
+            OrderEvent event = OrderEvent.fromMap(record.getValue());
+
+            // ✅ 业务幂等：用 SETNX 防止重复消费
+            String idemKey = "idem:order:" + event.orderId();
+            Boolean firstTime = redis.opsForValue().setIfAbsent(idemKey, "1", Duration.ofHours(24));
+            if (Boolean.FALSE.equals(firstTime)) {
+                log.warn("Order {} already processed, skip", event.orderId());
+                ack(id);
+                return;
+            }
+
+            orderService.handle(event);                    // ★ 真正业务
+            ack(id);                                        // ✅ 处理成功才 ACK
+        } catch (Exception e) {
+            log.error("Failed to process message {}: {}", id, e.getMessage(), e);
+            // 不 ACK → 消息留在 PEL（Pending List），下一轮重试或被 reclaim
+        }
+    }
+
+    private void ack(RecordId id) {
+        redis.opsForStream().acknowledge(STREAM_KEY, GROUP_NAME, id);
+    }
+}
+```
+
+##### 5. 死信处理（PEL 重试 + 转移到 DLQ）
+
+**长时间未 ACK 的消息会停留在 PEL（Pending Entry List）**。生产必须有定时任务扫描 + 重试或转死信队列：
+
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class StreamDlqScheduler {
+
+    private static final String STREAM_KEY = "stream:orders";
+    private static final String GROUP_NAME = "order-group";
+    private static final String DLQ_KEY    = "stream:orders:dlq";
+    private static final Duration IDLE_THRESHOLD = Duration.ofMinutes(5);
+    private static final long MAX_DELIVERY_COUNT = 5;
+
+    private final StringRedisTemplate redis;
+
+    /** 每分钟扫描一次 PEL，处理"卡死"的消息 */
+    @Scheduled(fixedDelay = 60_000)
+    public void reclaimPending() {
+        PendingMessages pending = redis.opsForStream()
+            .pending(STREAM_KEY, GROUP_NAME, Range.unbounded(), 100);
+
+        for (PendingMessage msg : pending) {
+            // 超过最大重试次数 → 投递到 DLQ + 从 PEL 移除
+            if (msg.getTotalDeliveryCount() >= MAX_DELIVERY_COUNT) {
+                moveToDlq(msg.getId());
+                redis.opsForStream().acknowledge(STREAM_KEY, GROUP_NAME, msg.getId());
+                continue;
+            }
+
+            // 长时间未 ACK → claim 给当前消费者，触发重新投递
+            if (msg.getElapsedTimeSinceLastDelivery().compareTo(IDLE_THRESHOLD) > 0) {
+                redis.opsForStream().claim(STREAM_KEY, GROUP_NAME,
+                    "consumer-reclaimer", IDLE_THRESHOLD, msg.getId());
+                log.warn("Reclaimed stuck message {}", msg.getId());
+            }
+        }
+    }
+
+    private void moveToDlq(RecordId id) {
+        List<MapRecord<String, Object, Object>> records = redis.opsForStream()
+            .range(STREAM_KEY, Range.just(id.getValue()));
+
+        records.forEach(r -> redis.opsForStream().add(StreamRecords
+            .mapBacked(r.getValue().entrySet().stream()
+                .collect(Collectors.toMap(e -> e.getKey().toString(), e -> e.getValue().toString())))
+            .withStreamKey(DLQ_KEY)));
+
+        log.error("Moved message {} to DLQ after {} retries", id, MAX_DELIVERY_COUNT);
+    }
+}
+```
+
+##### 6. 关键配置 / 实战要点
+
+| 要点 | 说明 |
+|------|------|
+| **`XADD MAXLEN ~ N`** | 限制 Stream 长度，**`~` 是近似裁剪**，性能比精确好 10× |
+| **`pollTimeout`** | Spring container 阻塞 XREAD 时长；2-5s 平衡延迟与连接开销 |
+| **业务幂等** | 用 `SETNX` 或唯一索引；**不能依赖 ACK 防重**（消费成功未 ACK 时仍会重投） |
+| **PEL 监控** | 必须设告警：PEL 积压 > 阈值时报警，否则消息会"消失在 PEL 里" |
+| **消费者命名** | 每个消费者实例名应唯一（如 hostname-pid）；删除节点要 `XGROUP DELCONSUMER` |
+| **Cluster 限制** | Stream 是单 key 数据结构，**单 Stream 吞吐受单 slot 限制**；高吞吐场景按业务拆 N 个 Stream |
+| **vs Kafka** | Stream 适合 **10K-100K TPS、单数据中心**；**百万级 TPS / 跨数据中心 / 严格顺序仍选 Kafka** |
+
+::: warning ⚠️ Stream 4 大生产坑
+1. **忘记设置 MAXLEN** → 长跑业务 Stream 无限增长，Redis OOM
+2. **没监控 PEL** → 业务异常的消息悄悄堆积在 PEL，看监控以为消费正常
+3. **依赖 ACK 防重** → ACK 是"通知 Redis 我处理完了"，**不防消费成功未 ACK 的二次投递** → 业务必须独立幂等
+4. **消费者下线没清理** → `XINFO CONSUMERS` 会看到大量僵尸消费者，影响负载均衡
+:::
+
 ---
 
 ### 延迟队列：ZSet vs Stream 两种实现
