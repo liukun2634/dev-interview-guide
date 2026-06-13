@@ -316,96 +316,50 @@ List<Integer> fixed = List.of(1, 2, 3);             // 不可修改，调 add �
 
 ### 数组 ↔ ArrayList 互转（必背 · 刷题高频）
 
-::: tip 💡 这是 Java 刷题最容易写错的一块
-LeetCode 大量题面给你 `int[]` 输入，**回溯/动态规划/分组**等场景内部要用 `List<Integer>`，**结果集**又常常是 `List<List<Integer>>` 或 `int[][]`——三者互转**没有统一 API**，`Arrays.asList(int[])` 还有著名陷阱。
+::: tip 💡 一句话定位
+LeetCode 大量题面给你 `int[]`，内部要用 `List`，结果集又常常是 `List<int[]>` 或 `int[][]`——**三者互转没有统一 API**。**背下面这张表 + 4 大坑即可，不用记原理**。
 :::
-
-```java
-// =============== 数组 → List ===============
-
-// ① int[] → List<Integer>：必须 boxed 或 mapToObj
-int[] nums = {1, 2, 3};
-List<Integer> a1 = Arrays.stream(nums).boxed().collect(Collectors.toList());
-List<Integer> a2 = new ArrayList<>();
-for (int x : nums) a2.add(x);                       // 朴素写法，最易读
-
-// ⚠️ 错误示范：Arrays.asList(nums) 得到的是 List<int[]>，size=1
-List<int[]> wrong = Arrays.asList(nums);            // ❌ 不是你想要的
-
-// ② Integer[] → List<Integer>：可以直接 asList，但是固定大小
-Integer[] boxed = {1, 2, 3};
-List<Integer> b1 = Arrays.asList(boxed);            // ⚠️ 固定长度，add/remove 抛 UnsupportedOperationException
-List<Integer> b2 = new ArrayList<>(Arrays.asList(boxed));   // ★ 可变 List，刷题首选
-
-// ③ 可变参数风格（最简洁，常用于写测试用例）
-List<Integer> c1 = Arrays.asList(1, 2, 3);          // 固定长度
-List<Integer> c2 = new ArrayList<>(Arrays.asList(1, 2, 3));  // 可变
-List<Integer> c3 = List.of(1, 2, 3);                // JDK 9+，不可变，元素不能为 null
-
-// =============== List → 数组 ===============
-
-List<Integer> list = new ArrayList<>(Arrays.asList(1, 2, 3));
-
-// ① List<Integer> → Integer[]
-Integer[] arr1 = list.toArray(new Integer[0]);      // ★ 推荐写法，长度 0 即可，JVM 内部会重新分配
-Integer[] arr2 = list.toArray(Integer[]::new);      // JDK 11+ 等价写法
-
-// ② List<Integer> → int[]：必须 stream + mapToInt 拆箱
-int[] arr3 = list.stream().mapToInt(Integer::intValue).toArray();
-// ⚠️ list.toArray() 返回 Object[]，不能直接转 int[]
-
-// =============== 数组之间互转 ===============
-
-// int[] → Integer[]
-Integer[] boxed2 = Arrays.stream(nums).boxed().toArray(Integer[]::new);
-// Integer[] → int[]（要防 null）
-int[] prim = Arrays.stream(boxed).mapToInt(Integer::intValue).toArray();
-
-// =============== 二维数组互转 ===============
-
-int[][] grid = {{1, 2}, {3, 4}};
-// int[][] → List<List<Integer>>
-List<List<Integer>> g = new ArrayList<>();
-for (int[] row : grid) {
-    List<Integer> r = new ArrayList<>();
-    for (int x : row) r.add(x);
-    g.add(r);
-}
-// List<List<Integer>> → int[][]
-int[][] back = g.stream()
-    .map(r -> r.stream().mapToInt(Integer::intValue).toArray())
-    .toArray(int[][]::new);
-```
 
 #### 最简洁写法速查表（背这一张就够）
 
-> 刷题面试时**写最短的写法**——下表是各种转换的"最少代码"版本，**直接抄进去就能跑**。
+| 转换 | 最简洁写法 |
+|------|-----------|
+| **`int[] → List<Integer>`**（不可变） | `Arrays.stream(nums).boxed().toList()`（JDK 16+） |
+| `int[] → ArrayList<Integer>`（可变）| `new ArrayList<>(Arrays.stream(nums).boxed().toList())` |
+| **`Integer[] → List<Integer>`**（可变） | `new ArrayList<>(List.of(arr))` |
+| **`List<Integer> → int[]`** | `list.stream().mapToInt(Integer::intValue).toArray()` ← **唯一解** |
+| **`List<Integer> → Integer[]`** | `list.toArray(new Integer[0])` 或 `list.toArray(Integer[]::new)` |
+| **★ `List<int[]> → int[][]`** | **`rows.toArray(new int[0][])`** ← **区间题必背** |
+| `int[][] → List<int[]>` | `Arrays.stream(grid).collect(Collectors.toList())` |
+| **`int[] → Integer[]`** | `Arrays.stream(nums).boxed().toArray(Integer[]::new)` |
+| **`Integer[] → int[]`** | `Arrays.stream(arr).mapToInt(Integer::intValue).toArray()` |
+| **`String[] → List<String>`**（可变） | `new ArrayList<>(List.of(arr))` |
+| **`List<String> → String[]`** | `list.toArray(new String[0])` |
+| **可变参数 → 不可变 List** | `List.of(1, 2, 3)` |
+| **可变参数 → ArrayList** | `new ArrayList<>(List.of(1, 2, 3))` |
+| **`int[] → Set<Integer>`**（去重） | `Arrays.stream(nums).boxed().collect(Collectors.toSet())` |
+| **`int[]` 求和 / 最大 / 最小** | `Arrays.stream(nums).sum()` / `.max().getAsInt()` / `.min().getAsInt()` |
+| **`int[]` 调试打印** | `Arrays.toString(nums)` → `"[1, 2, 3]"` |
+| **`int[][]` 调试打印** | `Arrays.deepToString(grid)` |
+| **`Collection` 拼接** | `String.join(",", list)`（元素是 String） |
 
-| 转换 | 最简洁写法 | 备注 |
-|------|-----------|------|
-| **`int[] → List<Integer>`** | `Arrays.stream(nums).boxed().toList()` | JDK 16+；不可变 |
-| `int[] → ArrayList<Integer>`（可变）| `IntStream.of(nums).boxed().collect(Collectors.toCollection(ArrayList::new))` | 或老式 for 循环 |
-| **`Integer[] → List<Integer>`**（可变） | `new ArrayList<>(List.of(arr))` | JDK 9+ |
-| **`List<Integer> → int[]`** | `list.stream().mapToInt(Integer::intValue).toArray()` | 唯一写法 |
-| **`List<Integer> → Integer[]`** | `list.toArray(Integer[]::new)` | JDK 11+ |
-| **`int[] → Integer[]`** | `Arrays.stream(nums).boxed().toArray(Integer[]::new)` | 装箱 |
-| **`Integer[] → int[]`** | `Arrays.stream(arr).mapToInt(Integer::intValue).toArray()` | 拆箱（防 null） |
-| **`String[] → List<String>`**（可变） | `new ArrayList<>(List.of(arr))` | 引用类型直接 List.of |
-| **`List<String> → String[]`** | `list.toArray(String[]::new)` | JDK 11+ |
-| **可变参数 → List**（不可变） | `List.of(1, 2, 3)` | JDK 9+ |
-| **可变参数 → ArrayList**（可变） | `new ArrayList<>(List.of(1, 2, 3))` | 最短可变写法 |
-| **`int[] → Set<Integer>`** | `Arrays.stream(nums).boxed().collect(Collectors.toSet())` | 去重 |
-| **`int[]` 求和 / 最大 / 最小** | `Arrays.stream(nums).sum()` / `.max().getAsInt()` / `.min().getAsInt()` | 一行 |
-| **`int[]` 转 `String`**（调试）| `Arrays.toString(nums)` → `"[1, 2, 3]"` | 必背 |
-| **`int[][]` 转 `String`**（调试）| `Arrays.deepToString(grid)` | 二维必背 |
-| **`Collection` 拼接成字符串** | `String.join(",", list)`（元素必须是 String）| 否则 `list.stream().map(...).collect(Collectors.joining(","))` |
+#### 4 大避坑（必背）
 
-::: tip 💡 一句话口诀
-- **`int[] → List`**：`Arrays.stream(nums).boxed().toList()`（不可变）
-- **`List → int[]`**：`list.stream().mapToInt(Integer::intValue).toArray()`（唯一解）
-- **可变 List**：用 `new ArrayList<>(...)` 包一层
-- **引用类型**：直接 `List.of` 或 `toArray(T[]::new)`，**别再为 `Integer[]` 多写一行**
+::: warning ⚠️ 这 4 个错你写过至少 2 个
+1. **`Arrays.asList(int[])` 是 `List<int[]>`**——基本类型不会展开装箱；只能用 `Arrays.stream(nums).boxed()...`
+2. **`list.toArray()` 返回 `Object[]`**——不能强转 `int[][]` / `String[]`；必须传 `toArray(new T[0])`
+3. **`List<List<Integer>>` 不能直接 `toArray(new int[0][])`**——会抛 `ArrayStoreException`（内层是 `List` 不是 `int[]`）；得 stream + `mapToInt` 转一层：
+   ```java
+   int[][] arr = list.stream()
+       .map(r -> r.stream().mapToInt(Integer::intValue).toArray())
+       .toArray(int[][]::new);
+   ```
+4. **`Arrays.asList(1,2,3)` / `List.of(...)` 是固定大小**——`add`/`remove` 抛 `UnsupportedOperationException`；要可变就外面包 `new ArrayList<>(...)`
 :::
+
+#### `toArray(new T[0])` 为什么传 0
+
+不是浪费——`toArray` **忽略传入数组的长度**，按 List 实际大小**重新分配**返回。传 `new T[0]` 是 JVM 推荐写法，**JIT 内联后比传 `new T[list.size()]` 还快**。**唯一例外**：传入数组比 List 大时会复用并把剩余位置填 `null`——所以刷题永远传 0。
 
 ### 排序模式速查（一维 / 二维 / 字符串 / 字符）
 
