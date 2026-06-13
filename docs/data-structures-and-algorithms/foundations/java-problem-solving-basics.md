@@ -377,6 +377,36 @@ int[][] back = g.stream()
     .toArray(int[][]::new);
 ```
 
+#### 最简洁写法速查表（背这一张就够）
+
+> 刷题面试时**写最短的写法**——下表是各种转换的"最少代码"版本，**直接抄进去就能跑**。
+
+| 转换 | 最简洁写法 | 备注 |
+|------|-----------|------|
+| **`int[] → List<Integer>`** | `Arrays.stream(nums).boxed().toList()` | JDK 16+；不可变 |
+| `int[] → ArrayList<Integer>`（可变）| `IntStream.of(nums).boxed().collect(Collectors.toCollection(ArrayList::new))` | 或老式 for 循环 |
+| **`Integer[] → List<Integer>`**（可变） | `new ArrayList<>(List.of(arr))` | JDK 9+ |
+| **`List<Integer> → int[]`** | `list.stream().mapToInt(Integer::intValue).toArray()` | 唯一写法 |
+| **`List<Integer> → Integer[]`** | `list.toArray(Integer[]::new)` | JDK 11+ |
+| **`int[] → Integer[]`** | `Arrays.stream(nums).boxed().toArray(Integer[]::new)` | 装箱 |
+| **`Integer[] → int[]`** | `Arrays.stream(arr).mapToInt(Integer::intValue).toArray()` | 拆箱（防 null） |
+| **`String[] → List<String>`**（可变） | `new ArrayList<>(List.of(arr))` | 引用类型直接 List.of |
+| **`List<String> → String[]`** | `list.toArray(String[]::new)` | JDK 11+ |
+| **可变参数 → List**（不可变） | `List.of(1, 2, 3)` | JDK 9+ |
+| **可变参数 → ArrayList**（可变） | `new ArrayList<>(List.of(1, 2, 3))` | 最短可变写法 |
+| **`int[] → Set<Integer>`** | `Arrays.stream(nums).boxed().collect(Collectors.toSet())` | 去重 |
+| **`int[]` 求和 / 最大 / 最小** | `Arrays.stream(nums).sum()` / `.max().getAsInt()` / `.min().getAsInt()` | 一行 |
+| **`int[]` 转 `String`**（调试）| `Arrays.toString(nums)` → `"[1, 2, 3]"` | 必背 |
+| **`int[][]` 转 `String`**（调试）| `Arrays.deepToString(grid)` | 二维必背 |
+| **`Collection` 拼接成字符串** | `String.join(",", list)`（元素必须是 String）| 否则 `list.stream().map(...).collect(Collectors.joining(","))` |
+
+::: tip 💡 一句话口诀
+- **`int[] → List`**：`Arrays.stream(nums).boxed().toList()`（不可变）
+- **`List → int[]`**：`list.stream().mapToInt(Integer::intValue).toArray()`（唯一解）
+- **可变 List**：用 `new ArrayList<>(...)` 包一层
+- **引用类型**：直接 `List.of` 或 `toArray(T[]::new)`，**别再为 `Integer[]` 多写一行**
+:::
+
 ### 排序模式速查（一维 / 二维 / 字符串 / 字符）
 
 ::: tip 💡 排序题型口诀
