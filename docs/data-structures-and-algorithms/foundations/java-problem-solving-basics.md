@@ -314,9 +314,11 @@ for (int i = 0; i < n; i++) graph.add(new ArrayList<>());   // 邻接表初始�
 List<Integer> fixed = List.of(1, 2, 3);             // 不可修改，调 add 抛异常
 ```
 
-#### 数组 ↔ ArrayList 互转（必背）
+### 数组 ↔ ArrayList 互转（必背 · 刷题高频）
 
-Java 里最容易写错的就是这一块——`int[]`、`Integer[]`、`List<Integer>` 三者互转**没有统一 API**，且 `Arrays.asList` 对基本类型数组有陷阱。
+::: tip 💡 这是 Java 刷题最容易写错的一块
+LeetCode 大量题面给你 `int[]` 输入，**回溯/动态规划/分组**等场景内部要用 `List<Integer>`，**结果集**又常常是 `List<List<Integer>>` 或 `int[][]`——三者互转**没有统一 API**，`Arrays.asList(int[])` 还有著名陷阱。
+:::
 
 ```java
 // =============== 数组 → List ===============
@@ -374,6 +376,196 @@ int[][] back = g.stream()
     .map(r -> r.stream().mapToInt(Integer::intValue).toArray())
     .toArray(int[][]::new);
 ```
+
+### 排序模式速查（一维 / 二维 / 字符串 / 字符）
+
+::: tip 💡 排序题型口诀
+**「基本类型 `int[]` 只能升序、要降序就装箱」、「二维数组按列排用 `Comparator.comparingInt(a -> a[col])`」、「字符串内部字符排序 = `toCharArray + sort + new String`」**——这三个套路覆盖 80% 排序题。
+:::
+
+#### 1. 一维数组排序
+
+```java
+// === 基本类型 int[] ===
+int[] nums = {4, 2, 7, 1, 3};
+Arrays.sort(nums);                                       // 升序（原地，O(n log n) Dual-Pivot QuickSort）
+Arrays.sort(nums, 1, 4);                                 // 部分排序：[1, 4)
+
+// ⚠️ int[] 不能直接降序！要么装箱要么手动反转
+// 方案 A：装箱
+Integer[] boxed = Arrays.stream(nums).boxed().toArray(Integer[]::new);
+Arrays.sort(boxed, Comparator.reverseOrder());           // 降序
+int[] desc = Arrays.stream(boxed).mapToInt(Integer::intValue).toArray();
+
+// 方案 B：升序后反转（更省内存）
+Arrays.sort(nums);
+for (int i = 0, j = nums.length - 1; i < j; i++, j--) {
+    int t = nums[i]; nums[i] = nums[j]; nums[j] = t;
+}
+
+// === 包装类型 Integer[] / String[]（可直接用 Comparator）===
+Integer[] arr = {4, 2, 7, 1, 3};
+Arrays.sort(arr);                                        // 升序
+Arrays.sort(arr, (a, b) -> b - a);                       // ⚠️ 溢出风险（Integer.MIN_VALUE）
+Arrays.sort(arr, (a, b) -> Integer.compare(b, a));       // ★ 安全的降序写法
+Arrays.sort(arr, Comparator.reverseOrder());             // 等价
+
+String[] words = {"banana", "apple", "cherry"};
+Arrays.sort(words);                                      // 字典序升序
+Arrays.sort(words, Comparator.reverseOrder());           // 字典序降序
+Arrays.sort(words, Comparator.comparingInt(String::length));  // 按长度升序
+Arrays.sort(words, (a, b) -> a.length() != b.length()
+    ? a.length() - b.length() : a.compareTo(b));         // 长度升序 → 字典序（多级排序）
+```
+
+#### 2. 二维数组排序（区间 / 会议室 / 排程必考）
+
+二维数组 `int[][]` 排序是 **LeetCode 56/57/452/1235** 等区间题的核心套路。**`Arrays.sort(int[][], Comparator)` 是允许的**——虽然基本类型一维不能用 Comparator，但**二维数组的元素是 `int[]`（引用类型）**，所以可以传 Comparator。
+
+```java
+int[][] intervals = {{1, 3}, {2, 6}, {8, 10}, {15, 18}};
+
+// === 按第 0 列升序（区间起点排序）===
+Arrays.sort(intervals, (a, b) -> a[0] - b[0]);            // ⚠️ 小心溢出
+Arrays.sort(intervals, Comparator.comparingInt(a -> a[0]));  // ★ 推荐写法
+
+// === 按第 1 列升序（区间终点排序，活动选择问题）===
+Arrays.sort(intervals, Comparator.comparingInt(a -> a[1]));
+
+// === 多级排序（先按起点升序，相同则按终点降序）===
+Arrays.sort(intervals, (a, b) -> a[0] != b[0]
+    ? Integer.compare(a[0], b[0])
+    : Integer.compare(b[1], a[1]));
+
+// 等价的链式写法（更易读）
+Arrays.sort(intervals,
+    Comparator.<int[]>comparingInt(a -> a[0])
+              .thenComparing((a, b) -> Integer.compare(b[1], a[1])));
+
+// === 降序（用 reversed() 或显式 Comparator）===
+Arrays.sort(intervals,
+    Comparator.<int[]>comparingInt(a -> a[0]).reversed());
+
+// === long / double 列 ===
+double[][] points = ...;
+Arrays.sort(points, Comparator.comparingDouble(p -> p[0]));
+long[][] tasks = ...;
+Arrays.sort(tasks, Comparator.comparingLong(t -> t[0]));
+```
+
+::: warning ⚠️ 二维排序经典坑
+1. **`(a, b) -> a[0] - b[0]` 在大数下会溢出** → 改 `Integer.compare(a[0], b[0])` 或 `Comparator.comparingInt`
+2. **`int[][]` 排序是按 **引用** 整行交换**——不会破坏行内顺序
+3. **不可以这样写**：`Arrays.sort(intervals, (a, b) -> a[0] - b[0] != 0 ? a[0] - b[0] : a[1] - b[1])` 在两列都有大值时双重溢出
+4. **想要稳定排序**？`Arrays.sort` 对**对象数组**（`int[][]` 算）**是稳定的**（TimSort）；对 `int[]` 基本类型用 Dual-Pivot QuickSort **不稳定**
+:::
+
+#### 3. List 排序
+
+```java
+List<Integer> list = new ArrayList<>(Arrays.asList(4, 2, 7, 1, 3));
+
+list.sort(null);                                          // 升序，等价 Collections.sort(list)
+Collections.sort(list);                                   // 升序（等价）
+list.sort((a, b) -> Integer.compare(b, a));               // 降序
+list.sort(Comparator.reverseOrder());                     // 等价
+
+// === List<int[]> 排序（与二维数组语法一致）===
+List<int[]> intervals = ...;
+intervals.sort(Comparator.comparingInt(a -> a[0]));
+
+// === 自定义对象排序 ===
+record Person(String name, int age) {}
+List<Person> people = ...;
+people.sort(Comparator.comparingInt(Person::age));        // 按年龄升序
+people.sort(Comparator.comparing(Person::name));          // 按名字字典序
+people.sort(Comparator.comparingInt(Person::age)
+    .thenComparing(Person::name));                        // 多级排序
+
+// === 反转 / 打乱（生成测试数据用）===
+Collections.reverse(list);
+Collections.shuffle(list);
+Collections.shuffle(list, new Random(42));                // 固定种子可复现
+```
+
+#### 4. 字符串排序
+
+字符串排序两个常考场景：**字符串数组按字典序排** / **字符串内部字符排序**（异位词、最小字典序）。
+
+```java
+// === 字符串数组排序 ===
+String[] words = {"banana", "apple", "cherry"};
+Arrays.sort(words);                                       // 字典序（lexicographic）升序
+Arrays.sort(words, Comparator.reverseOrder());            // 降序
+Arrays.sort(words, Comparator.comparingInt(String::length));   // 按长度
+Arrays.sort(words, String.CASE_INSENSITIVE_ORDER);        // 忽略大小写字典序
+
+// === 自定义比较（如"拼接出最大数"LC179）===
+String[] nums = {"3", "30", "34", "5", "9"};
+Arrays.sort(nums, (a, b) -> (b + a).compareTo(a + b));    // 拼接后比较 → "9534330"
+
+// === 字符串内部字符排序（必背：异位词题 LC242 / 49）===
+String s = "cba";
+char[] chars = s.toCharArray();
+Arrays.sort(chars);                                       // 内部排序
+String sorted = new String(chars);                        // "abc"
+
+// 一行写法
+String key = s.chars().sorted()
+    .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+    .toString();
+// 或更简单：
+String key2 = Stream.of(s.split(""))
+    .sorted().collect(Collectors.joining());
+
+// === 按字符频次排序（LC451）===
+Map<Character, Integer> cnt = new HashMap<>();
+for (char c : s.toCharArray()) cnt.merge(c, 1, Integer::sum);
+StringBuilder sb = new StringBuilder();
+cnt.entrySet().stream()
+    .sorted((a, b) -> b.getValue() - a.getValue())        // 按频次降序
+    .forEach(e -> { for (int i = 0; i < e.getValue(); i++) sb.append(e.getKey()); });
+
+// === 字符数组排序 ===
+char[] chs = {'c', 'a', 'b'};
+Arrays.sort(chs);                                         // 升序
+// char[] 没有 Comparator 重载；要降序排数组用：
+Character[] boxed = {'c', 'a', 'b'};
+Arrays.sort(boxed, Comparator.reverseOrder());            // 降序
+```
+
+::: tip 💡 字符串排序速记
+- **异位词分组**：把每个字符串 `toCharArray + sort + new String` 作为 HashMap 的 key
+- **拼接最大数**：`(b + a).compareTo(a + b)`
+- **按字符频次**：HashMap 统计 + entrySet 排序
+- **`String.CASE_INSENSITIVE_ORDER`**：忽略大小写的内置 Comparator
+:::
+
+#### 5. Comparator 速查
+
+| 写法 | 用途 |
+|------|------|
+| `Comparator.naturalOrder()` | 自然顺序（升序） |
+| `Comparator.reverseOrder()` | 反向 |
+| `Comparator.comparingInt(x -> x[0])` | 抽取 int 字段 |
+| `Comparator.comparing(Person::name)` | 抽取对象字段 |
+| `c.thenComparing(...)` | 多级排序 |
+| `c.reversed()` | 反转已有 Comparator |
+| `Comparator.nullsFirst(c)` | null 排在前 |
+| `Comparator.nullsLast(c)` | null 排在后 |
+
+#### 6. 排序复杂度与稳定性
+
+| 方法 | 实现 | 时间 | 稳定性 |
+|------|------|------|--------|
+| `Arrays.sort(int[])` | Dual-Pivot QuickSort | O(n log n) 均摊；最坏 O(n²) | ❌ **不稳定** |
+| `Arrays.sort(Object[])` | TimSort | O(n log n) | ✅ **稳定** |
+| `Arrays.sort(int[][])` | TimSort（按引用）| O(n log n) | ✅ 稳定 |
+| `Collections.sort(List)` | TimSort | O(n log n) | ✅ 稳定 |
+| `list.sort(Comparator)` | TimSort | O(n log n) | ✅ 稳定 |
+| `Arrays.parallelSort(...)` | 并行归并 | O(n log n) / p 核 | ✅ 稳定 |
+
+**结论**：刷题需要稳定排序时（比如多关键字、保留原顺序），**包装类型版本**自动稳定；**`int[]` 不稳定**——但刷题用 `int[]` 的场景几乎不在乎稳定性（值就是值）。
 
 ### 哈希表 HashMap 与 HashSet
 
