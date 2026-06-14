@@ -298,6 +298,7 @@ export default withMermaid(defineConfig({
             { text: '设计模式', link: '/engineering-practice/design-patterns' },
             { text: 'Docker 容器化', link: '/engineering-practice/docker' },
             { text: 'Kubernetes', link: '/engineering-practice/kubernetes' },
+            { text: '🔥 Helm 与 Kustomize', link: '/engineering-practice/helm-kustomize' },
             { text: '🔥 GitOps 与 Argo CD', link: '/engineering-practice/gitops-argo-cd' },
             { text: 'Redis 实战', link: '/engineering-practice/redis' },
             { text: '消息队列', link: '/engineering-practice/message-queue' },
