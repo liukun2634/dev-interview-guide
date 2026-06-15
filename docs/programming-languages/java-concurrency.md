@@ -25,6 +25,81 @@ title: Java 并发编程
 
 **happens-before 原则：** JMM 保证以下操作具有可见性保证：程序顺序规则、监视器锁规则（解锁 happens-before 后续加锁）、volatile 变量规则、线程启动/终止规则。
 
+### 为什么 volatile 不能保证原子性？（**资深面试 Top 5**）
+
+::: tip 💡 高频追问："`volatile int i; i++` 多线程安全吗？" —— **不安全**
+:::
+
+`volatile` **只解决两件事**：① **可见性**（修改立即对其他线程可见，强制走主存）；② **有序性**（禁止 JIT / CPU 指令重排）。**它根本不管原子性**。
+
+#### `i++` 的真相 = 3 条字节码
+
+```
+i++ 编译后:
+  ① getfield  i   ← 从主内存读 i
+  ② iconst_1      ← 压栈常数 1
+  ③ iadd          ← 栈顶相加
+  ④ putfield  i   ← 写回主内存
+```
+
+**两个线程交错执行**（即便 i 是 volatile）：
+
+```
+线程 A 读 i = 5         ← getfield
+                       线程 B 读 i = 5    ← getfield（同样看到 5）
+线程 A 算 6, 写回 i = 6  ← putfield
+                       线程 B 算 6, 写回 i = 6  ← putfield 覆盖
+最终 i = 6，丢了一次 +1
+```
+
+**volatile 保证的是"单次读 / 单次写"原子**，**复合操作 `读-改-写` 不原子**。
+
+#### 三种正确做法
+
+| 方案 | 适合 |
+|------|------|
+| `synchronized` | 通用，但重 |
+| **`AtomicInteger.incrementAndGet()`** | **首选**——底层 CAS |
+| **`LongAdder.increment()`** | 高并发计数（分段累加，比 `AtomicLong` 快 5-10×） |
+
+#### volatile 的真实价值（不要妖魔化）
+
+它**虽然不能原子**，但解决两个关键问题：
+
+```java
+// 场景 1：状态标志（写一次，读多次）
+class Worker implements Runnable {
+    private volatile boolean running = true;        // ★ 不加 volatile 主线程改了 worker 可能永远看不到
+    public void stop() { running = false; }
+    public void run() {
+        while (running) doWork();
+    }
+}
+
+// 场景 2：禁止指令重排（双重检查锁单例 DCL 必须）
+class Singleton {
+    private static volatile Singleton instance;     // ★ 这里必须 volatile
+    public static Singleton get() {
+        if (instance == null) {
+            synchronized (Singleton.class) {
+                if (instance == null) {
+                    instance = new Singleton();     // new 不是原子：① 分配内存 ② 初始化 ③ 引用赋值
+                }                                   // 没有 volatile → CPU 可能重排成 ①③② → 别的线程拿到未初始化对象
+            }
+        }
+        return instance;
+    }
+}
+```
+
+#### 标准答题模板
+
+> **"volatile 只保证可见性和有序性，不保证原子性。`i++` 是'读-改-写'三步操作，volatile 只能让这三步**单独**对其他线程可见，**不能让三步合在一起原子**。要原子用 `AtomicInteger.incrementAndGet()`（CAS 实现）或 `LongAdder`（高并发更快）。**
+>
+> **volatile 的真实场景是：① 状态标志（boolean flag）—— 写一次读多次；② DCL 双重检查锁的 instance 字段 —— 防止 `new` 操作重排。"**
+
+---
+
 ## 核心原理
 
 ### 线程池（ThreadPoolExecutor）
@@ -250,6 +325,104 @@ try {
 ```
 
 **使用场景：** 数据库连接（每个线程持有独立 Connection）、用户登录上下文（Spring Security 的 SecurityContextHolder）、MDC 日志追踪 ID。
+
+#### 为什么 key 用 WeakReference，value 用 StrongReference？（**资深面试 Top 1**）
+
+::: tip 💡 这是 Java 高级面试 **被问最多** 的设计题，**必须能 5 分钟答完整**
+:::
+
+##### 先理解引用关系全景图
+
+```
+                      Thread 对象（栈帧的根可达）
+                          │ 强引用
+                          ↓
+                    ThreadLocalMap
+                          │
+                  ┌───────┴───────┐
+                  │  Entry[i]      │
+                  │ ┌──────────┐   │  ★ WeakRef
+                  │ │  key  ◯───┼───────────────→ ThreadLocal 实例
+                  │ ├──────────┤   │                    ↑ 强引用
+                  │ │ value ●───┼─→ User Data            │
+                  │ └──────────┘   │            ┌────────┴────────┐
+                  └────────────────┘            │  业务代码        │
+                                               │ static ThreadLocal│
+                                               └─────────────────┘
+```
+
+##### 设计 1：**为什么 key 用 WeakRef？** —— 防止"忘记 remove 时"的 ThreadLocal 实例泄漏
+
+假设 **key 也用强引用**：
+```
+Thread → ThreadLocalMap → Entry → strong key → ThreadLocal 实例
+```
+- 一旦业务代码不再持有 `ThreadLocal`（如方法局部变量），但 **Thread 还活着**（线程池复用）
+- 链路 `Thread → ThreadLocalMap → Entry → strong key` 仍然强引用 ThreadLocal
+- **ThreadLocal 永远不能被 GC** —— 即使你已经不用它了
+- 结果：**ThreadLocal 实例本身泄漏**
+
+**改用 WeakRef 后**：
+- 业务代码不再引用 ThreadLocal → 唯一的引用只剩下 ThreadLocalMap Entry 的 WeakRef
+- **下次 GC 时 WeakRef 被自动清理**，key 变成 null
+- ThreadLocal 实例被回收，**避免类级别的泄漏**
+
+##### 设计 2：**为什么 value 用 StrongRef？** —— 保证业务能正常用到 value
+
+假设 **value 也用 WeakRef**：
+```java
+ThreadLocal<User> ctx = new ThreadLocal<>();
+ctx.set(new User("alice"));    // 这里 new User 没有其他强引用
+// ... GC 发生 ...
+ctx.get();                      // 返回 null！！！业务逻辑彻底坏掉
+```
+- 大多数 `ThreadLocal.set(new X())` 的 value 是**临时创建的对象**，没有外部强引用
+- 用 WeakRef 会让 GC 之后 value 莫名其妙变成 null
+- **value 必须是强引用**，否则 ThreadLocal 无法可靠工作
+
+##### 设计的真实代价：value 泄漏
+
+WeakRef key 解决了"ThreadLocal 实例泄漏"，但**留下了"value 泄漏"**：
+
+```
+GC 后：Entry[i] = (null, value)   ← key 已被回收
+       但 ThreadLocalMap → Entry → strong value 链仍在
+       value 永远无法访问也永远不会被回收，直到线程死亡
+```
+
+##### JDK 的"挽救机制"：每次 set / get / remove 顺手清理
+
+Java 团队意识到这个问题，所以在 `ThreadLocalMap` 中实现了**启发式清理**：
+
+| 触发时机 | 做什么 |
+|---------|--------|
+| `get(key)` | 找到 hash 槽时，若发现 key 为 null，**顺手把这个 Entry 的 value 置 null** |
+| `set(key, value)` | 探测过程中遇到 key=null 的"过期 Entry"，**用新 Entry 替换** |
+| `remove(key)` | **直接清理当前槽** + 触发清理后续 null key 槽 |
+| `rehash()` | 容量调整时全表扫一遍清空 null key 槽 |
+
+**结论**：JDK 已经尽力了，但**清理不彻底**（依赖运气：取决于你后续是否还访问 ThreadLocal）。**业务代码必须主动 `remove()`，这是契约不是建议**。
+
+##### 完整设计权衡总结
+
+| 引用类型 | 实际做法 | 不这样做的代价 |
+|---------|---------|--------------|
+| **key = WeakRef** | ✅ Java 选择 | 用 StrongRef → ThreadLocal 实例本身永远不能 GC |
+| **key = SoftRef** | ❌ 不用 | 太晚回收（内存不足才回收）；解决不了泄漏 |
+| **value = StrongRef** | ✅ Java 选择 | 用 WeakRef → GC 后 value 莫名变 null，业务崩溃 |
+| **value = WeakRef** | ❌ 不用 | 同上 |
+
+##### 标准答题模板（背下来）
+
+> **"ThreadLocalMap 的 key 用 WeakReference，是为了防止 ThreadLocal 实例自身泄漏 —— 业务不再持有时 GC 能回收。value 用 StrongReference，是因为 value 通常是用户创建的临时对象，如果用 WeakRef 会导致 `get()` 莫名返回 null。**
+>
+> **但这个设计留下一个尾巴：key 被回收后，value 因为强引用还在 ThreadLocalMap 里。JDK 在 set/get/remove 时会顺手清理这些 key=null 的 Entry，但不彻底——所以业务代码必须主动调用 `remove()`，尤其是在线程池场景下。**
+>
+> **JDK 21 之后这个问题在虚拟线程 + ScopedValue 范式下从根本上消失了：ScopedValue 的作用域是 try-with-resources 语义，离开 Lambda 自动清理。"**
+
+#### 使用场景
+
+数据库连接（每个线程持有独立 Connection）、用户登录上下文（Spring Security 的 `SecurityContextHolder`）、MDC 日志追踪 ID、`DateTimeFormatter` 缓存。
 
 ::: warning ⚠️ 虚拟线程时代的 ThreadLocal 新考点（JDK 21+）
 

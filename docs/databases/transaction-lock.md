@@ -50,6 +50,60 @@ SQL 标准定义了四种隔离级别，隔离程度从低到高，并发性能�
 
 > InnoDB 在 RR 级别下通过 **MVCC + 间隙锁** 基本解决幻读问题，但快照读和当前读的幻读处理方式不同。
 
+#### 为什么 MySQL 默认 RR，Oracle 默认 RC？（**资深面试 Top 4**）
+
+::: tip 💡 **资深面试必考**——能说清"两个数据库哲学差异"立刻区分初/中/高级
+:::
+
+##### 历史原因：MySQL 的"binlog 包袱"
+
+**MySQL 的 RR 默认源自 binlog 的 STATEMENT 格式痛点**：
+
+```sql
+-- 假设 RC + STATEMENT binlog
+-- 主库执行：
+事务 A: SELECT max(id) FROM t;             → 返回 100
+事务 B: INSERT INTO t (id) VALUES (200);   → 提交
+事务 B 的 binlog 先写入并同步到从库
+事务 A: INSERT INTO t SELECT max(id)+1 FROM t;  → 主库变 201，但从库视角不一样
+                                                → 主从数据不一致！
+```
+
+**RC 级别在 STATEMENT binlog 下会主从不一致**！MySQL 5.1 之前**只支持 STATEMENT binlog**，所以**RR 是被 binlog 设计倒逼出来的默认**——RR 配合**间隙锁**禁止幻读，binlog 重放才能保证一致。
+
+> Oracle 没有 binlog 痛点（用 redo log + 实例间通过 RAC 同步），自然选 RC。
+
+##### 设计哲学差异
+
+| 维度 | **MySQL InnoDB（RR 默认）** | **Oracle（RC 默认）** |
+|------|---------------------------|---------------------|
+| **历史包袱** | binlog STATEMENT 强制要求 RR | 无 binlog，无包袱 |
+| **MVCC 实现** | undo log 版本链 + ReadView | **回滚段**（PGA 内存 + UNDO 表空间） |
+| **ReadView 时机** | RR：事务首个 SELECT 创建一次；RC：每次 SELECT 都新建 | RC：每个 statement 重建 |
+| **幻读** | RR 用 **间隙锁** 防止 | RC 不防——用户自己处理 |
+| **行锁开销** | RR 锁范围大（间隙锁）| RC 锁范围小（只锁行）|
+| **死锁概率** | RR 更高 | RC 更低 |
+| **并发性能** | RC > RR | RC 性能更优 |
+| **设计哲学** | "**默认严格**，业务可降级" | "**默认宽松**，业务自己加锁" |
+
+##### MySQL 5.6+ 后还该用 RR 吗？
+
+**很多大厂已切到 RC**——理由：
+
+| RR 痛点 | RC 优势 |
+|---------|---------|
+| 间隙锁 → 锁范围大，并发差，**容易死锁** | 只锁行，并发好 |
+| 业务可重复读其实**用不到**（多数业务每次 select 想要最新数据） | 行为符合直觉 |
+| RR 配 `READ COMMITTED` 还有"半致幻"现象（当前读 vs 快照读不一致） | 一致 |
+
+**阿里、京东、腾讯等大厂内部都推荐 RC 作为默认**——RR 只在金融对账等需要"事务内多次读结果一致"的场景才用。**MySQL 8.0+ binlog 默认 ROW 格式**，已经不需要 RR 保护 binlog 重放，RR 默认是**历史遗留**。
+
+##### 标准答题模板
+
+> **"MySQL 默认 RR、Oracle 默认 RC，根本原因是**历史包袱**——MySQL 5.1 之前 binlog 只支持 STATEMENT 格式，RC 会导致主从不一致，所以默认 RR 配间隙锁防幻读。Oracle 无 binlog，没有这个约束。**
+>
+> **代价是 RR 锁范围大、死锁多、并发性能差。MySQL 5.6+ 默认 ROW binlog 后，RR 的"必要性"消失，**很多大厂内部 MySQL 已切到 RC**，与 Oracle 哲学对齐。只有金融对账等严格场景才坚持 RR。"**
+
 ---
 
 ### 3. MVCC 原理

@@ -82,6 +82,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: '概念与处理', link: '/data-structures-and-algorithms/stack-queue/' },
             { text: '顺序结构处理框架', link: '/data-structures-and-algorithms/stack-queue/stack-queue-basics' },
+            { text: '电梯调度系统（工程）', link: '/data-structures-and-algorithms/stack-queue/elevator-scheduling' },
           ],
         },
         {
@@ -93,6 +94,7 @@ export default withMermaid(defineConfig({
             { text: 'LFU 缓存（工程）', link: '/data-structures-and-algorithms/hash/lfu-cache' },
             { text: 'O(1) 插删随机（工程）', link: '/data-structures-and-algorithms/hash/randomized-set' },
             { text: '设计 Twitter（工程）', link: '/data-structures-and-algorithms/hash/twitter-design' },
+            { text: '停车场系统设计（工程）', link: '/data-structures-and-algorithms/hash/parking-lot' },
             { text: '🔥 Bloom Filter 与变种（工程）', link: '/data-structures-and-algorithms/hash/bloom-filter' },
           ],
         },
@@ -110,6 +112,8 @@ export default withMermaid(defineConfig({
             { text: '跳表 SkipList（工程）', link: '/data-structures-and-algorithms/tree/skip-list' },
             { text: 'Radix Tree（压缩 Trie，工程）', link: '/data-structures-and-algorithms/tree/radix-tree' },
             { text: 'Merkle Tree（工程）', link: '/data-structures-and-algorithms/tree/merkle-tree' },
+            { text: '搜索自动补全 LC642（工程）', link: '/data-structures-and-algorithms/tree/autocomplete' },
+            { text: '任务调度器 LC621+Cron（工程）', link: '/data-structures-and-algorithms/tree/task-scheduler' },
             { text: '撮合引擎（工程）', link: '/data-structures-and-algorithms/tree/matching-engine' },
           ],
         },

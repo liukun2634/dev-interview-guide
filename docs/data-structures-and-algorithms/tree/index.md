@@ -51,6 +51,8 @@ title: 树与堆
 | [跳表 SkipList（工程）](./skip-list) | Redis ZSet / ConcurrentSkipListMap / LevelDB MemTable 的核心 |
 | [Radix Tree（压缩 Trie，工程）](./radix-tree) | URL / IP 路由表等工程场景为何不用裸 Trie |
 | [Merkle Tree（工程）](./merkle-tree) | Git / 区块链 / IPFS / S3 / Dynamo 反熵的底层 |
+| [搜索自动补全 LC642（工程）](./autocomplete) | Trie + Top-K + 频次——谷歌搜索框 / IDE 补全 / Lucene Suggester 统一底层 |
+| [任务调度器 LC621+Cron（工程）](./task-scheduler) | 贪心 + 堆桌面 + 时间轮 + 分布式（Quartz / XXL-Job / Airflow） |
 | [撮合引擎（工程）](./matching-engine) | 交易所订单簿，Price-Time Priority 核心结构 |
 
 ## 看到什么就先想到这类

@@ -778,6 +778,76 @@ System.out.println(s2 == s3); // JDK7+: true（s3复用了s2的引用）
 System.out.println(s1 == s3); // true（s1和s3都指向常量池同一对象）
 ```
 
+#### 为什么 String 是不可变的？（**资深面试 Top 3**）
+
+::: tip 💡 高频追问：「**String 为什么设计成不可变？**」标准答 **3 大原因**
+:::
+
+`String` 源码核心：
+
+```java
+public final class String {                    // ① final 类
+    private final char[] value;                // ② final 字段，私有
+    private final int hash;                    // ③ 缓存的 hash 值
+    // 所有"修改"方法（substring/replace/concat...）都返回 new String
+}
+```
+
+##### 原因 1：**安全（最重要）**
+
+```java
+public void writeFile(String path) {
+    // 假设 String 可变 →
+    // 黑客在另一线程把 path 改成 "/etc/passwd"
+    // ★ 权限检查通过，但写入时变成了系统文件
+    if (!isAllowed(path)) throw new SecurityException();
+    Files.write(Paths.get(path), data);
+}
+```
+
+**所有需要"路径/SQL/URL/类名"的 API 都用 String**——一旦可变，**`检查 → 使用`** 中间被改的"TOCTOU 攻击"无法防御。Java 把 `ClassLoader.loadClass(String)`、`File(String)`、`Connection.prepareStatement(String)` 全部假设 String 不可变。**这是 Java 安全模型的基石**。
+
+##### 原因 2：**性能 —— hashCode 缓存 + 常量池**
+
+```java
+private int hash;     // String 字段：缓存计算结果
+
+public int hashCode() {
+    int h = hash;
+    if (h == 0 && value.length > 0) {    // ★ 只算一次
+        for (char c : value) h = 31 * h + c;
+        hash = h;
+    }
+    return h;
+}
+```
+
+`String` 是 **HashMap 最常用的 key**。如果可变 → 每次 `hashCode()` 都要重算（O(n)）；不可变 → **算一次永远缓存**。
+
+**字符串常量池**也只有在不可变前提下才安全——两个变量指向同一池中对象，谁改了谁倒霉。
+
+##### 原因 3：**线程安全 —— 多线程共享无需同步**
+
+```java
+static final String CONFIG = loadConfig();    // 所有线程共享，零同步
+```
+
+不可变对象天然线程安全；可变 String 必须每处加锁，性能崩溃。
+
+##### 设计者标准答案（背 30 秒）
+
+> **"String 不可变是 Java 设计的基石，3 个原因：①   **安全** —— 防止 TOCTOU 攻击（类加载、文件、SQL 全部依赖 String 不可变）；② **性能** —— hashCode 缓存 + 字符串常量池都靠不可变；③ **线程安全** —— 不可变对象天然多线程共享无需同步。**
+>
+> **代价是每次'修改'要 new 新对象——所以循环拼接必须用 `StringBuilder`，`+` 拼接 n 次就是 O(n²)。"**
+
+##### 配套追问
+
+| 追问 | 回答要点 |
+|------|---------|
+| **`final` 关键字怎么保证不可变？** | `final class` 防继承重写、`final char[] value` 防 value 被替换 |
+| **能否通过反射修改 String？** | ✅ 可以 `Field f = String.class.getDeclaredField("value"); f.setAccessible(true)`——但**破坏了不可变契约**，常量池会出现"看似 abc 实际是 xyz"的混乱；JDK 9+ 改用 `byte[]` + coder 字段（Compact Strings） |
+| **JDK 9+ 的 Compact Strings 优化** | `char[]` 改为 `byte[]` + `byte coder` 字段；ASCII 字符串内存减半（每字符 1 byte vs 2 byte） |
+
 ---
 
 ### equals 与 hashCode 契约
