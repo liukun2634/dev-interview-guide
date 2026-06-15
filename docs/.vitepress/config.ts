@@ -279,6 +279,7 @@ export default withMermaid(defineConfig({
             { text: '微信登录与在线状态', link: '/system-design/interview-cases/wechat-login' },
             { text: '阿里双十一洪峰', link: '/system-design/interview-cases/double-eleven-spike' },
             { text: '支付宝支付系统', link: '/system-design/interview-cases/alipay-payment' },
+            { text: '🔥 证券交易系统（撮合/清算）', link: '/system-design/interview-cases/trading-system' },
             { text: '淘宝商品搜索', link: '/system-design/interview-cases/taobao-search' },
             { text: '阿里库存系统', link: '/system-design/interview-cases/inventory-system' },
             { text: '美团外卖调度', link: '/system-design/interview-cases/delivery-dispatch' },
