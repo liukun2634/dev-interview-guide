@@ -18,7 +18,7 @@ title: 大厂系统设计实战题
 | 腾讯 | [微信登录与在线状态](./wechat-login) | 📌 专项题 |
 | 阿里 | [双十一洪峰](./double-eleven-spike) | 🔥 必考题 |
 | 阿里 | [支付宝支付系统](./alipay-payment) | 🔥 必考题 |
-| 金融科技 | [证券交易系统（撮合/清算）](./trading-system) | 🔥 必考题（金融峗） |
+| 金融科技 | [证券交易系统（撮合/清算）](./trading-system) | 🔥 必考题（金融岗） |
 | 阿里 | [淘宝商品搜索](./taobao-search) | ⭐ 高频题 |
 | 阿里 | [阿里库存系统](./inventory-system) | ⭐ 高频题 |
 | 美团 | [外卖调度系统](./delivery-dispatch) | ⭐ 高频题 |
@@ -39,7 +39,7 @@ title: 大厂系统设计实战题
 | 消息 / IM | [微信消息系统](./wechat-messaging)、[飞书协同编辑](./feishu-collab-doc) |
 | Feed 流 / 推荐 | [微信朋友圈](./wechat-moments)、[抖音推荐流](./tiktok-feed) |
 | 支付 / 分布式事务 | [支付宝支付](./alipay-payment)、[阿里库存系统](./inventory-system) |
-| 金融 / 交易 / 撮合 | [证券交易系统](./trading-system)（另可参考算法章节的 [撮合引擎手撛](../../data-structures-and-algorithms/tree/matching-engine)） |
+| 金融 / 交易 / 撮合 | [证券交易系统](./trading-system)（另可参考算法章节的 [撮合引擎手撕](../../data-structures-and-algorithms/tree/matching-engine)） |
 | 地理位置 | [美团附近搜索](./nearby-restaurant)、[美团外卖调度](./delivery-dispatch) |
 | 流媒体 | [抖音直播系统](./live-streaming) |
 | 搜索 | [淘宝商品搜索](./taobao-search) |
