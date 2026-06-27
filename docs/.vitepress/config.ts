@@ -455,6 +455,18 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: '.NET 后端框架',
+          collapsed: false,
+          items: [
+            { text: 'ASP.NET Core 概览', link: '/web-and-frameworks/asp-net-core/' },
+            { text: '托管模型与服务器（Kestrel/IIS）', link: '/web-and-frameworks/asp-net-core/hosting-and-servers' },
+            { text: '请求管道与鉴权', link: '/web-and-frameworks/asp-net-core/request-pipeline' },
+            { text: '依赖注入 DI', link: '/web-and-frameworks/asp-net-core/dependency-injection' },
+            { text: 'AOP 与拦截机制', link: '/web-and-frameworks/asp-net-core/aop-and-interception' },
+            { text: '对比 Java Spring', link: '/web-and-frameworks/asp-net-core/vs-spring' },
+          ],
+        },
+        {
           text: '前端框架',
           collapsed: false,
           items: [

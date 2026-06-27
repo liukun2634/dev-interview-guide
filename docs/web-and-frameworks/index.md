@@ -7,7 +7,7 @@ title: Web 与框架
 <span class="dig-tag dig-tag--category">Web 与框架</span> <span class="dig-tag dig-tag--hot">🔥 核心章节</span>
 
 ::: tip 💡 核心要点
-Web 与框架这一章覆盖从 HTTP 请求到后端响应再到前端渲染的完整链路。后端以 Spring 生态为核心（IoC → MVC → Boot → 数据访问 → 安全 → 微服务），前端覆盖 React 和 Angular 两大主流框架。理解每一层解决什么问题、怎么衔接，比孤立背 API 更有用。
+Web 与框架这一章覆盖从 HTTP 请求到后端响应再到前端渲染的完整链路。后端以 Spring 生态为核心（IoC → MVC → Boot → 数据访问 → 安全 → 微服务），并补充 ASP.NET Core（中间件管道、内置 DI、Minimal API）；前端覆盖 React 和 Angular 两大主流框架。理解每一层解决什么问题、怎么衔接，比孤立背 API 更有用。
 :::
 
 ---
@@ -200,6 +200,17 @@ Spring 面试最爱问"XX 什么时候会失效"。理解失效原因就是理�
 | 🔥 Apache Dubbo 3 | Triple 协议、应用级注册、SPI、Dubbo vs Spring Cloud vs gRPC | 🔥🔥🔥（国内必考） | [Apache Dubbo 3](./dubbo) |
 | 🔥 Project Reactor 深度 | Mono/Flux、Cold/Hot Stream、Context、6 种错误处理、Sinks API、StepVerifier | 🔥🔥（响应式必考） | [Project Reactor 深度](./project-reactor) |
 | 响应式 Java 框架横评 | Reactor / RxJava / Vert.x / Mutiny / Pekko、虚拟线程时代选型 | 🔥（金融/网关） | [响应式 Java](./reactive-java) |
+
+### .NET 后端框架
+
+| 类别 | 核心内容 | 面试频率 | 详细页面 |
+|------|---------|---------|---------|
+| ASP.NET Core 概览 | 定位、版本演进、架构、请求管道全景 | 🔥🔥🔥 | [ASP.NET Core 概览](./asp-net-core/) |
+| 托管模型与服务器 | Kestrel / HTTP.sys / IIS 进程内外 / 反向代理 / Linux·容器部署 | 🔥🔥🔥 | [托管模型与服务器](./asp-net-core/hosting-and-servers) |
+| 对比 Java Spring | 启动模型、容器、Web、数据访问、生态全面对照 | 🔥🔥🔥 | [对比 Spring](./asp-net-core/vs-spring) |
+| 依赖注入 DI | 三种生命周期、注册方式、Captive Dependency、vs Spring IoC | 🔥🔥🔥 | [依赖注入](./asp-net-core/dependency-injection) |
+| AOP 与拦截机制 | 中间件 / 过滤器 / 代理 / Source Generator | 🔥🔥 | [AOP 与拦截](./asp-net-core/aop-and-interception) |
+| 请求管道与鉴权 | Middleware、路由、Controller vs Minimal API、认证授权 | 🔥🔥 | [请求管道](./asp-net-core/request-pipeline) |
 
 ### 前端：主流框架
 
