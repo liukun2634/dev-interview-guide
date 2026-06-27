@@ -29,6 +29,17 @@ title: 树形 DP
 
 先递归处理左右子树，拿到子树返回的状态，再计算当前节点的状态，最终返回给父节点。整个过程就是一棵树的后序遍历（左 → 右 → 根）。
 
+```mermaid
+flowchart TD
+    A["dfs(node)"] --> B["dfs(left)"]
+    A --> C["dfs(right)"]
+    B --> D["得到 leftState"]
+    C --> E["得到 rightState"]
+    D --> F["合并子状态 + node.val"]
+    E --> F
+    F --> G["返回 currentState 给父节点"]
+```
+
 ### 状态定义思路
 
 关键问题：**"对于当前节点，我需要向父节点汇报什么信息？"** —— 这个信息就是状态。
@@ -76,6 +87,15 @@ $$
 ```
 dfs(node) 返回：能向父节点提供的最优单边路径
 全局变量：在 dfs 中，每次计算"以当前节点为拐点"的路径，更新全局最大值
+```
+
+```mermaid
+flowchart LR
+    L["leftSingle"] --> M["node"]
+    R["rightSingle"] --> M
+    M --> P["pathThroughNode = leftSingle + node + rightSingle"]
+    P --> U["更新全局答案"]
+    M --> RET["返回给父节点: node + max(leftSingle, rightSingle)"]
 ```
 
 ### 实现模式
@@ -135,6 +155,20 @@ $$
 **5. 返回值**
 
 `max(root[0], root[1])`——根节点偷或不偷取较大值
+
+```mermaid
+flowchart TD
+    N["当前节点 node"] --> S0["rob: 选当前节点"]
+    N --> S1["notRob: 不选当前节点"]
+    L0["left.rob"] --> S1
+    L1["left.notRob"] --> S1
+    R0["right.rob"] --> S1
+    R1["right.notRob"] --> S1
+    L1 --> S0
+    R1 --> S0
+    S0 --> RET["返回 [rob, notRob]"]
+    S1 --> RET
+```
 
 ### Java 实现
 
