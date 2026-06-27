@@ -204,6 +204,193 @@ for (int g = 0; g < groups; g++) {         // 外层：枚举组
 
 ---
 
+## 代码模板库（Java，可直接套）
+
+下面给出高频背包题的可复用代码模板，建议按「问法 -> 模板」快速匹配。
+
+### 模板 1：0/1 背包求最大价值
+
+```java
+// n 个物品，w[i] 重量，v[i] 价值，容量 capacity
+public int knapsack01MaxValue(int[] w, int[] v, int capacity) {
+    int n = w.length;
+    int[] dp = new int[capacity + 1];
+
+    for (int i = 0; i < n; i++) {
+        for (int j = capacity; j >= w[i]; j--) { // 倒序：每个物品只用一次
+            dp[j] = Math.max(dp[j], dp[j - w[i]] + v[i]);
+        }
+    }
+    return dp[capacity];
+}
+```
+
+### 模板 2：0/1 背包计数（恰好装满的方案数）
+
+```java
+// 从 nums 中每个数最多选一次，凑出 target 的方案数（如 LC 494 转化后）
+public int knapsack01CountWays(int[] nums, int target) {
+    if (target < 0) return 0;
+
+    int[] dp = new int[target + 1];
+    dp[0] = 1; // 空集方案
+
+    for (int num : nums) {
+        for (int j = target; j >= num; j--) { // 倒序
+            dp[j] += dp[j - num];
+        }
+    }
+    return dp[target];
+}
+```
+
+### 模板 3：完全背包求最小值（零钱兑换）
+
+```java
+// 每个硬币可无限使用，凑出 amount 的最少硬币数（如 LC 322）
+public int completeKnapsackMinCoins(int[] coins, int amount) {
+    int[] dp = new int[amount + 1];
+    Arrays.fill(dp, Integer.MAX_VALUE);
+    dp[0] = 0;
+
+    for (int coin : coins) {
+        for (int j = coin; j <= amount; j++) { // 正序：允许重复使用 coin
+            if (dp[j - coin] != Integer.MAX_VALUE) {
+                dp[j] = Math.min(dp[j], dp[j - coin] + 1);
+            }
+        }
+    }
+    return dp[amount] == Integer.MAX_VALUE ? -1 : dp[amount];
+}
+```
+
+### 模板 4：完全背包计数（组合数）
+
+```java
+// 组合数：外层物品，内层容量（如 LC 518）
+public int completeKnapsackCountCombinations(int[] coins, int amount) {
+    int[] dp = new int[amount + 1];
+    dp[0] = 1;
+
+    for (int coin : coins) {
+        for (int j = coin; j <= amount; j++) {
+            dp[j] += dp[j - coin];
+        }
+    }
+    return dp[amount];
+}
+```
+
+### 模板 5：完全背包计数（排列数）
+
+```java
+// 排列数：外层容量，内层物品（如 LC 377）
+public int completeKnapsackCountPermutations(int[] nums, int target) {
+    int[] dp = new int[target + 1];
+    dp[0] = 1;
+
+    for (int j = 1; j <= target; j++) {
+        for (int num : nums) {
+            if (j >= num) {
+                dp[j] += dp[j - num];
+            }
+        }
+    }
+    return dp[target];
+}
+```
+
+### 模板 6：分组背包（每组最多选一个）
+
+```java
+// groups[g] 是第 g 组物品下标列表
+public int groupKnapsackMaxValue(List<List<Integer>> groups, int[] w, int[] v, int capacity) {
+    int[] dp = new int[capacity + 1];
+
+    for (List<Integer> group : groups) {
+        for (int j = capacity; j >= 0; j--) { // 组内最多选一个，仍是倒序
+            for (int idx : group) {
+                if (j >= w[idx]) {
+                    dp[j] = Math.max(dp[j], dp[j - w[idx]] + v[idx]);
+                }
+            }
+        }
+    }
+    return dp[capacity];
+}
+```
+
+### 模板 7：多重背包（二进制拆分优化）
+
+```java
+// 每种物品 i：重量 w[i]、价值 v[i]、数量 cnt[i]
+public int multipleKnapsackBinarySplit(int[] w, int[] v, int[] cnt, int capacity) {
+    List<Integer> newW = new ArrayList<>();
+    List<Integer> newV = new ArrayList<>();
+
+    // 二进制拆分：cnt -> 1,2,4,...,rest
+    for (int i = 0; i < w.length; i++) {
+        int c = cnt[i], k = 1;
+        while (k <= c) {
+            newW.add(k * w[i]);
+            newV.add(k * v[i]);
+            c -= k;
+            k <<= 1;
+        }
+        if (c > 0) {
+            newW.add(c * w[i]);
+            newV.add(c * v[i]);
+        }
+    }
+
+    // 转为 0/1 背包
+    int[] dp = new int[capacity + 1];
+    for (int i = 0; i < newW.size(); i++) {
+        int weight = newW.get(i), value = newV.get(i);
+        for (int j = capacity; j >= weight; j--) {
+            dp[j] = Math.max(dp[j], dp[j - weight] + value);
+        }
+    }
+    return dp[capacity];
+}
+```
+
+### 模板 8：二维费用 0/1 背包（One and Zero）
+
+```java
+// 两个容量维度：最多 m 个 0、n 个 1（如 LC 474）
+public int twoDimensional01Knapsack(String[] strs, int m, int n) {
+    int[][] dp = new int[m + 1][n + 1];
+
+    for (String s : strs) {
+        int zero = 0, one = 0;
+        for (char ch : s.toCharArray()) {
+            if (ch == '0') zero++;
+            else one++;
+        }
+
+        // 两个维度都要倒序，保证每个字符串只用一次
+        for (int i = m; i >= zero; i--) {
+            for (int j = n; j >= one; j--) {
+                dp[i][j] = Math.max(dp[i][j], dp[i - zero][j - one] + 1);
+            }
+        }
+    }
+    return dp[m][n];
+}
+```
+
+### 速查：循环方向与问法
+
+| 类型 | 内层容量方向 | 典型问法 |
+|------|------------|---------|
+| 0/1 背包 | 倒序 `j = cap...w` | 最大值 / 可行性 / 计数 |
+| 完全背包 | 正序 `j = w...cap` | 最小硬币数 / 组合数 |
+| 分组背包 | 倒序（组内枚举物品） | 每组最多选一个 |
+| 二维 0/1 背包 | 两个维度都倒序 | 两种资源限制 |
+
+---
+
 ## 典型例题：分割等和子集
 
 [LeetCode 416](https://leetcode.cn/problems/partition-equal-subset-sum/)
