@@ -22,6 +22,7 @@ ASP.NET Core 是微软的现代跨平台 Web 框架，定位等同于 Java 世�
 | [托管与服务器](./hosting-and-servers) | Kestrel / HTTP.sys / IIS / 反向代理 / 部署 | 🔥🔥🔥 |
 | [请求管道与鉴权](./request-pipeline) | 中间件、路由、Controller vs Minimal API、认证授权 | 🔥🔥🔥 |
 | [依赖注入 DI](./dependency-injection) | 三种生命周期、注册方式、Scope 陷阱、vs Spring IoC | 🔥🔥🔥 |
+| [数据访问与事务](./data-access) | EF Core / Dapper、事务、并发控制、迁移 | 🔥🔥🔥 |
 | [AOP 与拦截](./aop-and-interception) | 中间件 / 过滤器 / 代理 / Source Generator | 🔥🔥 |
 | [对比 Java Spring](./vs-spring) | 启动、容器、Web、数据访问、生态全面对照 | 🔥🔥🔥 |
 

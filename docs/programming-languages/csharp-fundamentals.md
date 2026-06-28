@@ -12,11 +12,30 @@ title: C# 基础
 
 ## .NET 演进时间线
 
+### 早期：.NET Framework 时代（2002–2019，Windows-only）
+
+| 版本 | 年份 | C# 版本 | 关键变化 |
+|------|------|---------|---------|
+| **.NET Framework 1.0/1.1** | 2002/2003 | C# 1.0 | CLR 诞生、托管代码、ASP.NET WebForms |
+| **.NET Framework 2.0** | 2005 | C# 2.0 | **泛型**、可空类型、迭代器 `yield`、匿名方法 |
+| **.NET Framework 3.0** | 2006 | — | WPF、WCF、WF、CardSpace |
+| **.NET Framework 3.5** | 2007 | C# 3.0 | **LINQ**、Lambda、扩展方法、匿名类型、`var` |
+| **.NET Framework 4.0** | 2010 | C# 4.0 | `dynamic`、TPL 并行库、可选/命名参数 |
+| **.NET Framework 4.5** | 2012 | C# 5.0 | **async/await**、TAP 异步模型 |
+| **.NET Framework 4.6/4.7** | 2015/2017 | C# 6/7 | RyuJIT、`nameof`、字符串插值、元组、模式匹配 |
+| **.NET Framework 4.8** | 2019 | — | **末代 Windows-only**，仅维护，不再演进 |
+
+::: tip 🔀 关键分叉：2016 年 .NET Core 1.0
+微软用 **.NET Core** 重写运行时（跨平台、开源、模块化），与 Windows-only 的 .NET Framework 并行。两条线在 **.NET 5** 合并为统一的 ".NET"。
+:::
+
+### 现代：跨平台统一时代（2016 至今）
+
 | 版本 | 年份 | 关键变化 |
 |------|------|---------|
-| **.NET Framework 4.8** | 2019 | 末代 Windows-only |
-| **.NET Core 3.1** | 2019 | 跨平台 LTS |
-| **.NET 5** | 2020 | 统一品牌（去掉 "Core"）|
+| **.NET Core 1.0/2.0** | 2016/2017 | 跨平台、开源、CLI、.NET Standard |
+| **.NET Core 3.1** | 2019 | 跨平台 LTS、桌面（WPF/WinForms）回归 |
+| **.NET 5** | 2020 | 统一品牌（去掉 "Core"）、单一 BCL |
 | **.NET 6** | 2021 | LTS、Minimal API、Hot Reload |
 | **.NET 7** | 2022 | Native AOT、性能爆炸 |
 | **.NET 8** | 2023 | **LTS**、AOT 完善、Blazor United、Channel |

@@ -161,15 +161,41 @@ export default withMermaid(defineConfig({
       ],
       '/operating-systems/': [
         {
-          text: '操作系统',
+          text: '操作系统 — 总览',
           collapsed: false,
           items: [
             { text: '章节概览', link: '/operating-systems/' },
+          ],
+        },
+        {
+          text: '进程与并发',
+          collapsed: false,
+          items: [
             { text: '进程与线程（含 R/S/D/Z/T 状态机）', link: '/operating-systems/process-and-thread' },
-            { text: '内存管理（分配器 / NUMA / HugePage / OOM）', link: '/operating-systems/memory-management' },
-            { text: 'I/O 模型（epoll / io_uring / 零拷贝）', link: '/operating-systems/io-model' },
             { text: 'CPU 调度（CFS / EEVDF / 容器 Throttling）', link: '/operating-systems/cpu-scheduling' },
+            { text: '🔥 同步与锁原理（CAS / futex / RCU）', link: '/operating-systems/synchronization' },
+          ],
+        },
+        {
+          text: '内存与存储',
+          collapsed: false,
+          items: [
+            { text: '内存管理（分配器 / NUMA / HugePage / OOM）', link: '/operating-systems/memory-management' },
             { text: '文件系统', link: '/operating-systems/file-system' },
+          ],
+        },
+        {
+          text: 'I/O 与系统调用',
+          collapsed: false,
+          items: [
+            { text: 'I/O 模型（epoll / io_uring / 零拷贝）', link: '/operating-systems/io-model' },
+            { text: '🔥 系统调用与中断（用户态/内核态切换）', link: '/operating-systems/syscall-interrupt' },
+          ],
+        },
+        {
+          text: '虚拟化与容器',
+          collapsed: false,
+          items: [
             { text: '🔥 容器隔离原理（Namespace + cgroup）', link: '/operating-systems/containers-and-isolation' },
           ],
         },
@@ -462,6 +488,7 @@ export default withMermaid(defineConfig({
             { text: '托管模型与服务器（Kestrel/IIS）', link: '/web-and-frameworks/asp-net-core/hosting-and-servers' },
             { text: '请求管道与鉴权', link: '/web-and-frameworks/asp-net-core/request-pipeline' },
             { text: '依赖注入 DI', link: '/web-and-frameworks/asp-net-core/dependency-injection' },
+            { text: '数据访问与事务（EF Core/Dapper）', link: '/web-and-frameworks/asp-net-core/data-access' },
             { text: 'AOP 与拦截机制', link: '/web-and-frameworks/asp-net-core/aop-and-interception' },
             { text: '对比 Java Spring', link: '/web-and-frameworks/asp-net-core/vs-spring' },
           ],
