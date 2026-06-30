@@ -317,3 +317,8 @@ Span<byte> buffer = stackalloc byte[256];    // 栈上分配
 
 ---
 
+## 延伸阅读
+
+并发与多线程（Task / async 内幕 / 锁 / 并发集合 / CancellationToken / Parallel）已拆分为独立页：[C# 并发与多线程](./csharp-concurrency)。
+
+

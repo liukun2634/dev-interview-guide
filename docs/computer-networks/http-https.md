@@ -167,7 +167,7 @@ HTTPS:  应用层数据 → TLS 加密 → TCP → IP → 网络
 
 ### CORS：跨源访问的标准方案
 
-CORS 用一组 HTTP Header 让服务器**主动声明**"我允许哪些源跨域访问我"。浏览器根据这些 Header 决定是否放行响应给 JS。
+**CORS（Cross-Origin Resource Sharing，跨源资源共享）** 用一组 HTTP Header 让服务器**主动声明**"我允许哪些源跨域访问我"。浏览器根据这些 Header 决定是否放行响应给 JS。
 
 #### 简单请求 vs 预检请求
 

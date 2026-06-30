@@ -378,6 +378,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'C# 基础', link: '/programming-languages/csharp-fundamentals' },
             { text: 'C# 现代特性', link: '/programming-languages/csharp-modern-features' },
+            { text: 'C# 并发与多线程', link: '/programming-languages/csharp-concurrency' },
             { text: 'C# 生态', link: '/programming-languages/csharp-ecosystem' },
             { text: 'C# 工程实战', link: '/programming-languages/csharp-engineering' },
           ],

@@ -41,6 +41,7 @@ title: 编程语言
 |------|----------|------|
 | [C# 基础](./csharp-fundamentals) | 值类型 / 引用类型 / 委托 / 事件 / 异常 / 反射 / 特性 | ⭐⭐⭐⭐⭐ |
 | [C# 现代特性](./csharp-modern-features) | async/await、LINQ、Records、模式匹配、.NET 8/9 Native AOT | ⭐⭐⭐⭐ |
+| [C# 并发与多线程](./csharp-concurrency) | Task vs ValueTask、锁与同步原语、并发集合、CancellationToken、Parallel/PLINQ | ⭐⭐⭐⭐ |
 | [C# 生态](./csharp-ecosystem) | CLR / GC（Workstation/Server）、EF Core、ASP.NET Core / Minimal API、Aspire | ⭐⭐⭐⭐ |
 | [C# 工程实战](./csharp-engineering) | C# vs Java 必背对比、AOT 选型、陷阱、答题模板 | ⭐⭐⭐⭐ |
 

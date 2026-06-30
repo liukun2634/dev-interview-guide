@@ -66,6 +66,98 @@ java \
 
 ---
 
+## 线上诊断与调试工具箱（必备）
+
+> 高频面试题"**线上出问题你怎么排查**"——能报出这套 JDK 自带工具 + Arthas + 远程调试，立刻区分有无生产经验。
+
+### JDK 自带命令行工具（必背）
+
+| 工具 | 用途 | 高频命令 |
+|------|------|---------|
+| **jps** | 列出 Java 进程 | `jps -l`（带主类全名）|
+| **jstack** | 线程栈快照（**死锁 / 线程阻塞**）| `jstack <pid>`；死锁会直接打印 `Found 1 deadlock` |
+| **jmap** | 堆直方图 / 堆 dump | `jmap -histo:live <pid>`；`jmap -dump:live,format=b,file=heap.hprof <pid>` |
+| **jstat** | GC 实时统计 | `jstat -gcutil <pid> 1000`（每秒打印各代占比 + GC 次数/耗时）|
+| **jcmd** | 万能诊断入口（推荐）| `jcmd <pid> Thread.print` / `GC.heap_info` / `VM.flags` / `JFR.start` |
+| **jinfo** | 查看 / 动态改 JVM 参数 | `jinfo -flag MaxHeapSize <pid>` |
+| **jhsdb** | 取代 jstack -F，强制取栈 / 分析 core | `jhsdb jstack --pid <pid>` |
+
+::: tip 💡 jcmd 正在统一一切
+现代 JDK 推荐用 `jcmd` 一个入口替代 jstack/jmap/jinfo：`jcmd <pid> help` 列出该进程支持的全部诊断命令，且对容器更友好。
+:::
+
+### 线程栈状态怎么读（jstack 必看）
+
+```
+"http-nio-8080-exec-1" #42 ... 
+   java.lang.Thread.State: BLOCKED (on object monitor)   ← 等锁
+        at com.app.Service.method(Service.java:30)
+        - waiting to lock <0x000...a8> (a java.lang.Object)  ← 等谁的锁
+        - locked <0x000...b0>                                ← 自己持有的锁
+```
+
+| 线程状态 | 含义 | 排查方向 |
+|---------|------|---------|
+| **RUNNABLE** | 在跑（或在跑 native）| CPU 高 → 定位热点代码 |
+| **BLOCKED** | 等 `synchronized` 锁 | 锁竞争 → 找持锁线程 |
+| **WAITING** | `wait()` / `park()` 无限等 | 线程池空闲 / 死等条件 |
+| **TIMED_WAITING** | `sleep` / 带超时的等 | 通常正常 |
+| 大量同 `waiting to lock` 同一地址 | **锁瓶颈** | 减小锁粒度 / 换无锁 |
+
+### Arthas（阿里开源，线上不停机诊断）
+
+不重启、不改代码，直接 attach 到运行中的 JVM：
+
+```bash
+java -jar arthas-boot.jar          # attach 到目标进程
+dashboard                          # 实时大盘（线程/内存/GC）
+thread -n 3                        # CPU 最高的 3 个线程栈（替代 top+jstack 组合拳）
+thread -b                          # 一键找死锁
+trace com.app.Service method       # 方法内部各调用耗时（定位慢在哪）
+watch com.app.Service method '{params,returnObj}'  # 观察入参/返回值，不用打日志
+jad com.app.Service                # 反编译线上类，确认部署的代码版本
+redefine /tmp/Service.class        # 热更新类（临时热修）
+```
+
+> **Arthas 杀手锏**：`trace` / `watch` 让你**不改代码不重启**就能看方法耗时和参数，是排查"偶发慢请求 / 线上和本地行为不一致"的神器。
+
+### 远程调试（JDWP）
+
+```bash
+# 启动参数加 JDWP agent（suspend=n 表示不等调试器连接就先跑）
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar app.jar
+
+# IDEA: Run → Edit Configurations → Remote JVM Debug，填主机 + 5005 端口
+```
+
+::: warning ⚠️ 生产远程调试三大风险
+① 断点会**挂起业务线程**（`suspend` 命中后整条请求卡住）；② `address=*:5005` 暴露调试端口有**安全风险**（应绑内网 / 跳板）；③ 条件断点求值可能有副作用。**生产优先用 Arthas `watch`，而非断点。**
+:::
+
+### 容器 / K8s 里怎么调试
+
+```bash
+# Pod 内进程通常是 PID 1
+kubectl exec -it <pod> -- jcmd 1 Thread.print
+
+# 工具镜像没装诊断工具？用 ephemeral container 注入（K8s 1.25+）
+kubectl debug -it <pod> --image=arthas/arthas --target=<container>
+
+# OOM 后捞 heap dump（配合启动参数 -XX:+HeapDumpOnOutOfMemoryError）
+kubectl cp <pod>:/var/log/heapdump/xxx.hprof ./xxx.hprof   # 下载到本地用 MAT 分析
+```
+
+### 离线分析工具
+
+| 工具 | 分析对象 | 看什么 |
+|------|---------|--------|
+| **MAT**（Eclipse Memory Analyzer）| heap dump（.hprof）| Dominator Tree 找最大保留对象、Leak Suspects 报告 |
+| **JProfiler / YourKit** | 实时 attach | CPU/内存/锁 全维度商业级 |
+| **Async Profiler** | 运行中 JVM | 低开销火焰图（CPU / alloc / lock）|
+| **JMC**（JDK Mission Control）| JFR 录制文件 | 生产持续录制后离线分析 |
+
+---
+
 ## Spring Boot vs Quarkus vs Micronaut vs Helidon
 
 | 维度 | **Spring Boot 3.x** | **Quarkus 3.x** | **Micronaut 4.x** | Helidon 4 |

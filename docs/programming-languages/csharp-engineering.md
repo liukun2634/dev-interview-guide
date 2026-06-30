@@ -61,6 +61,61 @@ title: C# 工程实战
 
 ---
 
+## 线上诊断与调试工具箱（必备）
+
+> 对标 Java 的 jstack/jmap/Arthas，.NET 有一整套 `dotnet-*` 全局诊断工具（跨平台、attach 不停机）。能报出这套 + SOS + 远程调试，是 .NET 生产经验的硬标志。
+
+### dotnet-* 诊断工具全家桶（必背）
+
+```bash
+# 一次性安装（全局工具）
+dotnet tool install -g dotnet-trace dotnet-counters dotnet-dump dotnet-gcdump
+```
+
+| 工具 | 对标 Java | 用途 | 高频命令 |
+|------|----------|------|---------|
+| **dotnet-counters** | jstat / dashboard | 实时指标（CPU/GC/线程池/分配）| `dotnet-counters monitor -p <pid> System.Runtime` |
+| **dotnet-trace** | Async Profiler / JFR | CPU profile（生成火焰图）| `dotnet-trace collect -p <pid> --duration 00:00:30` |
+| **dotnet-dump** | jmap + MAT | 抓 + 分析内存 dump | `dotnet-dump collect -p <pid>`；`dotnet-dump analyze <file>` |
+| **dotnet-gcdump** | jmap -histo | 轻量 GC 堆快照（看类型占用）| `dotnet-gcdump collect -p <pid>` |
+| **dotnet-stack** | jstack | 打印所有线程托管栈 | `dotnet-stack report -p <pid>` |
+
+### SOS 调试扩展（分析 dump 必备）
+
+`dotnet-dump analyze` 进入交互式，用 **SOS 命令**（对标 MAT 的 Dominator Tree）：
+
+```bash
+dotnet-dump analyze core_20260628
+
+> clrthreads            # 所有托管线程（找死锁 / 卡住的线程）
+> clrstack              # 当前线程托管调用栈
+> dumpheap -stat        # 堆上各类型实例数 + 占用（找内存大头）
+> dumpheap -type String # 某类型的所有实例
+> gcroot <address>      # 反查对象的 GC 引用链（定位内存泄漏的根）
+> syncblk               # 锁信息，排查 lock 死锁
+```
+
+> **排查内存泄漏黄金链路**：`dumpheap -stat` 找占用最多的类型 → `dumpheap -type X` 拿实例地址 → `gcroot <addr>` 反查谁还在引用它（通常是静态字段 / 未注销的事件 / 缓存无淘汰）。
+
+### 远程 / 容器调试
+
+```bash
+# VS / VS Code 远程调试用 vsdbg；附加到进程或远程主机
+# 容器里抓 dump（PID 通常是 1）
+kubectl exec -it <pod> -- dotnet-dump collect -p 1
+kubectl cp <pod>:/tmp/core_xxx ./core_xxx        # 下载本地用 SOS 分析
+
+# 进程崩溃自动抓 dump（环境变量）
+export DOTNET_DbgEnableMiniDump=1
+export DOTNET_DbgMiniDumpType=4                   # 4=完整堆 dump
+```
+
+::: warning ⚠️ Debug vs Release / async 调试坑
+① **Release 构建**方法会被内联 / 优化，断点和栈可能"漂移"——排查逻辑问题用 Debug，压性能数据用 Release；② **async/await** 的调用栈会断在状态机里，用 VS 的 **Parallel Stacks / async call stack** 窗口才能还原逻辑调用链；③ 生产优先用 `dotnet-trace`/`dotnet-dump` 而非远程断点（断点会挂起业务线程）。
+:::
+
+---
+
 ## 黄金答题模板（必背）
 
 > **面试官：现代 C# / .NET 你最熟的特性是哪些？**
@@ -105,4 +160,6 @@ title: C# 工程实战
 - **"Minimal API"** → 微服务 / 简单 API
 - **".NET vs Java"** → 看团队栈 + 云平台（Azure 选 .NET）
 - **"GC 调优"** → dotnet-counters + ServerGC + ConcurrentDictionary
-- **"内存泄漏"** → dotnet-dump + dotMemory
+- **"内存泄漏"** → dotnet-dump + dumpheap -stat + gcroot 反查引用链
+- **"线上 CPU 高 / 卡死"** → dotnet-counters 看现象 + dotnet-trace 抓火焰图 + dotnet-stack 看线程栈
+- **"不停机抓 dump"** → dotnet-dump collect（容器里 -p 1）+ SOS analyze

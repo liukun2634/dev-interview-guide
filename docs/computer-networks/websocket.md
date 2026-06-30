@@ -75,6 +75,60 @@ Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
 - 服务端将 Key + GUID 拼接 → SHA1 → Base64 → 返回 Sec-WebSocket-Accept
 - 客户端验证 Accept 值，确认服务端支持 WebSocket
 
+## ws:// vs wss://（基于 HTTPS 的加密 WebSocket）
+
+WebSocket 有两种 scheme，与 HTTP/HTTPS 一一对应：
+
+| Scheme | 类比 | 传输层 | 默认端口 |
+|--------|------|--------|---------|
+| `ws://` | HTTP | 明文 TCP | 80 |
+| **`wss://`** | **HTTPS** | **TLS 加密 TCP** | **443** |
+
+**核心理解：`wss://` = WebSocket over TLS，和 HTTPS 是同一套 TLS。** 升级握手不是直接发生在 TCP 上，而是发生在 **TLS 握手完成之后的加密通道里**：
+
+```
+ws://（明文）：
+  TCP 三次握手 → HTTP Upgrade 请求(明文) → 101 Switching → 明文帧通信
+
+wss://（加密）：
+  TCP 三次握手
+    → TLS 握手（证书校验 + 密钥协商，和 HTTPS 完全一样）
+      → 在加密通道里发 HTTP Upgrade 请求 → 101 Switching
+        → 之后所有 WebSocket 帧都经 TLS 加密
+```
+
+```javascript
+// 浏览器：HTTPS 页面只能连 wss://（混合内容会被拦截）
+const ws = new WebSocket('wss://server.example.com/chat');
+```
+
+::: tip 💡 为什么生产必须用 wss://
+> ① **页面是 HTTPS 就必须用 wss://**——浏览器禁止 HTTPS 页面建立 `ws://` 明文连接（Mixed Content 拦截）；
+> ② **`ws://` 的 Upgrade 握手是明文**，`Cookie` / `Authorization` / `Sec-WebSocket-Key` 都裸奔，易被中间人窃听或篡改；
+> ③ **wss:// 更容易穿透代理 / 防火墙**——加密流量中间设备无法识别内容，不会因为看不懂 Upgrade 而粗暴断开。
+:::
+
+### wss:// 的 TLS 在哪里终止（生产架构必懂）
+
+和 HTTPS 一样，TLS 通常**不在业务进程**终止，而在入口层卸载：
+
+```
+客户端 ──wss(TLS)──> Nginx / ALB / API Gateway ──ws(明文)──> 后端 WebSocket 服务
+                     （TLS 卸载 + 证书管理）        （内网明文，省 CPU）
+```
+
+- **Nginx 反代 wss** 关键配置：必须显式转发 Upgrade 头，否则握手失败：
+  ```nginx
+  location /chat {
+      proxy_pass http://ws_backend;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;       # 必须
+      proxy_set_header Connection "upgrade";        # 必须
+      proxy_read_timeout 3600s;                     # 长连接防空闲断开
+  }
+  ```
+- 证书、HTTP/2、ALPN、SNI 这些 HTTPS 的能力 wss 都复用，因为底层就是同一个 TLS。详见 [HTTP 与 HTTPS](./http-https)。
+
 ## 心跳保活
 
 WebSocket 连接可能被中间代理或防火墙因空闲超时而关闭，需要心跳保活：
@@ -120,10 +174,16 @@ HTTP 是请求-响应模式，客户端主动发起，服务端被动响应；We
 
 用 Ping/Pong 心跳帧（WebSocket 协议内置）或应用层心跳消息，通常 30-60 秒一次。超时未收到 Pong 则判定断线，触发重连。重连采用指数退避策略。
 
+### Q4: ws:// 和 wss:// 有什么区别？HTTPS 页面能用 ws:// 吗？
+
+`ws://` 是明文（类比 HTTP，端口 80），`wss://` 是 WebSocket over TLS（类比 HTTPS，端口 443），底层用的就是和 HTTPS 同一套 TLS。流程上 wss 是先完成 TLS 握手，再在加密通道里发 Upgrade 请求。HTTPS 页面**不能**用 `ws://`——浏览器会按 Mixed Content 拦截，必须用 `wss://`。生产环境 TLS 一般在 Nginx / ALB 卸载，转给后端走内网明文 ws，但反代必须显式转发 `Upgrade` / `Connection` 头。
+
 ## 看到什么就先想到这类
 
 - 出现实时通信、聊天、推送。
 - 出现 WebSocket、ws://。
+- 出现 wss://、加密 WebSocket、HTTPS 页面连不上 → TLS + Mixed Content。
 - 出现轮询、长轮询、SSE 对比。
 - 出现 101 Switching Protocols、Upgrade。
+- 出现 Nginx 反代 WebSocket 握手失败 → 没转发 Upgrade/Connection 头。
 - 出现心跳保活、断线重连。
