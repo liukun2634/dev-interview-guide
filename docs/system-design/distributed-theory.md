@@ -156,6 +156,27 @@ sequenceDiagram
 
 Basic Paxos 每次共识都需要两轮 RPC，开销较大。Multi-Paxos 优化：选出一个稳定的 Leader，后续日志直接跳过 Prepare 阶段，只执行 Accept，大幅减少通信轮次。
 
+**活锁（Live-Lock）问题 — 必背追问点**
+
+Basic Paxos 允许多个 Proposer 并发提案，可能出现互相抢占：
+
+```
+Proposer-A: Prepare(n=1) → 被多数派承诺
+Proposer-B: Prepare(n=2) → 抢占，A 的 Accept(n=1) 被拒
+Proposer-A: Prepare(n=3) → 反过来抢占 B
+Proposer-B: Prepare(n=4) → 又抢回来 ... 无限循环，无人能进入 Accept 成功
+```
+
+> 两个 Proposer 交替提升编号，谁都无法完成 Accept，系统一直不终止——这正是 **FLP 定理**在 Paxos 上的体现。
+>
+> **解法**：① Multi-Paxos 选出**唯一稳定 Leader**，只让一个 Proposer 提案；② 引入**随机退避**，抢占失败后随机等待再重试。这也是几乎所有工程实现都用 Multi-Paxos 而非 Basic Paxos 的核心原因。
+
+**为什么 Paxos 难理解**
+
+- 原始论文《The Part-Time Parliament》用希腊议会隐喻，晦涩难懂，Lamport 后来又写了《Paxos Made Simple》补救
+- Basic Paxos 只定义了"如何就**单个值**达成共识"，但没说清楚**如何把它变成一个连续的日志复制系统**（工程落地的关键），留给实现者大量空白
+- 角色、编号、承诺规则交织，缺乏明确的状态机描述——这正是 Raft 诞生的动机：**用可理解性换取工程落地效率**
+
 ---
 
 ### 5. Raft 算法
@@ -244,6 +265,22 @@ sequenceDiagram
 | TiKV | TiDB 的分布式存储层 |
 | CockroachDB | 分布式 SQL 数据库 |
 | Consul | 服务发现与配置中心 |
+
+**Paxos vs Raft 对比 — 高频追问**
+
+两者都是解决**分布式共识**的算法，能力等价（Raft 可视为 Multi-Paxos 的一种工程化、强 Leader 化实现），但设计哲学不同：
+
+| 维度 | Paxos | Raft |
+|------|-------|------|
+| 设计目标 | 理论正确性优先 | **可理解性**优先，易工程落地 |
+| Leader | Basic Paxos 无 Leader；Multi-Paxos 有但非强制 | **强 Leader**，所有写请求必须经 Leader |
+| 日志流向 | 可乱序提交，允许日志空洞 | 日志**严格顺序、连续无空洞**（Log Matching）|
+| 提案冲突 | 多 Proposer 并发 → 可能活锁 | 同一 term 只有一个 Leader，从根本上避免冲突 |
+| 成员变更 | 论文未明确定义，实现各异 | 内置 **Joint Consensus / 单节点变更**方案 |
+| 学习曲线 | 陡峭，论文晦涩 | 平缓，有完整论文 + 大量可视化 |
+| 典型实现 | Chubby、OceanBase、Spanner | etcd、TiKV、Consul、CockroachDB |
+
+**一句话总结**：Paxos 是共识问题的**理论鼻祖与正确性标杆**；Raft 是把 Multi-Paxos「强 Leader + 顺序日志 + 明确成员变更」工程化，牺牲一点灵活性换取**可理解性和落地效率**，因此现代系统新造轮子几乎都选 Raft。
 
 ---
 
@@ -581,7 +618,41 @@ $$
 
 ---
 
-### Q3: 一致性哈希是什么？虚拟节点解决什么问题？
+### Q3: Paxos 算法的原理？两阶段分别做什么？
+
+**答题思路（1 分钟版本）**
+
+> Paxos 由 Lamport 提出，是分布式共识的理论基础，有 Proposer、Acceptor、Learner 三种角色，通过两阶段就单个值达成一致。
+>
+> **阶段一 Prepare**：Proposer 生成全局唯一递增编号 n，向多数派 Acceptor 发 `Prepare(n)`；Acceptor 若 n 大于见过的最大编号，就承诺不再接受更小编号的提案，并返回自己已接受的最大编号提案值。
+>
+> **阶段二 Accept**：Proposer 收到多数派承诺后，若返回中已有被接受的值，就必须沿用编号最大的那个值（否则用自己的值），发 `Accept(n, value)`；多数派接受后该值被选定。
+>
+> **关键约束**：Proposer 必须"继承"已被接受的值——这保证了一旦某个值被多数派选定，后续所有提案都会收敛到同一个值，即共识的**安全性**。
+>
+> 补充：Basic Paxos 多 Proposer 并发会**活锁**，工程上都用 **Multi-Paxos**——选出稳定 Leader，跳过 Prepare 直接 Accept。
+
+---
+
+### Q4: Paxos 和 Raft 有什么区别？为什么现代系统多选 Raft？
+
+**答题思路（1 分钟版本）**
+
+> 两者能力等价，都能解决分布式共识，Raft 本质上可以看作 Multi-Paxos 的工程化实现，核心区别在设计哲学：
+>
+> ① **Leader 定位**：Raft 是**强 Leader**，所有写请求必经 Leader；Basic Paxos 无 Leader，多个 Proposer 可并发提案，容易活锁。
+>
+> ② **日志结构**：Raft 日志**严格连续、无空洞**（Log Matching 性质）；Paxos 允许乱序提交和日志空洞，实现复杂。
+>
+> ③ **成员变更**：Raft 内置 Joint Consensus / 单节点变更方案；Paxos 论文没有明确定义，各实现自行发挥。
+>
+> ④ **可理解性**：Raft 的设计目标就是"可理解"，有清晰的状态机和完整论文；Paxos 论文晦涩，工程落地空白多。
+>
+> **结论**：Paxos 是理论鼻祖和正确性标杆（Google Chubby、Spanner、OceanBase 用），但现代新系统（etcd、TiKV、Consul、CockroachDB）几乎都选 Raft——用一点灵活性换取可理解性和落地效率。
+
+---
+
+### Q5: 一致性哈希是什么？虚拟节点解决什么问题？
 
 **答题思路（1 分钟版本）**
 
@@ -591,7 +662,7 @@ $$
 
 ---
 
-### Q4: 分布式时钟有哪些？解决什么问题？
+### Q6: 分布式时钟有哪些？解决什么问题？
 
 **答题思路（1 分钟版本）**
 
@@ -603,7 +674,7 @@ $$
 
 ---
 
-### Q5: ZooKeeper 和 etcd 怎么选？
+### Q7: ZooKeeper 和 etcd 怎么选？
 
 **答题思路（1 分钟版本）**
 
@@ -624,6 +695,8 @@ $$
 | 配置中心 / 分布式锁 | ZooKeeper（CP）、etcd（Raft） |
 | 服务注册发现 | Eureka（AP）、Consul（CP） |
 | 多节点如何达成共识 | Raft（工程常用）、Paxos（理论基础） |
+| Paxos 两阶段 / Proposer 抢占活锁 | Basic Paxos + Multi-Paxos（稳定 Leader 破活锁） |
+| Paxos vs Raft 区别 | Raft = Multi-Paxos 工程化（强 Leader + 顺序日志） |
 | etcd / TiKV 内部原理 | Raft 算法 |
 | ZooKeeper 内部原理 | ZAB 协议 |
 | 缓存 / 存储分片路由 | 一致性哈希 + 虚拟节点 |
