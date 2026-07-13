@@ -200,6 +200,65 @@ class Solution {
 
 ---
 
+### 进阶优化：LIS 的 $O(n \log n)$ 贪心 + 二分
+
+最长递增子序列（LC 300）的 $O(n^2)$ DP 会在 $n \le 10^5$ 时超时，面试常追问"能不能更快"。答案是**贪心 + 二分**，把复杂度降到 $O(n \log n)$。
+
+#### 核心思想：维护一个"最小结尾"数组
+
+> 维护数组 `tails`，其中 `tails[k]` = **所有长度为 `k+1` 的递增子序列里，最小的那个结尾值**。
+
+**为什么维护"最小结尾"？** 结尾越小，后面越容易接上更大的数，从而让子序列更长——这是贪心的直觉。关键性质：**`tails` 一定严格递增**（长度更长的子序列，其最小结尾必然更大）。既然有序，就能用二分查找。
+
+#### 处理每个 `num` 的两种情况
+
+- `num` 比 `tails` 里所有值都大 → 追加到末尾，LIS 长度 +1
+- 否则 → 用二分找到 `tails` 中**第一个 ≥ num** 的位置，替换它（用更小的结尾更新，不改变长度但为将来留余地）
+
+```java
+class Solution {
+    public int lengthOfLIS(int[] nums) {
+        int[] tails = new int[nums.length];
+        int len = 0;                     // 当前 LIS 长度
+        for (int num : nums) {
+            // 二分找第一个 >= num 的位置（严格递增用 lowerBound）
+            int l = 0, r = len;
+            while (l < r) {
+                int mid = (l + r) >>> 1;
+                if (tails[mid] < num) l = mid + 1;
+                else r = mid;
+            }
+            tails[l] = num;              // 替换或追加
+            if (l == len) len++;         // 追加到末尾，长度增长
+        }
+        return len;
+    }
+}
+```
+
+#### 干跑验证
+
+以 `nums = [10, 9, 2, 5, 3, 7]` 为例：
+
+| 处理 | 二分位置 | tails 变化 | len |
+|:---:|:---:|:---|:---:|
+| 10 | 0 | `[10]` | 1 |
+| 9  | 0（替换）| `[9]` | 1 |
+| 2  | 0（替换）| `[2]` | 1 |
+| 5  | 1（追加）| `[2,5]` | 2 |
+| 3  | 1（替换）| `[2,3]` | 2 |
+| 7  | 2（追加）| `[2,3,7]` | 3 |
+
+最终 `len = 3`（如 `[2,3,7]`）。
+
+::: warning ⚠️ tails 不是真正的 LIS
+> `tails` 数组最终内容（`[2,3,7]`）**不一定是**某个真实的最长递增子序列，它只是每个长度对应的"最小结尾"记录。但它的**长度**一定等于 LIS 长度。若要还原具体 LIS，需额外记录每个元素的前驱。
+>
+> **变体提示**：求"最长不降子序列"（允许相等）时，二分改成找第一个 `> num` 的位置（`upperBound`），即把 `tails[mid] < num` 改为 `tails[mid] <= num`。
+:::
+
+---
+
 ## Part 2：回文 DP
 
 ### 识别信号
@@ -376,6 +435,91 @@ class Solution {
 |------|------|--------------|---------|
 | 最长回文子串 | [LC 5](https://leetcode.cn/problems/longest-palindromic-substring/) | 子串（**连续**）vs 子序列（不连续） | 也可用中心扩展 $O(n^2)$ 或 Manacher $O(n)$，更省空间 |
 | 回文分割 II | [LC 132](https://leetcode.cn/problems/palindrome-partitioning-ii/) | 两层 DP：回文判定 + 最少分割数 | 先用 $O(n^2)$ 预处理 `isPalin[i][j]`，再用一维 DP 求最少切割次数 |
+
+---
+
+### 进阶例题：分割回文串 II（两层 DP 叠加）
+
+[LeetCode 132](https://leetcode.cn/problems/palindrome-partitioning-ii/) — 把字符串 `s` 分割成若干**回文子串**，求**最少分割次数**。这是回文 DP 与线性 DP **叠加**的典型题：先用区间 DP 求出"任意子串是否回文"，再用一维线性 DP 求最少切割。
+
+#### 五步法分析
+
+**第一步：两个状态**
+
+$$isPalin[i][j] = s[i..j] \text{ 是否为回文}$$
+$$dp[i] = \text{把 } s[0..i] \text{ 分割成若干回文串的最少分割次数}$$
+
+**第二步：转移方程**
+
+回文判定（区间 DP，见 Part 2 框架）：
+$$isPalin[i][j] = (s[i] = s[j]) \;\text{且}\; (j - i < 2 \;\text{或}\; isPalin[i+1][j-1])$$
+
+最少分割（枚举最后一段回文的起点 `j`）：
+$$dp[i] = \min_{0 \le j \le i,\; isPalin[j][i]} \begin{cases} 0 & j = 0 \;(\text{整段 } s[0..i] \text{ 本身就是回文}) \\ dp[j-1] + 1 & j > 0 \end{cases}$$
+
+**第三步：初始化**
+
+`dp[i]` 初始化为最大值 `i`（每个字符单独成段，最多切 `i` 刀）。
+
+**第四步：遍历顺序**
+
+`isPalin` 按区间长度从短到长（或 `i` 从大到小）；`dp` 从左到右。
+
+**第五步：答案**
+
+`dp[n-1]`。
+
+#### Java 实现
+
+```java
+class Solution {
+    public int minCut(String s) {
+        int n = s.length();
+        boolean[][] isPalin = new boolean[n][n];
+        // 预处理所有子串回文性：i 从大到小保证 isPalin[i+1][j-1] 已算
+        for (int i = n - 1; i >= 0; i--) {
+            for (int j = i; j < n; j++) {
+                if (s.charAt(i) == s.charAt(j) && (j - i < 2 || isPalin[i + 1][j - 1])) {
+                    isPalin[i][j] = true;
+                }
+            }
+        }
+
+        int[] dp = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (isPalin[0][i]) {          // s[0..i] 整段就是回文，无需分割
+                dp[i] = 0;
+                continue;
+            }
+            dp[i] = i;                    // 最坏：切 i 刀
+            for (int j = 1; j <= i; j++) {
+                if (isPalin[j][i]) {      // 最后一段 s[j..i] 是回文
+                    dp[i] = Math.min(dp[i], dp[j - 1] + 1);
+                }
+            }
+        }
+        return dp[n - 1];
+    }
+}
+```
+
+**复杂度**：时间 $O(n^2)$（回文预处理 + 一维 DP 都是 $O(n^2)$），空间 $O(n^2)$。
+
+#### 干跑验证
+
+以 `s = "aab"` 为例，先得 `isPalin`：`aa`✅、`a`✅、`b`✅、`aab`❌、`ab`❌。
+
+| i | s[0..i] | 是否整段回文 | dp[i] 计算 | dp[i] |
+|:---:|:---:|:---:|:---|:---:|
+| 0 | `a` | ✅ | 直接 0 | 0 |
+| 1 | `aa` | ✅ | 直接 0 | 0 |
+| 2 | `aab` | ❌ | j=2: `b`回文 → dp[1]+1=1 | 1 |
+
+`dp[2] = 1` → 分割成 `aa | b`，切 1 刀，正确。
+
+::: tip 🔑 分层 DP 的通用套路
+> 很多"分割成满足某性质的段"的题目都是**两层 DP 叠加**：先用一层 DP/预处理判定"某段是否合法"，再用一层线性 DP 求"最少段数/最多收益"。回文分割、[单词拆分](./linear-dp)、把数组分成和相等的段都是这个模式。
+:::
 
 ---
 

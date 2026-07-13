@@ -191,6 +191,79 @@ class Solution {
 
 ---
 
+### 合并型例题：石子合并
+
+戳气球是"分割型"（枚举最后一个操作），石子合并是**"合并型"**区间 DP 的代表：把相邻子区间合并成大区间，代价与区间和相关，是区间 DP + 前缀和的经典搭配。
+
+**题目**：`n` 堆石子排成一列，每次只能合并**相邻两堆**，代价为两堆石子数之和。求把所有石子合并成一堆的**最小总代价**。
+
+#### 五步法分析
+
+**第一步：状态定义**
+
+$$dp[l][r] = \text{把区间 } [l, r] \text{ 内的石子合并成一堆的最小代价}$$
+
+**第二步：转移方程（枚举最后一次合并的分界点）**
+
+无论怎么合并，**最后一步**总是把 `[l, k]` 合成的一堆和 `[k+1, r]` 合成的一堆合并，这最后一合的代价是整个 `[l, r]` 的石子总和（与 `k` 无关）：
+
+$$dp[l][r] = \min_{l \le k < r} \bigl( dp[l][k] + dp[k+1][r] \bigr) + \text{sum}(l, r)$$
+
+其中 `sum(l, r)` 用**前缀和** $O(1)$ 查询。
+
+**第三步：初始化** — `dp[i][i] = 0`（单堆无需合并）。
+
+**第四步：遍历顺序** — 区间长度从短到长。
+
+**第五步：答案** — `dp[0][n-1]`。
+
+#### Java 实现
+
+```java
+class Solution {
+    public int mergeStones(int[] stones) {
+        int n = stones.length;
+        int[] prefix = new int[n + 1];
+        for (int i = 0; i < n; i++) prefix[i + 1] = prefix[i] + stones[i];
+
+        int[][] dp = new int[n][n];      // dp[i][i] = 0 已由默认值满足
+        for (int len = 2; len <= n; len++) {
+            for (int l = 0; l + len - 1 < n; l++) {
+                int r = l + len - 1;
+                dp[l][r] = Integer.MAX_VALUE;
+                int sum = prefix[r + 1] - prefix[l];   // 区间 [l, r] 石子总和
+                for (int k = l; k < r; k++) {
+                    dp[l][r] = Math.min(dp[l][r], dp[l][k] + dp[k + 1][r] + sum);
+                }
+            }
+        }
+        return dp[0][n - 1];
+    }
+}
+```
+
+**复杂度**：时间 $O(n^3)$，空间 $O(n^2)$。
+
+#### 干跑验证
+
+以 `stones = [4, 1, 1]`（`prefix = [0,4,5,6]`）：
+
+| 区间 | sum | 枚举 k | dp |
+|:---:|:---:|:---|:---:|
+| `[0,1]` | 5 | k=0: 0+0+5 | 5 |
+| `[1,2]` | 2 | k=1: 0+0+2 | 2 |
+| `[0,2]` | 6 | k=0: dp[0][0]+dp[1][2]+6=0+2+6=8；k=1: dp[0][1]+dp[2][2]+6=5+0+6=11 | 8 |
+
+`dp[0][2] = 8`（先合 `[1,1]`代价2，再与4合，代价6，总8）。
+
+::: tip 🔑 分割型 vs 合并型
+> - **分割型**（戳气球 312）：枚举"最后操作的那个点 k"，代价与 `k` 相关（三数相乘）。
+> - **合并型**（石子合并）：枚举"最后合并的分界点 k"，代价与 `k` 无关（固定为区间和），用前缀和加速。
+> - 两者骨架一致，区别只在 `cost(l,k,r)` 的写法。识别时问：最后一步的代价取决于分界点吗？
+:::
+
+---
+
 ## Part 2：状态机 DP
 
 ### 识别信号
@@ -407,6 +480,69 @@ class Solution {
 | 买卖股票 III | [LC 123](https://leetcode.cn/problems/best-time-to-buy-and-sell-stock-iii/) | 最多 2 次交易 | 增加交易次数维度：`dp[i][k][s]`，k ∈ {0,1,2} |
 | 买卖股票 IV | [LC 188](https://leetcode.cn/problems/best-time-to-buy-and-sell-stock-iv/) | 最多 k 次交易 | III 的泛化；当 k ≥ n/2 时退化为无限次（按 II 处理，防止 TLE） |
 | 含手续费 | [LC 714](https://leetcode.cn/problems/best-time-to-buy-and-sell-stock-with-transaction-fee/) | 每次卖出有手续费 | 在"卖出"转移时减去 fee 即可：`notHold = max(notHold, hold + price - fee)` |
+
+---
+
+### 终极模板：最多 k 次交易的三维状态机
+
+上面的冷冻期是"无次数限制"的变体。股票系列的**终极形态**是 LC 188（最多 k 次交易）——把"已用多少次交易"也建成一个状态维度，LC 121/122/123 都是它的特例（k=1 / k=∞ / k=2）。
+
+#### 状态设计：加一个"交易次数"维度
+
+$$dp[i][j][s] = \text{前 } i \text{ 天、已完成 } j \text{ 次买入、当前持股状态 } s\;(0\text{=不持},1\text{=持有})\text{ 的最大利润}$$
+
+> **关键约定**：规定"**买入**"时 `j++`（也可约定卖出时，二选一但全程统一），一次完整交易 = 一买一卖。
+
+#### 转移方程
+
+$$dp[i][j][0] = \max\bigl(dp[i-1][j][0],\; dp[i-1][j][1] + price[i]\bigr) \quad(\text{休息 或 卖出})$$
+$$dp[i][j][1] = \max\bigl(dp[i-1][j][1],\; dp[i-1][j-1][0] - price[i]\bigr) \quad(\text{休息 或 买入，买入时 } j-1 \to j)$$
+
+#### 关键优化：k 过大时退化
+
+> 一次交易至少占 2 天，所以当 $k \ge n/2$ 时，限制形同虚设——**退化为无限次交易**（LC 122），直接贪心求和，否则 `dp[i][k][s]` 的 $O(nk)$ 会 TLE / MLE。
+
+```java
+class Solution {
+    public int maxProfit(int k, int[] prices) {
+        int n = prices.length;
+        if (n == 0) return 0;
+        if (k >= n / 2) return maxProfitInf(prices);   // 退化：无限次
+
+        // dp[j][s]：滴动掉 i 维；j 买入次数，s 持股状态
+        int[][] dp = new int[k + 1][2];
+        for (int j = 0; j <= k; j++) dp[j][1] = Integer.MIN_VALUE / 2;
+
+        for (int price : prices) {
+            for (int j = k; j >= 1; j--) {             // j 倒序，避免本轮重复使用
+                dp[j][0] = Math.max(dp[j][0], dp[j][1] + price);       // 卖出
+                dp[j][1] = Math.max(dp[j][1], dp[j - 1][0] - price);   // 买入，j-1→j
+            }
+        }
+        return dp[k][0];
+    }
+
+    private int maxProfitInf(int[] prices) {           // LC 122：无限次贪心
+        int profit = 0;
+        for (int i = 1; i < prices.length; i++)
+            if (prices[i] > prices[i - 1]) profit += prices[i] - prices[i - 1];
+        return profit;
+    }
+}
+```
+
+::: tip 🔑 股票问题统一视角
+> 所有股票题都是同一个状态机的参数变体，记住这张表就能举一反三：
+>
+> | 题 | 交易次数 k | 额外约束 | 建模 |
+> |------|:---:|------|------|
+> | LC 121 | 1 | — | 两状态，或前缀最小值 |
+> | LC 122 | ∞ | — | 两状态 / 贪心 |
+> | LC 123 | 2 | — | 三维，k=2 |
+> | LC 188 | k | — | 三维，k≥n/2 退化 |
+> | LC 309 | ∞ | 冷冻期 | 加 frozen 状态 |
+> | LC 714 | ∞ | 手续费 | 卖出减 fee |
+:::
 
 ---
 

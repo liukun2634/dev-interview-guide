@@ -62,7 +62,7 @@ $$
 \text{second}[i][j] = \text{在区间 } [i,j] \text{ 中后手的最优得分}
 $$
 
-两者满足：$\text{first}[i][j] + \text{second}[i][j] = \sum_{k=i}^{j} \text{nums}[k]$，因此净收益模式本质上等价。
+两者满足：$\text{first}[i][j] + \text{second}[i][j] = \sum_{k=i}^{j} \text{nums}[k]$，因此在**零和**博弈中净收益模式本质上等价。但当游戏**非零和**（两人对同一物品估值不同）或**要求输出两人各自真实得分**时，就必须同时维护这两个数组——见下文[双数组例题](#双数组维护先后手预测赢家的另一种解法)。
 
 ### 区间 DP 遍历顺序
 
@@ -206,6 +206,110 @@ $dp[0][2] = -2 < 0$，返回 `false`，玩家 1 输，与预期一致。
 
 ---
 
+## 双数组维护先后手：预测赢家的另一种解法
+
+上面用**一个净收益数组**统一了两个玩家——这是"聪明"的压缩写法。但很多同学第一次想到的是**分别维护先手得分和后手得分两个数组**，这种写法更直观，也是理解博弈 DP 的基本功。**当收益不是简单零和、或需要知道两人各自真实得分时，双数组是必须的。**
+
+### 状态定义
+
+对同一个区间 $[i,j]$ 同时维护两个量：
+
+$$
+\text{first}[i][j] = \text{在区间 } [i,j] \text{ 上，先手能拿到的最大得分}
+$$
+$$
+\text{second}[i][j] = \text{在区间 } [i,j] \text{ 上，后手（被动方）最终拿到的得分}
+$$
+
+### 状态转移（关键：两个数组要一起转移）
+
+先手在 $[i,j]$ 有两种拿法，**它俩不能分开算**——因为先手一旦选定拿哪端，后手的得分也随之确定：
+
+- **取左端 $\text{nums}[i]$**：先手拿走 $\text{nums}[i]$，然后在 $[i+1,j]$ 上**变成后手**，所以先手总得分 $= \text{nums}[i] + \text{second}[i+1][j]$；此时后手在 $[i+1,j]$ 上**变成先手**，后手得分 $= \text{first}[i+1][j]$
+- **取右端 $\text{nums}[j]$**：先手总得分 $= \text{nums}[j] + \text{second}[i][j-1]$；后手得分 $= \text{first}[i][j-1]$
+
+先手会选**让自己得分更大**的那一端，并**同步**确定这一分支下的后手得分：
+
+$$
+\text{if } \text{nums}[i] + \text{second}[i+1][j] \ge \text{nums}[j] + \text{second}[i][j-1]:
+$$
+$$
+\quad \text{first}[i][j] = \text{nums}[i] + \text{second}[i+1][j], \quad \text{second}[i][j] = \text{first}[i+1][j]
+$$
+$$
+\text{else}: \quad \text{first}[i][j] = \text{nums}[j] + \text{second}[i][j-1], \quad \text{second}[i][j] = \text{first}[i][j-1]
+$$
+
+> **核心难点**：`second[i][j]` 不能独立求 `max`，它必须**跟着先手的决策走**——先手选了哪端，`second` 就取对应分支的 `first`。这正是"前后手需要两个 dp 一起维护"的原因。
+
+### 初始化
+
+区间只有一个元素时，先手直接拿走，后手拿不到：
+
+$$
+\text{first}[i][i] = \text{nums}[i], \quad \text{second}[i][i] = 0
+$$
+
+### Java 代码
+
+```java
+class Solution {
+    public boolean predictTheWinner(int[] nums) {
+        int n = nums.length;
+        int[][] first = new int[n][n];   // 先手得分
+        int[][] second = new int[n][n];  // 后手得分
+
+        for (int i = 0; i < n; i++) {
+            first[i][i] = nums[i];
+            second[i][i] = 0;
+        }
+
+        for (int len = 2; len <= n; len++) {
+            for (int i = 0; i + len - 1 < n; i++) {
+                int j = i + len - 1;
+                int pickLeft  = nums[i] + second[i + 1][j];   // 取左端后先手的总得分
+                int pickRight = nums[j] + second[i][j - 1];   // 取右端后先手的总得分
+                if (pickLeft >= pickRight) {
+                    first[i][j]  = pickLeft;
+                    second[i][j] = first[i + 1][j];           // 后手在 [i+1,j] 变先手
+                } else {
+                    first[i][j]  = pickRight;
+                    second[i][j] = first[i][j - 1];           // 后手在 [i,j-1] 变先手
+                }
+            }
+        }
+
+        return first[0][n - 1] >= second[0][n - 1];
+    }
+}
+```
+
+### 干跑验证
+
+以 `nums = [1, 5, 2]` 为例，`(first, second)` 成对填表：
+
+| 区间 | 取左端 = nums[i]+second | 取右端 = nums[j]+second | 决策 | first | second |
+|:---:|:---|:---|:---:|:---:|:---:|
+| `[0,0]` | — | — | — | 1 | 0 |
+| `[1,1]` | — | — | — | 5 | 0 |
+| `[2,2]` | — | — | — | 2 | 0 |
+| `[0,1]` | 1+second[1][1]=1 | 5+second[0][0]=5 | 取右 5 | 5 | first[0][0]=1 |
+| `[1,2]` | 5+second[2][2]=5 | 2+second[1][1]=2 | 取左 5 | 5 | first[2][2]=2 |
+| `[0,2]` | 1+second[1][2]=1+2=3 | 2+second[0][1]=2+1=3 | 平取左 3 | 3 | first[1][2]=5 |
+
+最终 `first[0][2]=3`，`second[0][2]=5`，`3 >= 5` 为 `false` → 玩家 1 输。
+
+**双重校验**：`first + second = 3 + 5 = 8 = 1+5+2`（总和守恒 ✅）；且 `first − second = 3 − 5 = −2`，正好等于净收益解法算出的 `dp[0][2] = −2`（两种解法一致 ✅）。
+
+::: tip 🔑 双数组 vs 净收益：什么时候必须用双数组？
+- **零和游戏**（两人瓜分同一堆分数，如 486/877）：`first + second = 常数`，所以 `净收益 = first − second` 就能代表全部信息，**一个数组够用**（更省内存）。
+- **必须用双数组的情况**：① 需要**输出两人各自的真实得分**，而不仅是谁赢；② **非零和**——两人对同一个物品的估值不同（如各自有一套 value 数组），此时 `first + second ≠ 常数`，净收益技巧失效，只能分别维护。
+- **学习建议**：先用双数组把"先手拿完变后手、后手拿完变先手"的角色轮换想清楚，再压缩成净收益的一维/单数组写法。
+:::
+
+---
+
+
 ## 前后手例题：石子游戏 III [LeetCode 1406](https://leetcode.cn/problems/stone-game-iii/)
 
 上一题从**两端**取，本题从**前端**顺序取，且每次可取 1~3 堆，是"前后手轮流从头部拿"的经典模型，最终需要判断先手（Alice）与后手（Bob）谁的总分更高。
@@ -313,6 +417,7 @@ $dp[0] = -1 < 0$ → 返回 `"Bob"`，与预期一致。
 | Nim 游戏 | [LC 292](https://leetcode.cn/problems/nim-game/) | 简单 | 纯数学结论：$n \% 4 \neq 0$ 先手必赢，无需 DP |
 | 石子游戏 II | [LC 1140](https://leetcode.cn/problems/stone-game-ii/) | 中等 | `dp[i][m]` 表示从第 `i` 堆开始、当前 `M=m` 时先手的最大得分，加入后缀和优化 |
 | 石子游戏 III | [LC 1406](https://leetcode.cn/problems/stone-game-iii/) | 困难 | `dp[i]` 表示从第 `i` 堆开始先手的最大净收益，每次可取 1~3 堆 |
+| 石子游戏 VI（非零和） | [LC 1686](https://leetcode.cn/problems/stone-game-vi/) | 中等 | Alice/Bob 对同一石子**估值不同**，净收益技巧失效；按 `a[i]+b[i]` 降序贪心取 |
 
 ---
 
