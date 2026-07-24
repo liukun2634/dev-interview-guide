@@ -826,6 +826,183 @@ def test_commit_skill():
 
 ---
 
+## SKILL.md 标准写法：Anthropic 官方最佳实践
+
+上文的 Skill 编写偏概念与 SDK 实现。而 Anthropic 于 2025 年 10 月推出的 **Agent Skills 开放标准**（[agentskills.io](https://agentskills.io)，已被 Claude Code / Codex / Cursor / Gemini CLI 等采用）给出了一套更具体、可落地的 `SKILL.md` 写法。本节总结其官方建议、标准结构，并按 Skill 类型分类给出正文写法与真实范例。
+
+### 核心原则：上下文窗口是公共资源
+
+官方最重要的一句话是 **"The context window is a public good"**。所有写作建议都围绕它展开——你的 Skill 与系统提示、对话历史、其他 Skill 的元数据共享同一个上下文，因此每一个 token 都要物有所值。
+
+::: tip 💡 官方五条核心建议
+
+1. **精简（Concise is key）**：默认假设「Claude 已经很聪明」，只补它不知道的东西。别科普「什么是 PDF」，直接给关键代码。
+2. **渐进式披露（Progressive disclosure）**：`SKILL.md` 只放概览和导航（**理想 &lt; 500 行**），细节拆到 `references/`，脚本放 `scripts/`（执行而不读入上下文，不占 token）。
+3. **自由度匹配任务**：易错的窄桥任务（数据库迁移）给死命令；多路径的开阔任务（代码审查）给方向让模型自己判断。
+4. **description 决定触发**：这是唯一被预加载的字段，Claude 靠它从 100+ Skill 里选。用祈使句、铺满关键词、划清边界。
+5. **用「解释为什么」代替生硬的 MUST**：`skill-creator` 官方原文——"explain to the model why things are important in lieu of heavy-handed musty MUSTs"。
+
+:::
+
+### 标准目录结构
+
+来自官方 `skill-creator` 自身正文的「Anatomy of a Skill」：
+
+```text
+skill-name/
+├── SKILL.md            # 必需：YAML frontmatter + Markdown 指令
+├── references/         # 按需读入上下文的文档（API 细节、领域规格）
+│   ├── forms.md
+│   └── reference.md
+├── scripts/            # 可执行代码（确定性/重复任务，执行不读入）
+│   └── validate.py
+└── assets/             # 输出用的模板、图标、字体
+```
+
+**三级渐进式加载**：
+
+| 层级 | 内容 | 何时进入上下文 | 预算 |
+|------|------|--------------|------|
+| 1. 元数据 | `name` + `description` | 永远（启动时预加载） | ~100 词 |
+| 2. SKILL.md 正文 | 指令主体 | 触发时加载 | &lt; 500 行 |
+| 3. Bundled 资源 | references / scripts / assets | 按需（脚本可执行不加载） | 几乎无限 |
+
+**frontmatter 硬规则**：`name` 最多 64 字符、仅小写字母数字连字符、不含保留词 `claude`/`anthropic`；`description` 非空、最多 1024 字符、用第三人称。
+
+### description 怎么写：正例 vs 反例
+
+| | 写法 | 说明 |
+|---|------|------|
+| ✅ 好 | `Use this skill whenever the user wants to do anything with PDF files. This includes extracting text/tables, merging, splitting, OCR... If the user mentions a .pdf file, use this skill.` | 祈使句、铺满子任务关键词、兜底触发条件 |
+| ✅ 更好 | `...Do NOT use for PDFs, spreadsheets, or general coding tasks.` | 结尾用 `Do NOT use for...` 划清边界，防止多 Skill 抢触发 |
+| ❌ 差 | `Helps with documents` / `Does stuff with files` | 模糊、无关键词，无法被正确触发 |
+| ❌ 差 | `I can help you process Excel files` | 第一/第二人称，会导致选择混乱 |
+
+> 官方经验：Claude 倾向「欠触发」（该用时不用），所以 description 要写得**主动一点（pushy）**，并把「什么时候用」全部放进 description，而不是正文。
+
+### 正文写法：先按类型总说差异，再举例
+
+不同类型的 Skill，正文主结构差异很大。先看总览决策表：
+
+| Skill 类型 | 正文主结构 | 自由度 | 官方范例 |
+|-----------|-----------|--------|---------|
+| 工具/文档操作 | 路由表 → gotchas 清单 → 验证闭环 | 低 | `xlsx` `docx` `pdf` |
+| 大型参考手册 | 超强触发 → Reading Guide 分流 → 防幻觉约束 | 低 | `claude-api` |
+| 多子类型任务 | 分诊台 → 分发到 `examples/` 各文件 | 中 | `internal-comms` |
+| 多步协作 | 分阶段 Stage + 每阶段先提问 | 中 | `doc-coauthoring` |
+| 多阶段构建 | Phase 1/2/3 + 按阶段加载引用 | 中 | `mcp-builder` |
+| 品牌/样式 | 可直接抄的规格清单（hex/字体） | 低 | `brand-guidelines` |
+| 创意/前端生成 | 模板起点 + 概念清单 + 划红线 | 高 | `algorithmic-art` |
+| 事故排查/应急 | 可量化判级 + 脚本决策 + 复盘模板 | 低 | `incident-commander` |
+
+下面挑四类给出真实正文片段。
+
+**① 工具/文档类：开头一张路由表 + gotchas**（[xlsx](https://github.com/anthropics/skills/tree/main/skills/xlsx/SKILL.md)）
+
+```markdown
+# XLSX creation, editing, and analysis
+
+| Task | Approach |
+|---|---|
+| **Create/edit** with formulas | `openpyxl` — see gotchas below |
+| **Bulk data** in or out | `pandas` (read_excel, to_excel) |
+
+## Requirements for every output
+- **Use formulas, never hardcoded results.** Write `sheet['B10'] = '=SUM(B2:B9)'`,
+  not the Python-computed total. The sheet must recalculate when inputs change.
+
+## openpyxl gotchas
+- **`data_only=True` is destructive if you save.** That workbook has no formulas
+  left, so saving replaces every one with a literal — permanently.
+```
+
+要点：第一屏就路由「什么任务→什么工具」；每条规则附「为什么」和「反例」；用 gotchas 清单堵模型最爱踩的雷。
+
+**② 多子类型任务：分诊台模式**（[internal-comms](https://github.com/anthropics/skills/tree/main/skills/internal-comms/SKILL.md)）
+
+```markdown
+## How to use this skill
+1. **Identify the communication type** from the request
+2. **Load the appropriate guideline file** from the `examples/` directory:
+    - `examples/3p-updates.md` - For Progress/Plans/Problems updates
+    - `examples/company-newsletter.md` - For company-wide newsletters
+    - `examples/faq-answers.md` - For answering FAQs
+3. **Follow the specific instructions** in that file
+```
+
+要点：`SKILL.md` 本身极短，只做分诊；互斥的格式规范拆到独立文件，用到哪个读哪个——渐进式披露的标准落地。
+
+**③ 创意/生成类：模板是起点不是抄袭源**（[algorithmic-art](https://github.com/anthropics/skills/tree/main/skills/algorithmic-art/SKILL.md)）
+
+```markdown
+## RESOURCES
+- **templates/viewer.html**: REQUIRED STARTING POINT.
+  - **Keep unchanged**: Layout structure, colors/fonts, seed controls
+  - **Replace**: The p5.js algorithm, parameter definitions
+
+**Critical reminder**:
+- The template is the STARTING POINT, not inspiration
+- Don't copy the example - build what the philosophy demands
+```
+
+要点：高自由度任务也要划红线——明确区分「必须保留 vs 必须替换」，反复强调不要照抄示例。
+
+**④ 事故排查类：可量化判级 + 脚本决策**（[incident-commander](https://github.com/alirezarezvani/claude-skills/tree/main/engineering-team/skills/incident-commander/SKILL.md)）
+
+```markdown
+#### SEV3 - Minor Impact
+**Characteristics:** Single feature affected · <25% of users impacted · workarounds available
+**Response Requirements:** Response within 2 hours during business hours
+
+### Exit Codes（把高风险判级交给确定性脚本）
+| Code | Meaning | Required Response |
+| 2 | SEV1 — critical | Immediate 15-minute war room |
+```
+
+要点：严重级别写成「可判定的量化标准」（`<25% 用户`），而不是模糊形容；判级这种高风险决策交给脚本用退出码驱动。
+
+### 官方评测驱动的迭代流程
+
+官方强烈建议 **先评测、后写文档**，用「双 Claude」迭代而非一次写完：
+
+```mermaid
+flowchart LR
+    A[无 skill 跑真实任务<br/>观察在哪失败] --> B[建立基线<br/>写 3+ 评测场景]
+    B --> C[写最小指令<br/>只补缺口]
+    C --> D[Claude A 帮改进<br/>删多余解释]
+    D --> E[Claude B 实测<br/>观察真实行为]
+    E -->|发现遗漏| D
+    E -->|通过| F[优化 description 触发率<br/>打包定稿]
+```
+
+### 相关的官方优秀 Skills 链接
+
+| Skill | 学什么 | 链接 |
+|-------|--------|------|
+| **template** | 最简起点（两个字段） | [template/SKILL.md](https://github.com/anthropics/skills/tree/main/template/SKILL.md) |
+| **pdf** | 结构范本：路由表 + Quick Start + 对照表 | [skills/pdf](https://github.com/anthropics/skills/tree/main/skills/pdf/SKILL.md) |
+| **docx / xlsx** | 生产级 gotchas + 验证闭环 | [skills/docx](https://github.com/anthropics/skills/tree/main/skills/docx/SKILL.md) · [skills/xlsx](https://github.com/anthropics/skills/tree/main/skills/xlsx/SKILL.md) |
+| **internal-comms** | 分诊分发架构 | [skills/internal-comms](https://github.com/anthropics/skills/tree/main/skills/internal-comms/SKILL.md) |
+| **mcp-builder** | 阶段化工作流 + 按阶段加载引用 | [skills/mcp-builder](https://github.com/anthropics/skills/tree/main/skills/mcp-builder/SKILL.md) |
+| **skill-creator** | 官方写作指南 + 自查标准 | [skills/skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator/SKILL.md) |
+| **官方文档** | Skill 写作最佳实践全文 | [best-practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) |
+| **工程博客** | 设计理念：渐进式披露 | [Equipping agents with Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) |
+
+::: tip ✅ 写好 SKILL.md 的 10 条速记
+1. 开头给路由表或 Reading Guide 先分流
+2. 只写模型不知道的（gotchas、领域规格、验证法），别科普语法
+3. 解释「为什么」代替喊 MUST
+4. 全程用祈使句（Use this skill for... / Run... / Never...）
+5. 正文 &lt; 500 行，超了拆到 references/，引用只一层深
+6. 确定性任务用 scripts/（执行不读入），易错决策别让模型现写
+7. 产出后自查：渲染成图、跑 validator、feedback loop
+8. 严格格式给死模板 + 例子；创意任务给概念 + 划红线
+9. 多 Skill 用 `Do NOT use for...` 划边界
+10. 不含 malware/exploit，行为不能偏离描述
+:::
+
+---
+
 ## 常见陷阱
 
 ::: warning ⚠️ 编写 Skill 时的常见误区
@@ -935,6 +1112,8 @@ Skill 安全性的核心原则是**最小权限**——每个 Skill 只应获得
 - [AI Agent 智能体 - Skills 概念详解](./ai-agents#agent-skills-技能系统)
 - [Prompt Engineering 提示工程](./prompt-engineering) — Skill 指令的编写基础
 - [Anthropic Tool Use Documentation](https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview) — Claude Tool Use 标准格式
+- [Agent Skills 开放标准 (agentskills.io)](https://agentskills.io) — 跨平台 SKILL.md 规范
+- [anthropics/skills](https://github.com/anthropics/skills) — 官方 Skill 示例仓库（pdf/docx/xlsx/mcp-builder/skill-creator 等）
 - [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) — Agent-as-Skill 和 Handoff 模式
 - [Google A2A Protocol](https://github.com/google/A2A) — Agent Card 中的 Skills 声明标准
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — 标准化工具定义协议
