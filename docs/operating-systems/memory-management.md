@@ -481,7 +481,7 @@ dmesg | grep -i "killed process"
 # Out of memory: Killed process 1234 (java) total-vm:8GB
 ```
 
-详见 [K8s — Pod 故障 5 大模式](../engineering-practice/kubernetes#pod-故障-5-大模式排查生产必备)。
+详见 [K8s — Pod 故障 5 大模式](../engineering-practice/kubernetes#pod-故障-5-大模式速查)。
 
 ---
 
@@ -632,7 +632,7 @@ int y = x;
 // → 确保读到最新的 x
 ```
 
-详见 [JVM 内部原理 — Java 内存模型](../programming-languages/jvm-internals#java-内存模型-jmm)。
+详见 [JVM 内部原理 — Java 内存模型](../programming-languages/jvm-internals#_2-java-内存模型-jmm)。
 
 #### 内存屏障的硬件实现
 

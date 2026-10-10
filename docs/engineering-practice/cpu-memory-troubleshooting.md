@@ -185,7 +185,7 @@ dmesg -T | grep -i "killed process\|out of memory"
 #   total-vm:8GB anon-rss:7.5GB file-rss:0 shmem-rss:0
 ```
 
-详见 [OS — OOM Killer](../operating-systems/memory-management#oom-killer必背)。
+详见 [OS — OOM Killer](../operating-systems/memory-management#oom-killer-必背)。
 
 ### 磁盘 IO 100%（顺便提）
 
@@ -491,7 +491,7 @@ kubectl logs my-pod --previous
 kubectl get pod my-pod -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}'
 ```
 
-详见 [K8s — Pod 故障 5 大模式](./kubernetes#pod-故障-5-大模式排查生产必备)。
+详见 [K8s — Pod 故障 5 大模式](./kubernetes#pod-故障-5-大模式速查)。
 
 #### 第 4 步：Azure Monitor Container Insights
 
@@ -745,7 +745,7 @@ kubectl exec -it my-pod -- jstat -gc <pid> 1s
 # STW 通常 < 1ms 不管堆多大
 ```
 
-详见 [Java 现代特性 — GC 演进](../programming-languages/java-modern-features#gc-演进-g1-vs-zgc-vs-generational-zgc)。
+详见 [Java 现代特性 — GC 演进](../programming-languages/java-modern-features#_9-jvm-gc-演进-zgc-vs-g1-vs-generational-zgc)。
 
 ---
 

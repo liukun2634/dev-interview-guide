@@ -86,7 +86,7 @@ spring:
       enabled: true   # Boot 3.2+，Tomcat / @Async / Scheduled 全部走虚拟线程
 ```
 
-**心智模型**：「**JDK 21 + Boot 3.2 后，'Servlet 容器扛不住高并发'这个老论据已经站不住脚——WebFlux 的相对优势主要剩'流式数据' + '背压控制'**」。详见 [Spring WebFlux · 虚拟线程时代的选型](./webflux#虚拟线程时代-webflux-还有必要吗boot-32-必读)。
+**心智模型**：「**JDK 21 + Boot 3.2 后，'Servlet 容器扛不住高并发'这个老论据已经站不住脚——WebFlux 的相对优势主要剩'流式数据' + '背压控制'**」。详见 [Spring WebFlux · 虚拟线程时代的选型](./webflux#虚拟线程时代-webflux-还有必要吗-boot-3-2-必读)。
 
 ## HandlerExceptionResolver：异常处理责任链
 

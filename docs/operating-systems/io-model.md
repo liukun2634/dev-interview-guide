@@ -206,7 +206,7 @@ epoll：
 
 #### 附：epoll 还不够时——io_uring（Linux 5.1+）
 
-详见 [io_uring 深度](#io-uring-深度解析linux-51) —— 比 epoll 又快一档（零拷贝 + 批量提交 + 异步真正完成）。
+详见 [io_uring 深度](#io-uring-深度解析) —— 比 epoll 又快一档（零拷贝 + 批量提交 + 异步真正完成）。
 
 ---
 

@@ -287,7 +287,7 @@ API 设计不只有 REST。**2024-2026 大厂普遍三套并存**：对外 REST�
 | **典型场景** | 对外 Open API、CRUD | BFF 聚合、移动端弱网 | **内部高性能微服务**、多语言 RPC |
 | **生态代表** | Spring MVC、Express | Apollo、Hasura | Spring gRPC、Envoy |
 
-**心智模型**：「**对外 REST（通用），前端 GraphQL（聚合），内部 gRPC（性能）**」。详见 [HTTP/HTTPS · gRPC 基于 HTTP/2](../../computer-networks/http-https#grpc基于-http2-的高性能-rpc)。
+**心智模型**：「**对外 REST（通用），前端 GraphQL（聚合），内部 gRPC（性能）**」。详见 [HTTP/HTTPS · gRPC 基于 HTTP/2](../../computer-networks/http-https#grpc-基于-http-2-的高性能-rpc)。
 
 <div class="dig-questions">
   <div class="dig-questions__header">

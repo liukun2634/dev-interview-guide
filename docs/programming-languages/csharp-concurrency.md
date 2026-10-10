@@ -7,7 +7,7 @@ title: C# 并发与多线程
 <span class="dig-tag dig-tag--category">编程语言</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 中等</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 章节范围
-本页覆盖 **C# 并发体系**：Thread/ThreadPool/Task 层次、Task vs ValueTask、锁与同步原语、并发集合、IAsyncEnumerable、CancellationToken、Parallel/PLINQ。`async/await` 的语法与 ConfigureAwait 死锁见 [C# 现代特性](./csharp-modern-features#_1-async-await-异步核心)；线上诊断见 [C# 工程实战](./csharp-engineering#线上诊断与调试工具箱必备)。
+本页覆盖 **C# 并发体系**：Thread/ThreadPool/Task 层次、Task vs ValueTask、锁与同步原语、并发集合、IAsyncEnumerable、CancellationToken、Parallel/PLINQ。`async/await` 的语法与 ConfigureAwait 死锁见 [C# 现代特性](./csharp-modern-features#_1-async-await-—-异步核心)；线上诊断见 [C# 工程实战](./csharp-engineering#线上诊断与调试工具箱-必备)。
 :::
 
 > 对标 Java 的并发体系。C# 的并发哲学是"**优先 Task，少碰 Thread**"——`async/await` + `Task` 是首选，裸 `Thread` 只在长时间后台循环时才用。

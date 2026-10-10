@@ -190,7 +190,7 @@ public User get(@PathVariable String id) {
 }
 ```
 
-详见 [Redis 缓存穿透防御](../../engineering-practice/redis#3-缓存穿透-击穿-雪崩)。
+详见 [Redis 缓存穿透防御](../../engineering-practice/redis#_3-缓存穿透-击穿-雪崩)。
 
 ---
 
@@ -353,9 +353,9 @@ bucket 2: [fp4, fp5, ___, ___]
 ## 延伸阅读
 
 - 📄 [HyperLogLog（基数估计）](../arrays/roaring-bitmap) — 概率数据结构兄弟
-- 📄 [Redis 缓存穿透 / 击穿 / 雪崩](../../engineering-practice/redis#3-缓存穿透-击穿-雪崩)
+- 📄 [Redis 缓存穿透 / 击穿 / 雪崩](../../engineering-practice/redis#_3-缓存穿透-击穿-雪崩)
 - 📄 [Roaring Bitmap](../arrays/roaring-bitmap) — 大数据精确去重
-- 📄 [一致性哈希](../../computer-networks/cdn-load-balancing#一致性哈希实战) — 同为分布式系统经典
+- 📄 [一致性哈希](../../computer-networks/cdn-load-balancing#一致性哈希实战-虚拟节点数的工程经验) — 同为分布式系统经典
 - 🔗 [Bloom Filter Calculator](https://hur.st/bloomfilter/) — 在线计算最优 m / k
 - 🔗 [Cuckoo Filter Paper (Fan et al., 2014)](https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf)
 - 🔗 [XOR Filter Paper (Graf & Lemire, 2019)](https://arxiv.org/abs/1912.08258)

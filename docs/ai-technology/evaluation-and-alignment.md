@@ -7,7 +7,7 @@ title: 模型评估、对齐与 AI 安全
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-模型评估回答"模型有多好"，对齐技术回答"如何让模型行为符合人类意图"，AI 安全回答"如何防止模型被滥用"。三者构成 AI 产品化的**信任基础**。评估体系包括**自动基准、人工评估、LLM-as-Judge 和 Evals-Driven Development**；对齐技术从 **RLHF 演进到 DPO 和 Constitutional AI**；安全工程涵盖 **Red Teaming、Guardrails 架构和 AI Safety Engineer 岗位**。这些是 2025-2026 年 AI 面试的核心热点。
+模型评估回答“模型/系统在什么条件下有多好”，对齐技术回答“如何让行为更符合目标与约束”，AI 安全回答“如何降低误用、失控和外部攻击风险”。三者构成 AI 产品化的**信任基础**。评估体系包括**自动基准、人工评估、LLM-as-Judge、Agent 环境评估和 Evals-Driven Development**；训练后训练并不是 RLHF 被 DPO 单线替代，而是 SFT、离线偏好优化、在线 RL、可验证奖励与安全训练并存。
 :::
 
 ---
@@ -53,15 +53,27 @@ title: 模型评估、对齐与 AI 安全
 | **GPQA** | 研究生级推理 | 多选题准确率 | 物理/化学/生物的博士级题目 |
 | **SWE-Bench** | 真实代码修复 | 通过率 | GitHub 真实 issue 修复 |
 
-**局限性**：基准测试存在**数据污染**风险（训练数据可能包含测试集）、**指标单一**（不能反映真实使用体验）、**静态固化**（无法跟上能力迭代）等问题。基准排名变化很快，建议查看 [LMSYS Chatbot Arena](https://chat.lmsys.org/) 和 [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard) 获取最新排名。
+**局限性**：基准测试存在**数据污染**风险（题目、答案或近重复变体进入训练集）、**指标单一**、**静态固化**以及 **Harness 敏感**（Prompt、工具、采样次数和计算预算不同）等问题。基准排名变化很快，可参考 [Arena](https://arena.ai/) 和 [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard)，但不能把单榜名次当作生产结论。
+
+#### 如何控制评测污染
+
+| 做法 | 为什么有效 | 仍有边界 |
+|------|------------|----------|
+| **时间切分/滚动更新** | 用模型训练截止日之后的新题，如 LiveBench | 截止日可能不透明；新题公开后仍会进入后续训练 |
+| **私有或保留测试集** | 降低直接背题概率 | 需要访问控制，也可能与公开题近重复 |
+| **近重复与来源审计** | 检查题干、答案和语义变体与训练语料重合 | 闭源模型通常无法完整审计训练数据 |
+| **扰动与对照题** | 改数字、实体、约束，区分记忆与能力 | 改写可能改变难度或引入歧义 |
+| **报告 Harness 与预算** | 让结果可比较：Prompt、工具、温度、样本数、Token/时间预算 | 仍不能消除服务端版本漂移 |
+
+**记忆法**：污染不是“看没看过原题”这一项，而是**题、答案、近重复、解题轨迹和 Judge**都可能泄漏。
 
 ### 人工评估
 
-**Chatbot Arena（LMSYS）** 是目前最有影响力的人工评估平台：
+**Arena**（早期名为 **LMSYS Chatbot Arena**，后曾使用 **LM Arena/LMArena** 品牌）是有影响力的众包成对评估平台；截至 2026-08 官方入口为 `arena.ai`：
 
 - 用户与两个匿名模型同时对话，投票选出更好的回答
-- 基于 **Elo/Bradley-Terry 排名**系统，类似国际象棋评分
-- 截至目前已收集超百万次人工投票
+- 排名可使用 Bradley-Terry 等成对比较统计方法，并给出不确定性；“Elo 分差”不是准确率差
+- 结果反映平台流量与用户偏好，会受提示分布、风格、长度、语言、抽样和版本变化影响
 
 **评估一致性**使用 **Cohen's Kappa 系数**衡量标注者间的一致程度：
 
@@ -112,7 +124,43 @@ judge_prompt = """请对以下两个回答进行评分（1-10 分）。
 | **自我偏好** | GPT-4 倾向于选择 GPT-4 的回答 | 使用多个不同的 Judge 模型 |
 | **风格偏差** | 偏好特定格式（如 Markdown 列表） | 标准化输出格式后再评估 |
 
-**最佳实践**：Pairwise Comparison（成对比较）比 Single Rating（单独评分）更稳定可靠。
+**最佳实践**：开放式质量判断中 Pairwise Comparison（成对比较）通常比 Single Rating（单独评分）稳定，但有唯一答案时优先使用单元测试、解析器或可验证结果。Judge 要先与人工标注校准，并报告一致率、置信区间和失败切片。
+
+### Agent 评估：评的是模型 × Harness × 环境
+
+Agent 结果不只由底层模型决定，还由工具定义、Prompt/Scaffold、记忆、权限、重试、环境状态和预算共同决定。SWE-bench、$\tau$-bench、AgentBench、OSWorld 等测到的是一套**系统配置**，不同 Harness 的分数不能直接归因于模型本身。
+
+| 维度 | 典型指标 | 为什么不能只看最终成功率 |
+|------|----------|--------------------------|
+| **Outcome（结果）** | 任务成功率、测试通过率、最终数据库状态 | 最接近业务价值，但可能碰巧成功或用违规捷径完成 |
+| **Process/Trajectory（过程）** | 工具选择、参数正确率、策略合规、无效步骤、恢复能力 | 可定位失败和危险动作，但“像参考轨迹”不等于唯一正确路径 |
+| **Reliability（可靠性）** | pass^k、连续多次成功率、方差、超时率 | Agent 常有随机性；一次成功会掩盖不稳定 |
+| **Efficiency（效率）** | Token、工具调用、墙钟时间、费用 | 无限重试可以抬高成功率，却不一定可部署 |
+| **Safety（安全）** | 越权动作、敏感数据外发、人工确认命中率 | 最终任务成功也可能伴随不可接受的副作用 |
+
+例如 $\tau$-bench 通过比较最终数据库状态评估 Outcome，并用多次试验衡量一致性。生产评测还应固定环境快照、工具版本和最大步骤，记录完整轨迹但注意脱敏。
+
+### 2026-10：长程 Agent 基准怎么读 {#frontier-evals}
+
+[Opus 5.5](https://www.anthropic.com/claude-opus-5-5)、[Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5)与 [Gemini 4 Argon](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-argon/)使用更接近真实工作的基准，仍属于特定环境和预算下的报告，不是通用生产成功率：
+
+| 基准族 | 考察内容 | 必须核对的口径 |
+|--------|----------|----------------|
+| Terminal-Bench 4.0 | 终端多步骤任务 | 版本、Harness、effort、时间与采样次数，不与旧版直接比数值 |
+| FrontierCode 1.1 / DeepSWE v1.1 | 代码修改与长程工程任务 | 是否允许人工修订、是否惩罚超范围修改、工具和子 Agent 配置 |
+| OSWorld 2.1 | GUI 操作 | 是否离线子集、是否部分得分；partial credit 不等于完整任务成功 |
+| GDPval-AA v2.1 | 多职业知识工作 | 评分方法、Judge 与任务分布；Elo 不能换算成正确率 |
+| 业务私有评测 | 本产品的最终状态与风险 | 权限、安全回退、长尾失败、人工接管与完整成本 |
+
+Sonnet 5.5 官方脚注说明，高 effort 的某些运行因复杂评审/子 Agent 引发超时或超范围修改而降分。因此“想得更久”不必然更可合并，验收、范围与预算更重要。
+
+评测至少锁定模型快照、SDK/Harness、Prompt/Skill/工具版本、输入与环境快照、权限、安全回退、effort、Token/时间预算、重试、Judge 和样本数；报告不确定性及失败切片，而不是最高分。付款任务最终订单正确但重复扣款，应判失败，不能用最终页面正确掩盖副作用。
+
+### Process Eval 与 Outcome Eval
+
+- **Outcome Reward Model（ORM）**只看最终结果：标签便宜、可规模化，适合答案或测试可验证的任务；缺点是信用分配粗，容易奖励“答案对但过程错”或钻验证器漏洞。
+- **Process Reward Model（PRM）**逐步评价推理：能定位第一个错误并用于搜索/重排；缺点是步骤标签昂贵、不同正确路径难覆盖，而且自然语言推理链未必忠实反映内部计算。
+- 《Let's Verify Step by Step》在 MATH 子集上发现过程监督优于结果监督，这是特定数学设定的证据，**不是所有任务 PRM 都必胜 ORM**。Agent 过程评估更应优先检查可观察动作、状态变化和策略合规，而不是强求某一条文字 CoT。
 
 ### Evals-Driven Development（评估驱动开发）
 
@@ -205,7 +253,7 @@ RLHF（Reinforcement Learning from Human Feedback）是经典的三阶段对齐�
 
 ### DPO（Direct Preference Optimization）
 
-DPO 的核心洞察：可以将 RM 的训练和 PPO 优化**合并为一步**——直接用偏好数据优化策略模型，跳过显式的奖励模型。
+DPO 的核心洞察：在 KL 正则化的 RLHF 目标和特定偏好模型假设下，可以重参数化奖励与最优策略的关系，直接用偏好对训练策略，跳过**显式 RM、在线采样和 PPO**。它不是对任意 RLHF 配方都无条件等价。
 
 **损失函数**：
 
@@ -286,22 +334,22 @@ RLAIF（RL from AI Feedback）是 Constitutional AI 的推广——用 AI 反馈
 | **可审计性** | 低 | 低 | 高（有明确原则） |
 | **代表工作** | InstructGPT, ChatGPT | Zephyr, Tulu | Claude (CAI) |
 
-**趋势**：DPO 及其变体已成为业界标准选择。2025 年以来，领域明显向**更简洁、更可扩展**的方向发展，减少对昂贵人工标注的依赖，越来越多地使用 AI 生成反馈和可验证奖励（Verifiable Rewards）。Constitutional AI 在安全性和可审计性方面仍具有独特优势。
+**趋势**：DPO 及其变体是常用的离线偏好优化路线，PPO/GRPO 等在线 RL 则在可验证推理和探索场景中继续发展。领域整体在减少昂贵人工标注，并增加 AI 反馈与可验证奖励；但反馈模型会继承偏差，可验证奖励也只覆盖答案易验证的任务。Constitutional AI 的显式原则便于审计，不代表 AI 反馈天然正确。
 
-### 2025 年新兴对齐方法
+### 2024-2026 对齐方法演进
 
 以下方法在 2025 年得到广泛验证和采用，代表了对齐技术的最新演进方向：
 
 | 方法 | 核心思想 | 优势 | 代表工作 |
 |------|----------|------|----------|
-| **GRPO**（Group Relative Policy Optimization） | 对同一 Prompt 采样一组回答，以组内相对奖励为基线进行优化 | 无需 Critic 模型，天然适配推理链奖励 | DeepSeek-R1 |
-| **RLVR**（RL with Verifiable Rewards） | 用自动化验证器（数学答案校验、代码测试通过率）代替人工标注作为奖励信号 | 彻底消除人类标注依赖，奖励信号精确无噪声 | 数学/代码推理模型 |
+| **GRPO**（Group Relative Policy Optimization） | 对同一 Prompt 采样一组回答，以组内相对奖励估计优势；由 DeepSeekMath（2024）提出，R1 延续使用 | 省去独立 Critic/Value 模型，但仍需参考/KL 控制、足够组采样和稳定奖励 | DeepSeekMath、DeepSeek-R1 |
+| **RLVR**（RL with Verifiable Rewards） | 用数学答案校验、代码测试等自动验证器提供结果奖励 | 降低逐条人工标注，但验证器可能不完备、可被利用，不能称“精确无噪声” | 数学/代码等可验证任务 |
 | **Online DPO / Iterative DPO** | 在 DPO 训练过程中不断用当前策略生成新的偏好数据，替代固定离线数据集 | 缓解 DPO 的分布偏移问题，效果接近在线 RLHF | RLHF Workflow |
 | **Process Reward Models（PRMs）** | 对推理链的每一步进行奖励评估，而非只看最终答案 | 提升复杂推理任务的可靠性，可定位推理错误步骤 | Let's Verify Step by Step |
 | **SimPO**（Simple Preference Optimization） | 去除 DPO 中的参考模型依赖，直接用序列平均对数概率作为隐式奖励 | 更简洁，内存占用更低，效果持平或优于 DPO | SimPO 论文 |
 | **Self-Play / SPIN** | 模型与自身旧版本对弈，生成训练数据进行迭代优化 | 完全自举，无需外部标注数据 | SPIN |
 
-**总体趋势**：从 RLHF 的"重工程"路线，到 DPO 的"轻量化"，再到 GRPO/RLVR 的"自动化验证"，对齐技术正朝着**降低人工依赖、提升可扩展性**的方向持续演进。
+**总体趋势**：不是“RLHF → DPO → GRPO”的替代链，而是按反馈类型分流：**人类/AI 偏好适合离线偏好优化，可自动判分的结果适合在线 RL，安全和风格还需 SFT/规则/系统防护**。记忆法：先问“奖励从哪来、能否在线验证、错奖会怎样”，再选算法。
 
 ---
 
@@ -309,7 +357,7 @@ RLAIF（RL from AI Feedback）是 Constitutional AI 的推广——用 AI 反馈
 
 ### AI Safety Engineer / Harmlessness Engineer 角色
 
-**这是 2025 年新兴的工程岗位**——专注于确保 AI 系统安全、可靠、符合伦理。主要职责包括：
+这是随生成式 AI 产品化而扩大的工程角色——专注于确保 AI 系统安全、可靠并符合组织政策。岗位名称和职责边界因公司而异，主要工作可能包括：
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -468,7 +516,7 @@ graph LR
 | **False Positive Rate** | 把正常输入误判为注入而拒绝的比例 | < 0.5% |
 | **Sensitive Action Rate** | 注入导致执行敏感工具调用的比例 | 0%（红线）|
 
-**面试加分点**：能区分 Jailbreak 和 Prompt Injection、说出"间接注入比直接注入危害大得多"、并给出**Dual LLM 或能力最小化**这种系统级（而非 Prompt 层）的防御方案，几乎能秒杀 90% 候选人。
+**面试加分点**：能区分 Jailbreak 和 Prompt Injection，解释间接注入为何会跨越网页/RAG/工具边界，并给出**能力最小化、执行层授权、隔离和评测**等系统级防御，而不是只依赖 Prompt。
 
 ### Red Teaming 方法论
 
@@ -692,7 +740,7 @@ return llm_output
 
 1. **唯基准论**：MMLU 分数高不等于实际使用效果好。基准测试可能存在数据污染，且无法反映对话质量、安全性等维度。应结合基准测试和人工评估综合判断。
 
-2. **混淆 RLHF 和 DPO 的关系**：DPO 不是 RLHF 的"简化版"，而是从不同角度推导出的等价优化目标。DPO 直接优化偏好，而非通过中间的奖励模型间接优化。
+2. **混淆 RLHF 和 DPO 的关系**：DPO 可看作在特定 KL 正则化 RLHF 与 Bradley-Terry 偏好假设下得到的直接优化形式；它省掉显式 RM/PPO，但不是对任意奖励、在线探索和多轮环境 RL 的普遍等价替代。
 
 3. **认为对齐能完全解决安全问题**：对齐技术提高了模型的安全性，但无法完全防御所有攻击。生产环境中必须结合 Guardrails 多层防护。
 
@@ -755,7 +803,7 @@ return llm_output
 | 迭代效率 | 需要在线采样 | 离线数据即可 |
 | 效果 | 经典验证，GPT-4 级别 | 在多数场景接近 RLHF |
 
-**面试加分点**：DPO 的数学推导表明它与 RLHF 在理论上是等价的——DPO 的隐式奖励函数恰好是 RLHF 中最优奖励模型的封闭形式解。此外，2025 年兴起的 GRPO（DeepSeek 采用）和 RLVR 进一步简化了对齐流程：GRPO 通过组内相对奖励消除了 Critic 模型的需求；RLVR 用自动化验证（数学/代码）替代人工标注，在推理任务上表现突出。整体趋势是减少人工依赖、提升可扩展性。
+**边界说明**：DPO 的联系建立在特定 KL 正则化目标和偏好模型假设上，不应概括为与所有 RLHF“理论等价”。GRPO 由 DeepSeekMath 在 2024 年提出，并由 DeepSeek-R1 推广；它通过组内相对奖励省去 Critic，但没有消除 rollout、奖励设计与训练稳定性问题。RLVR 可减少结果标签的人力，不代表验证器无漏洞。
 
 ---
 
@@ -852,3 +900,7 @@ Constitutional AI 的核心思想是用**一组明确的原则（"宪法"）**�
 - [SimPO: Simple Preference Optimization with a Reference-Free Reward](https://arxiv.org/abs/2405.14734)
 - [Self-Play Fine-Tuning (SPIN)](https://arxiv.org/abs/2401.01335)
 - [Let's Verify Step by Step (Process Reward Models)](https://arxiv.org/abs/2305.20050)
+- [LiveBench: A Challenging, Contamination-Limited LLM Benchmark](https://arxiv.org/abs/2406.19314)
+- [$\tau$-bench: Tool-Agent-User Interaction in Real-World Domains](https://arxiv.org/abs/2406.12045)
+- [AgentBench: Evaluating LLMs as Agents](https://arxiv.org/abs/2308.03688)
+- [TheAgentCompany: Consequential Real-World Agent Tasks](https://arxiv.org/abs/2412.14161)

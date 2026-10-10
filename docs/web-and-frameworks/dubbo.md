@@ -408,6 +408,6 @@ Dubbo 2.x 接口级注册的痛点：**注册中心数据量 = 接口数 × 实�
 - 📄 [Spring Cloud 速查](./spring-cloud-overview) — Nacos / Gateway / Sentinel / Seata
 - 📄 [微服务架构](../system-design/microservices) — 服务拆分与治理
 - 📄 [Service Mesh 与 Istio](../engineering-practice/microservice-governance#service-mesh-与-istio)
-- 📄 [HTTP/HTTPS · gRPC](../computer-networks/http-https#grpc基于-http2-的高性能-rpc)
+- 📄 [HTTP/HTTPS · gRPC](../computer-networks/http-https#grpc-基于-http-2-的高性能-rpc)
 - 🔗 [dubbo.apache.org](https://dubbo.apache.org)
 - 🔗 [higress.io](https://higress.io) — Dubbo 团队推出的云原生网关

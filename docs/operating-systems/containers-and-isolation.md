@@ -202,7 +202,7 @@ securityContext:
     type: RuntimeDefault
 ```
 
-详见 [K8s — Pod Security Standards](../engineering-practice/kubernetes#pod-安全标准pss-podsecuritypolicy-的继任者)。
+详见 [K8s — Pod Security Standards](../engineering-practice/kubernetes#pod-安全标准-pss-——-psp-的继任者)。
 
 ---
 
@@ -346,7 +346,7 @@ java \
   -jar app.jar
 ```
 
-详见 [K8s — Pod 故障 5 大模式 OOMKilled](../engineering-practice/kubernetes#pod-故障-5-大模式排查生产必备)。
+详见 [K8s — Pod 故障 5 大模式 OOMKilled](../engineering-practice/kubernetes#pod-故障-5-大模式速查)。
 
 ### Go 容器陷阱
 

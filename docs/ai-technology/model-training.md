@@ -7,7 +7,7 @@ title: 模型微调与训练
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 中频</span>
 
 ::: tip 💡 核心要点
-模型训练是指通过特定数据优化大语言模型参数的过程，主要分为**预训练（Pre-training）**、**监督微调（SFT）**和**对齐（Alignment）**三个阶段。对于大多数应用场景，核心关注的是**参数高效微调（PEFT）**——其中 **LoRA** 是最主流的方法——和**人类偏好对齐（RLHF/DPO）**。掌握这些技术是理解 LLM 如何从"通用语言模型"演变为"可用的 AI 助手"的关键。
+模型训练是指通过数据与反馈优化大语言模型参数的过程，常概括为**预训练（Pre-training）**、**监督微调（SFT）**和**训练后训练（Post-training）**。训练后训练不只做“价值观对齐”，还包括指令遵循、偏好优化、可验证奖励强化学习、工具使用与安全训练。对于多数应用团队，核心关注的是 **LoRA/QLoRA 等 PEFT**、数据质量和可回归的领域评估。
 :::
 
 ## 训练范式全景
@@ -31,7 +31,7 @@ graph LR
 
 | 阶段 | 数据规模 | 计算成本 | 目标 |
 |------|----------|----------|------|
-| **预训练** | TB 级文本（万亿 Token） | 极高（数千 GPU × 数月） | 学习语言知识和世界知识 |
+| **预训练** | 大规模文本/代码/多模态数据 | 极高，随模型和预算变化 | 学习通用表示、语言模式与知识 |
 | **SFT** | 数万~数十万条 | 中等（数小时~数天） | 学习遵循指令、对话格式 |
 | **对齐** | 数万条偏好数据 | 中等 | 输出与人类期望一致 |
 
@@ -43,8 +43,8 @@ graph LR
 
 更新模型的**所有参数**，是最直接的微调方式：
 
-- **优点**：效果最好，模型可充分适配目标任务
-- **缺点**：需要与预训练相同级别的显存，70B 模型需要 ~140GB 显存（FP16）
+- **优点**：可更新全部参数，适配容量上限高，但并不保证在小数据上一定优于 PEFT
+- **缺点**：仅 FP16 权重就约为 140GB；训练还要容纳梯度、优化器状态和激活，通常远高于 140GB，具体取决于精度、优化器、分片与重计算
 - **适用**：有充足计算资源且任务差异大的场景
 
 ### 参数高效微调 PEFT
@@ -54,7 +54,7 @@ graph LR
 | 方法 | 原理 | 可训练参数量 | 效果 |
 |------|------|-------------|------|
 | **LoRA** | 在权重矩阵旁添加低秩分解增量 | 0.1%~1% | 接近全量微调 |
-| **QLoRA** | LoRA + 4-bit 量化基础模型 | 0.1%~1% | 接近 LoRA，显存减少 ~75% |
+| **QLoRA** | 4-bit 冻结基础模型 + 高精度 LoRA 训练 | 0.1%~1% | 可显著降显存，质量取决于任务、量化与超参数 |
 | **Prefix Tuning** | 在每层注意力前添加可训练的前缀向量 | < 0.1% | 适合特定格式任务 |
 | **Adapter** | 在 Transformer 层中插入小型瓶颈网络 | ~1% | 早期方法，已逐步被 LoRA 替代 |
 | **IA3** | 学习激活值的缩放因子 | < 0.01% | 极少参数，效果有限 |
@@ -81,7 +81,7 @@ $$
 
 ### 为什么低秩有效
 
-研究发现，预训练模型在微调过程中的权重变化 $\Delta W$ 具有**低秩特性**——即权重变化集中在少数几个主要方向上。因此用低秩矩阵近似 $\Delta W$ 信息损失很小。
+LoRA 论文观察到适配更新具有较低的“内在秩”，因此可用低秩矩阵表达许多任务所需的主要变化。这是经验假设而非对所有层、任务和秩都成立的定理；领域跨度很大或需要重塑大量能力时，过小的 rank 仍会欠拟合。
 
 ### 实现细节
 
@@ -118,10 +118,10 @@ class LoRALinear(nn.Module):
 
 | 参数 | 说明 | 推荐值 |
 |------|------|--------|
-| **rank (r)** | 低秩矩阵的秩，控制参数量和表达能力 | 8~64（常用 16 或 32） |
-| **alpha (α)** | 缩放因子，控制 LoRA 增量的影响强度 | 通常设为 rank 的 2 倍 |
-| **target_modules** | 应用 LoRA 的层（Q/K/V/O/FFN） | 至少 Q、V 投影层 |
-| **dropout** | LoRA 层的 Dropout | 0.05~0.1 |
+| **rank (r)** | 低秩矩阵的秩，控制参数量和表达能力 | 常从 8~64 搜索，任务差异大时需评估 |
+| **alpha (α)** | 缩放因子，控制 LoRA 增量的影响强度 | 与 rank、学习率联合调参，不存在固定 2 倍规则 |
+| **target_modules** | 应用 LoRA 的层（Q/K/V/O/FFN） | 依模型命名和任务选择；全线性层常是更强基线 |
+| **dropout** | LoRA 路径的 Dropout | 数据少时可尝试，不能当作固定范围 |
 
 ### 推理时合并
 
@@ -141,8 +141,8 @@ $$
 W'_{\text{QLoRA}} = \text{Dequant}_4(W_{\text{4bit}}) + BA
 $$
 
-- 70B 模型微调显存：全量 ~140GB → LoRA ~40GB → QLoRA ~16GB（单卡 24GB GPU 可训练）
-- 精度损失极小，是个人和小团队微调大模型的首选方案
+- QLoRA 能显著降低**基础权重**占用，但总显存还包括量化元数据、LoRA 参数、梯度、优化器、激活和临时工作区；70B 是否能在单张 24GB 卡上训练取决于序列长度、batch、checkpointing、offload 与实现，不能由“权重约 35GB”直接推出
+- 在 QLoRA 论文任务上可匹配 16-bit 微调的强基线，但“几乎无损”必须用目标任务评估确认
 
 ---
 
@@ -170,7 +170,7 @@ $$
 
 ### 数据质量 > 数据数量
 
-研究表明（如 LIMA 论文），**少量高质量数据**（1000 条精心标注的数据）的效果可能优于大量低质量数据。关键在于：
+LIMA 展示了在强预训练模型和特定对齐设定下，约 1000 条精心筛选示例也能获得较好的响应风格。这说明质量很重要，但不证明所有领域的 1000 条数据都优于大数据集；知识覆盖、长尾边界和安全行为仍需要足够多样的数据。关键在于：
 
 - **多样性**：覆盖目标任务的各种场景
 - **一致性**：输出风格和格式统一
@@ -211,7 +211,7 @@ $$
 
 ### DPO（Direct Preference Optimization）
 
-DPO 跳过了奖励模型的训练，直接从偏好数据中优化策略：
+DPO 跳过**显式奖励模型和在线 PPO rollout**，在 KL 正则化的 Bradley-Terry 偏好模型假设下，把奖励—策略关系改写为分类损失，直接从偏好数据优化策略：
 
 $$
 \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y_w, y_l)} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \right]
@@ -225,9 +225,9 @@ $$
 |------|------|-----|
 | **流程复杂度** | 需训练奖励模型 + PPO 优化 | 只需一步优化 |
 | **训练稳定性** | PPO 调参困难，易不稳定 | 标准监督学习，训练稳定 |
-| **效果** | 理论上限更高 | 实践中与 RLHF 接近 |
+| **效果** | 可在线探索并使用任意可计算奖励，但易 Reward Hacking | 离线、简单；效果受偏好覆盖与参考策略分布影响 |
 | **数据需求** | 偏好排序数据 | 偏好对（win/lose） |
-| **主流度** | 早期主流（InstructGPT） | 2024 年后成为主流 |
+| **主流度** | PPO/GRPO 等在线 RL 在推理与可验证任务中仍重要 | DPO 及变体是常用离线偏好优化路线之一 |
 
 ### 其他对齐方法
 
@@ -236,9 +236,9 @@ $$
 | **ORPO** | 合并 SFT 和对齐为一步，无需参考模型 | 2024 |
 | **KTO** | 只需"好/坏"二分标签而非成对偏好 | 2024 |
 | **SimPO** | 简化 DPO，使用序列平均对数概率作为隐式奖励 | 2024 |
-| **GRPO** | Group Relative Policy Optimization，DeepSeek 提出，无需价值模型，用组内相对奖励替代基线 | 2024-2025 |
-| **RLVR** | Reinforcement Learning with Verifiable Rewards，使用可验证奖励（如数学/代码正确性）替代人类标注 | 2025 |
-| **Online DPO** | 在线版 DPO，实时生成偏好对而非使用离线数据，效果优于标准 DPO | 2024-2025 |
+| **GRPO** | DeepSeekMath（2024）提出的 PPO 变体；对同一 Prompt 采样一组输出，用组内相对奖励估计优势，省去独立 Critic/Value 模型 | 2024 |
+| **RLVR** | 使用可验证结果（数学答案、代码测试等）作为奖励；奖励更客观但覆盖范围窄，仍需防测试漏洞与 Reward Hacking | 2024-2025 |
+| **Online / Iterative DPO** | 用当前策略持续生成并标注新偏好对，缓解固定离线数据的分布偏移；收益取决于采样与反馈质量 | 2024-2025 |
 | **Self-Play / SPIN** | 模型与自身博弈生成偏好数据，减少对人类标注的依赖 | 2024 |
 
 ---
@@ -251,9 +251,9 @@ $$
 
 ```python
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 # 1. 加载模型和分词器
 model_name = "Qwen/Qwen2.5-7B"  # 或使用 Llama-3/4, DeepSeek-R1 等开源模型
@@ -277,8 +277,8 @@ model.print_trainable_parameters()
 # 3. 准备数据
 dataset = load_dataset("json", data_files="train_data.jsonl")
 
-# 4. 训练
-training_args = TrainingArguments(
+# 4. 训练（当前 TRL API）
+training_args = SFTConfig(
     output_dir="./output",
     num_train_epochs=3,
     per_device_train_batch_size=4,
@@ -286,6 +286,7 @@ training_args = TrainingArguments(
     learning_rate=2e-4,
     warmup_ratio=0.1,
     bf16=True,
+    max_length=2048,
     logging_steps=10,
     save_strategy="epoch",
 )
@@ -294,8 +295,7 @@ trainer = SFTTrainer(
     model=model,
     args=training_args,
     train_dataset=dataset["train"],
-    tokenizer=tokenizer,
-    max_seq_length=2048,
+  processing_class=tokenizer,
 )
 
 trainer.train()
@@ -309,9 +309,11 @@ merged_model.save_pretrained("./merged_model")
 
 | 模型规模 | 全量微调显存 | QLoRA 显存 | 推荐硬件 |
 |----------|------------|-----------|----------|
-| **7B** | ~28GB | ~6GB | 1× A100 40GB / 1× RTX 4090 |
-| **13B** | ~52GB | ~10GB | 1× A100 80GB |
-| **70B** | ~140GB | ~16GB | 4× A100 80GB / 1× A100 (QLoRA) |
+| **7B** | 权重+梯度+Adam 状态约 112GB 起（未计激活） | 常见短上下文约 6~12GB 起 | 1× 24GB 可做多数 QLoRA 实验 |
+| **13B** | 约 208GB 起（未计激活） | 常见短上下文约 10~20GB 起 | 24GB 卡需控制长度或 offload |
+| **70B** | 约 1.1TB 起（未计激活） | 仅 4-bit 权重约 35GB，训练总量更高 | 通常需 48/80GB 级 GPU、多卡或 CPU offload |
+
+> 这里的全量估算按每参数约 16 bytes 粗算（FP16/BF16 权重与梯度、FP32 master weight、Adam 一二阶状态），不同优化器和 FSDP/ZeRO 会改变单卡占用；QLoRA 数字对序列长度与激活重计算尤其敏感。
 
 ### 分布式训练
 
@@ -343,18 +345,18 @@ merged_model.save_pretrained("./merged_model")
 
 1. 准备 100~500 条代表性测试样例
 2. 定义评估维度（准确性、格式遵循、安全性等）
-3. 使用强模型（如 GPT-4o、Claude Sonnet 4.6）自动评分或人工评审
+3. 使用固定版本的强模型做自动评分，并以人工抽检校准；Judge 型号、Prompt 和顺序都要版本化
 4. 对比微调前后的效果差异
 
 ---
 
 ::: warning ⚠️ 常见误区
 
-1. **认为微调可以注入新知识**：微调的本质是改变模型的**行为模式**（输出格式、风格、偏好），而非注入新的事实知识。如果需要新知识，应使用 RAG 而非微调。
+1. **认为微调不能注入任何新知识，或可以替代知识库**：微调可以让模型记住部分新事实和领域模式，但更新、溯源和精确召回不可靠，也可能遗忘旧能力。频繁变化且需引用的知识优先 RAG；稳定技能、术语和行为模式更适合微调，必要时两者结合。
 
 2. **数据量越多效果越好**：低质量数据可能导致模型退化。LIMA 研究表明 1000 条高质量数据即可显著提升效果。关键是数据质量和多样性。
 
-3. **LoRA rank 越大越好**：过大的 rank 不仅增加计算成本，还可能导致过拟合。通常 16~32 的 rank 已经足够。
+3. **LoRA rank 越大越好**：过大的 rank 增加计算和过拟合风险，过小又可能欠拟合。16~32 是常见起点而非结论，应按领域跨度、目标层和验证集调参。
 
 4. **忽视评估的重要性**：微调后必须在独立测试集上评估，避免过拟合训练数据。通用基准和领域评估都需要。
 
@@ -394,14 +396,14 @@ W' = W + BA, \quad B \in \mathbb{R}^{d \times r}, A \in \mathbb{R}^{r \times d},
 $$
 
 **为什么低秩有效**：
-1. 研究发现微调时的权重变化 $\Delta W$ 具有**内在低秩特性**——变化集中在少数几个主要方向上
+1. LoRA 论文观察到微调更新常具有较低的**内在秩**——许多有效变化集中在少数主要方向，但这不是所有任务都成立的保证
 2. 预训练模型已经学到了丰富的语言表示，微调只需要在这些表示上做**小幅调整**
 3. 类比：微调不是"重新学习"，而是"微调旋钮"——需要调节的自由度（秩）远小于模型的总参数维度
 
 **实践要点**：
 - 初始化：$A$ 正态初始化，$B$ 零初始化 → 训练开始时 $\Delta W = 0$，不破坏原始模型
 - 推理无额外开销：$W_{\text{merged}} = W + BA$ 合并后计算量不变
-- 作用于 Q/K/V/O 投影层效果最佳
+- 目标层需实测；只调 Q/V 是经典设置，把 LoRA 扩展到全部注意力和 FFN 线性层常是更强但更耗显存的基线
 
 ---
 
@@ -419,7 +421,7 @@ $$
 
 **关键数学联系**：DPO 证明了在 KL 约束下，最优策略可以用参考模型和数据直接表示，无需显式奖励模型。
 
-2024 年后 **DPO 及其变体（Online DPO、SimPO 等）已成为主流**选择，因为其简洁性和稳定性在实践中优势明显。2025 年 DeepSeek R1 推动的 GRPO 和 RLVR 进一步证明，结合可验证奖励的强化学习方法在推理任务上效果显著。
+DPO 及其变体因简洁、稳定而成为常用离线偏好优化路线；PPO/GRPO 等在线 RL 并未被取代。DeepSeekMath 在 2024 年提出 GRPO，DeepSeek-R1 在 2025 年进一步展示了强化学习在数学、代码等**可验证任务**上激发推理行为的效果。边界是验证器覆盖有限，错误奖励会被策略放大。
 
 ---
 
@@ -430,7 +432,7 @@ $$
 **数据收集**：
 1. 从真实业务场景中收集"问题-期望回答"对
 2. 让领域专家编写高质量的标准答案
-3. 利用强模型（GPT-4o、Claude Sonnet 4.6）辅助生成初稿，人工审核修正
+3. 利用固定版本的强模型辅助生成初稿，保留来源并由领域专家审核修正
 
 **数据质量控制**：
 - **准确性**：答案必须正确，由专家审核
@@ -438,10 +440,10 @@ $$
 - **一致性**：输出格式、风格、详略程度统一
 - **去重和去噪**：移除重复、模糊、矛盾的样例
 
-**数据规模建议**：
-- 起步：500~1000 条高质量数据
-- 进阶：5000~10000 条
-- 关键原则：宁缺勿滥，1000 条精标数据 >> 10000 条粗标数据
+**数据规模策略**：
+- 先用数百到数千条代表样本跑通训练—评估闭环，再从失败簇补数据
+- 是否扩到数万条取决于任务多样性、长尾覆盖、基座能力和标签噪声，没有通用阈值
+- 关键原则：比较学习曲线和每类失败率；“1000 条精标一定胜过 10000 条粗标”只能作为质量优先的提醒，不能当作定律
 
 **数据格式**：使用 ShareGPT 多轮对话格式或 OpenAI Chat 格式，包含 system prompt 定义角色和约束。
 
@@ -454,3 +456,6 @@ $$
 - [Training language models to follow instructions with human feedback (InstructGPT)](https://arxiv.org/abs/2203.02155)
 - [Direct Preference Optimization (DPO)](https://arxiv.org/abs/2305.18290)
 - [LIMA: Less Is More for Alignment](https://arxiv.org/abs/2305.11206)
+- [DeepSeekMath: Group Relative Policy Optimization (GRPO)](https://arxiv.org/abs/2402.03300)
+- [DeepSeek-R1: Reinforcement Learning for Reasoning](https://arxiv.org/abs/2501.12948)
+- [Let's Verify Step by Step: Process versus Outcome Supervision](https://arxiv.org/abs/2305.20050)

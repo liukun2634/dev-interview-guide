@@ -14,15 +14,15 @@
     </svg>
 
     <!-- Section selector -->
-    <div class="nav-sections" ref="selectorRef">
-      <button class="nav-sections-btn" @click="toggleDropdown" :class="{ active: dropdownOpen }">
+    <div class="nav-sections" ref="selectorRef" @keydown.esc="dropdownOpen = false">
+      <button class="nav-sections-btn" @click="toggleDropdown" :class="{ active: dropdownOpen }" :aria-expanded="dropdownOpen" aria-controls="knowledge-sections">
         <span class="nav-sections-label">{{ currentSection?.text || '知识库' }}</span>
         <svg class="nav-sections-chevron" viewBox="0 0 12 12" width="12" height="12" fill="currentColor">
           <path d="M6 8.825c-.2 0-.4-.1-.5-.2l-3.3-3.3c-.3-.3-.3-.8 0-1.1.3-.3.8-.3 1.1 0l2.7 2.7 2.7-2.7c.3-.3.8-.3 1.1 0 .3.3.3.8 0 1.1l-3.2 3.3c-.2.1-.4.2-.6.2Z"></path>
         </svg>
       </button>
       <Transition name="dropdown">
-        <div v-if="dropdownOpen" class="nav-dropdown">
+        <div v-if="dropdownOpen" id="knowledge-sections" class="nav-dropdown">
           <a
             v-for="section in sections"
             :key="section.link"
@@ -45,22 +45,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, withBase } from 'vitepress'
+import { sections } from '../../sections'
 
 const route = useRoute()
 const dropdownOpen = ref(false)
 const selectorRef = ref<HTMLElement | null>(null)
-
-const sections = [
-  { text: 'AI 技术', link: '/ai-technology/' },
-  { text: '数据结构与算法', link: '/data-structures-and-algorithms/' },
-  { text: '编程语言', link: '/programming-languages/' },
-  { text: '操作系统', link: '/operating-systems/' },
-  { text: '计算机网络', link: '/computer-networks/' },
-  { text: '数据库', link: '/databases/' },
-  { text: 'Web 与框架', link: '/web-and-frameworks/' },
-  { text: '系统设计', link: '/system-design/' },
-  { text: '工程实践', link: '/engineering-practice/' },
-]
 
 const currentSection = computed(() => {
   return sections.find(s =>

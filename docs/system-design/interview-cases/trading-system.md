@@ -509,7 +509,7 @@ PARTITION BY HASH(symbol) PARTITIONS 64;
 | **K 线（1m/5m/...）** | TimescaleDB / ClickHouse / InfluxDB |
 | **历史 K 线** | Parquet + S3（冷存）|
 
-**ClickHouse 选择理由**：列存压缩比 10×、按时间分区扫描快、聚合 SQL μs 级。详见 [data-warehouse.md ClickHouse 章节](../../databases/data-warehouse#clickhouse-深度)。
+**ClickHouse 选择理由**：列存压缩比 10×、按时间分区扫描快、聚合 SQL μs 级。详见 [data-warehouse.md ClickHouse 章节](../../databases/data-warehouse#clickhouse-深度-分布式与-replicatedmergetree-2026-必考)。
 
 ---
 
@@ -683,4 +683,4 @@ Phase 6：T+0 实时结算 + 链上清算
 - 支付侧：[支付宝支付系统](./alipay-payment) — TCC 分布式事务、幂等设计、对账系统
 - 设计模式：[消息队列 Kafka 事务消息](../message-queue) — 成交分发的 Exactly-Once 保证
 - 性能：[Java 并发 Disruptor](../../programming-languages/java-concurrency) — LMAX Disruptor 内部原理
-- IO：[io_uring 深度](../../operating-systems/io-model#io_uring-深度解析) — 低延迟场景的内核旁路
+- IO：[io_uring 深度](../../operating-systems/io-model#io-uring-深度解析) — 低延迟场景的内核旁路

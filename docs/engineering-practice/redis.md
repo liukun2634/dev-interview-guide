@@ -684,7 +684,7 @@ XADD delay-pending * orderId 123 triggerAt 1717689600000
 3. **消费失败的重投** —— ZSet 方案要手动重 `ZADD`，建议增加 `retryCount` 字段防止无限循环
 :::
 
-详见 [消息队列 · RocketMQ 延迟级别](./message-queue#可靠投递与丢消息排查)。
+详见 [消息队列 · 延迟消息实现订单超时取消](../system-design/message-queue#实战案例-延迟消息实现订单超时取消)。
 
 ---
 

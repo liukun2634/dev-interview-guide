@@ -215,7 +215,7 @@ VLAN 帧:    [MAC][VLAN Tag (4B)][数据]
 
 > K8s 集群跨多节点部署 → 每个节点上的 Pod IP 范围不同 → Pod 间直接通信需要"打通"跨节点的二层网络。**VXLAN 把整个 K8s 集群的 Pod 网络封装成一个大二层**，跨节点 Pod 互通就像在同一个交换机下。Flannel 默认用 VXLAN，Calico 可选用 IPIP / VXLAN / BGP。
 
-详见 [K8s — CNI 与容器网络](../engineering-practice/kubernetes#场景-8-容器网络与-cni)。
+详见 [K8s — CNI 与容器网络](../engineering-practice/kubernetes#容器网络模型与-cni)。
 
 :::
 

@@ -7,7 +7,7 @@ title: Prompt Engineering 提示工程
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-Prompt Engineering（提示工程）是通过精心设计输入提示词来引导大语言模型产生**高质量、可控输出**的技术。它不修改模型参数，而是利用模型的**上下文学习（In-Context Learning）**能力，通过指令设计、示例构造和推理引导等手段，最大化模型在特定任务上的表现。Prompt Engineering 是当前 LLM 应用开发中最核心的基础技能。
+Prompt Engineering（提示工程）是通过系统化设计输入来引导大语言模型产生**更符合要求的输出**。它不修改模型参数，而是利用模型的**上下文学习（In-Context Learning）**能力，通过明确任务、提供相关上下文和示例、约束输出等手段改善效果。生产系统不应依赖“魔法措辞”：模型选择、上下文组装、结构化约束、工具权限和持续评测通常比反复润色一句提示词更重要。
 :::
 
 ## 什么是 Prompt Engineering
@@ -18,10 +18,12 @@ Prompt Engineering 是一门**系统化设计和优化 LLM 输入**的实践方�
 
 | 维度 | 说明 |
 |------|------|
-| **成本效率** | 无需训练基础设施，零边际成本即可快速迭代优化 |
+| **成本效率** | 无需训练基础设施，可快速迭代；仍有推理、评测和工程维护成本 |
 | **快速验证** | 几分钟内即可测试新想法，加速产品概念验证 |
 | **通用适配** | 同一模型通过不同 Prompt 可完成翻译、编程、分析等多种任务 |
 | **生产可控** | 精确控制输出格式、风格和内容边界，满足生产环境要求 |
+
+Prompt 只能影响概率分布，不能提供确定性保证。应先定义成功标准并建立评测集，再判断失败应通过改 Prompt、换模型、补数据/RAG、拆分流程，还是增加确定性代码与安全控制来解决。
 
 ---
 
@@ -54,11 +56,11 @@ Prompt Engineering 是一门**系统化设计和优化 LLM 输入**的实践方�
 
 ```
 ┌──────────────────────────────────────────────┐
-│  1. System Prompt（角色 + 全局约束）           │ ← 几乎不变，必缓存
+│  1. System Prompt（角色 + 全局约束）           │ ← 稳定时优先评估缓存
 ├──────────────────────────────────────────────┤
-│  2. 工具定义（Tool Schemas）                   │ ← Agent 场景，必缓存
+│  2. 工具定义（Tool Schemas）                   │ ← 稳定且复用时可缓存
 ├──────────────────────────────────────────────┤
-│  3. Few-shot 示例 / Skill 指令                │ ← 任务级，必缓存
+│  3. Few-shot 示例 / Skill 指令                │ ← 任务级，按复用情况缓存
 ├──────────────────────────────────────────────┤
 │  4. 长期记忆 / 用户画像                        │ ← 按用户/会话缓存
 ├──────────────────────────────────────────────┤  ← 缓存断点
@@ -76,24 +78,26 @@ Prompt Engineering 是一门**系统化设计和优化 LLM 输入**的实践方�
 | **压缩 Compression** | 长内容如何缩短？ | 摘要、关键句抽取、删除冗余、用更紧凑的 schema |
 | **驱逐 Eviction** | Token 超限时丢什么？ | 滑动窗口、按重要性打分、压缩老对话为摘要 |
 | **排序 Ordering** | 关键信息放窗口哪个位置？ | 重要内容放**首尾**，避开"Lost in the Middle" |
-| **缓存 Caching** | 哪些前缀稳定可缓存？ | 不变部分前置、动态部分后置（见 [Agent — Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)）|
+| **缓存 Caching** | 哪些前缀稳定可缓存？ | 不变部分前置、动态部分后置（见 [Agent — Prompt Caching](./ai-agents#prompt-caching)）|
+
+这些组件不仅占用 Token，也有不同的**信任级别**：开发者指令通常高于用户指令，而检索文档、网页和工具返回值应被视为不可信数据。Markdown/XML 分隔符有助于模型理解边界，但不是安全隔离；涉及敏感数据或高风险动作时仍需在应用层做授权、校验和审批。
 
 ### Lost in the Middle 现象
 
 ::: warning ⚠️ 长上下文的关键陷阱
 
-研究表明：当关键信息位于上下文窗口的**中间位置**时，模型的回忆准确率显著下降——即使模型号称 128K/1M 上下文，**有效注意力**仍然偏向首尾。
+研究表明：当关键信息位于上下文窗口的**中间位置**时，部分模型和任务的回忆准确率会下降；标称上下文长度不等于所有位置都能同等可靠地利用。
 
 **实践应对**：
-- RAG 检索结果按相关性排序后，把**最相关的放在最后**（紧贴用户问题）
-- 关键指令在 System Prompt **开头复述一次，结尾再强调一次**
+- 用目标模型和真实任务测试片段顺序；通常把最相关证据靠近问题，并保留清晰的来源标记
+- 把关键规则放在高优先级消息中，避免依赖机械重复或“大写强调”
 - 长文档处理时，不要简单按原顺序塞入；先做摘要 + 关键片段抽取
 
 :::
 
 ### 面试加分点
 
-> **能讲出"Prompt Engineering 是怎么写一句话，Context Engineering 是怎么决定整个上下文窗口里放什么、不放什么"**——这一句话就能区分初级和中高级候选人。Agent / RAG 系统的 90% 工程问题，本质上都是 Context Engineering 问题。
+> **能讲出“Prompt Engineering 关注如何表达任务，Context Engineering 关注整个上下文窗口放什么、不放什么、何时更新”**，说明已经从提示词技巧进入系统工程视角。Agent / RAG 中大量质量、成本和延迟问题都与上下文选择有关，但权限、工具执行和业务正确性仍需独立治理。
 
 ---
 
@@ -132,7 +136,7 @@ structured_prompt = """分析以下代码的安全漏洞。
 
 ### 原则三：角色设定（Role Setting）
 
-通过设定角色激活模型在特定领域的知识和表达方式：
+角色设定主要用于明确视角、受众和表达标准，并不会赋予模型新的事实知识或权限：
 
 ```python
 role_prompt = """你是一位有 10 年经验的高级后端架构师，
@@ -186,11 +190,11 @@ few_shot_prompt = """判断以下代码评审评论的情感倾向。
 **选择示例的要点**：
 - 示例应覆盖各种典型情况（包括边界情况）
 - 示例顺序可能影响结果，建议将最具代表性的放在最后
-- 通常 3~5 个示例效果最佳，过多反而可能引入噪声
+- 从少量且多样的示例开始，用评测决定数量；过多示例会增加 Token 成本，也可能引入噪声
 
 ### Chain-of-Thought (CoT)（思维链）
 
-引导模型在给出最终答案前**逐步展示推理过程**，显著提升复杂推理任务的准确率：
+对部分传统模型和复杂推理任务，提供分解示例或要求输出**可核验的中间步骤**可能提升准确率：
 
 ```python
 # Zero-shot CoT：添加一句 "Let's think step by step"
@@ -222,7 +226,7 @@ cot_few_shot = """问题：一个分布式系统中有 5 个节点，
 推理过程："""
 ```
 
-Wei et al. (2022) 的研究表明，CoT 在数学推理、逻辑推理等任务上可将准确率提升 **10%~40%**。
+Wei et al. (2022) 展示了 CoT 在部分数学和逻辑基准上的提升，但收益依赖模型、任务和示例，不能套用固定幅度。对已经在内部进行推理的 reasoning 模型，“think step by step”可能无益甚至降低效果；通常应给清晰目标和约束，并要求简短结论或可验证证据，而不是索取完整隐藏推理过程。
 
 ### Self-Consistency（自一致性）
 
@@ -239,7 +243,7 @@ graph TD
     V --> R["最终答案 A"]
 ```
 
-实现时通常将 Temperature 设为 0.7~1.0 以增加采样多样性，然后对最终答案取众数。
+实现时需要非零采样多样性，再对可规范化的最终答案投票。具体 Temperature/Top-p 与样本数依模型而异；部分推理模型不支持或不建议直接调 Temperature，应按目标模型文档和评测结果配置。
 
 ### Tree-of-Thought (ToT)（思维树）
 
@@ -271,9 +275,9 @@ ReAct 将推理与行动交替进行，是 AI Agent 的核心设计模式。详�
 
 | 角色 | 作用 | 说明 |
 |------|------|------|
-| **System Prompt** | 设定全局行为规则 | 角色定义、输出格式、约束条件，通常不对终端用户可见 |
+| **System / Developer Prompt** | 设定应用行为规则 | 角色定义、业务约束、工具使用规则；具体角色名和优先级以供应商 API 为准 |
 | **User Prompt** | 用户的输入内容 | 具体问题、待处理数据、任务指令 |
-| **Assistant Prompt** | 模型的历史回复 | 多轮对话中的上下文，也可用于预填充引导输出格式 |
+| **Assistant Prompt** | 模型的历史回复 | 多轮对话中的上下文；部分 API 支持预填充，部分模型或结构化输出模式不兼容 |
 
 ```python
 messages = [
@@ -295,7 +299,7 @@ messages = [
 ]
 ```
 
-**预填充（Prefill）技巧**：在 Assistant 消息中预先写入输出的开头部分（如 `{"`），可以强制模型按照指定格式续写，减少格式偏差。
+**预填充（Prefill）技巧**：部分 API 允许在 Assistant 消息中预先写入输出开头，但它只能倾向性引导，不能“强制”格式，且并非所有模型或结构化输出模式都支持。生产中的机器可读输出应优先使用供应商原生 Structured Outputs / strict JSON Schema。
 
 ---
 
@@ -303,7 +307,7 @@ messages = [
 
 ### JSON Mode
 
-许多 LLM API 提供原生 JSON 模式，强制模型输出有效 JSON：
+许多 LLM API 提供 JSON Mode 或 Structured Outputs：**JSON Mode 通常只保证可解析 JSON，不保证符合业务 Schema；Structured Outputs / strict mode 才约束受支持的 JSON Schema 子集**。两者都不保证字段值在业务上正确，也要处理拒答、截断、内容过滤和供应商支持差异。
 
 ```python
 # OpenAI JSON Mode 示例
@@ -316,14 +320,11 @@ response = client.chat.completions.create(
     ]
 )
 
-# Claude 结构化输出：通过 system prompt 约束
-system_prompt = """严格按以下 JSON Schema 输出，不包含任何其他文字：
-{
-  "intent": "分类标签",
-  "confidence": 0.0-1.0,
-  "entities": [{"name": str, "type": str}]
-}"""
+# 支持时优先使用供应商原生 JSON Schema / strict 模式，
+# 不支持时再用 Prompt + 本地 Schema 校验 + 有界重试作为降级方案。
 ```
+
+结构化输出解决的是**语法和形状**，不是语义正确性或安全授权。下游仍应执行类型之外的业务校验，例如资源归属、金额上限、枚举白名单和跨字段约束；不要把模型生成的 JSON 直接拼接进 SQL、HTML 或 Shell。
 
 ### 结构化数据提取
 
@@ -349,6 +350,14 @@ extraction_prompt = """从以下简历文本中提取候选人信息。
 ## 工具使用与 Function Calling
 
 Function Calling 允许 LLM 在生成过程中识别需要调用外部工具的时机，并输出结构化的调用参数。关于 Function Calling 的工作流程、工具定义格式及 MCP 协议的详细介绍，请参阅 [AI Agent 智能体](./ai-agents)。
+
+### 工具提示的边界
+
+- 工具描述要明确“何时使用、何时不用”、参数含义和错误语义，初始暴露的工具应尽量少
+- 使用 strict schema 可减少参数格式错误，但**工具调用只是模型提出的请求，不是授权决定**
+- 应用必须重新校验参数、当前用户身份与资源权限；高风险副作用操作需幂等、限额或人工确认
+- 工具结果和远程 MCP 内容属于不可信输入，可能携带间接 Prompt Injection；返回模型前应标注来源并限制可执行能力
+- 不要让模型填写应用已知的用户 ID、租户 ID 等授权上下文，应由可信代码注入
 
 ---
 
@@ -406,6 +415,8 @@ def build_safe_prompt(system_instructions: str,
 - **输入过滤**：检测和过滤常见注入模式
 - **输出验证**：检查模型输出是否包含敏感信息泄露
 - **最小权限**：限制模型可调用的工具范围和权限级别
+
+上述 Prompt 层措施只能降低风险，不能建立可靠的代码/数据隔离。对外部内容应沿调用链保留来源与信任标签，并把真正的安全边界放在检索 ACL、工具授权、沙箱、网络出口控制和人工审批上。
 
 ---
 
@@ -485,11 +496,11 @@ def evaluate_prompt(prompt_template: str, test_cases: list,
 
 ::: warning ⚠️ 常见误区
 
-1. **指令过于模糊或笼统**：Prompt 中缺少具体约束（长度、格式、风格、受众），导致模型输出不可控。应始终明确"做什么、怎么做、输出什么格式"。
+1. **把提示工程当成“魔法措辞”**：礼貌用语、大写强调或固定咒语不能替代清晰目标、相关上下文和评测。先定位失败来源，再决定是否改 Prompt。
 
 2. **示例与任务不匹配**：Few-shot 示例的分布与实际推理数据差异过大，模型学到的是示例中的偏差而非通用模式。示例应覆盖典型场景和边界情况。
 
-3. **忽视 Prompt 注入风险**：在面向用户的产品中，将用户输入直接拼入 System Prompt 而不做隔离和过滤，容易被注入攻击利用。
+3. **把分隔符当成安全边界**：将用户输入直接拼入高优先级指令会扩大攻击面；即使使用 XML 标签，也必须配合最小权限、应用层授权和输出处理。
 
 4. **过度依赖单次测试**：仅用一两个样例判断 Prompt 效果好坏。LLM 输出具有随机性（Temperature > 0 时），必须通过多次测试和系统化评估来验证。
 
@@ -532,8 +543,8 @@ def evaluate_prompt(prompt_template: str, test_cases: list,
 
 **实践建议**：
 1. 先尝试 Zero-shot，如果效果不佳再加入示例（Few-shot）
-2. 涉及推理任务时，在 Prompt 末尾加上"请一步一步推理"（Zero-shot CoT）即可显著提升效果
-3. Few-shot CoT 是效果最好但成本最高的方案——每个示例都包含完整推理链
+2. 涉及推理任务时，先测试目标模型；对 reasoning 模型通常直接说明目标、约束和验收标准，不必添加“请一步一步推理”
+3. 需要可审计过程时，要求输出关键计算、证据或验证步骤；Few-shot CoT 可能有效但成本高，且并非总是最佳
 4. 对于要求高准确率的场景，可在 CoT 基础上叠加 Self-Consistency（多次采样取众数）
 
 ---
@@ -568,6 +579,8 @@ Prompt 注入是一种**安全攻击手段**，攻击者通过在用户输入中
    - 最小权限原则——限制模型可调用的工具和访问的数据范围
    - 关键操作（如删除数据、发送邮件）需人工确认
 
+分隔符和关键词检测都不是安全边界；还应把外部文档/工具结果标记为不可信，服务端对每次工具调用重新鉴权，并限制网络出口和数据流向。
+
 ---
 
 ### Q3：如何系统化地评估和优化一个 Prompt 的效果？
@@ -601,5 +614,7 @@ Prompt 注入是一种**安全攻击手段**，攻击者通过在用户输入中
 - [Chain-of-Thought Prompting Elicits Reasoning in Large Language Models (Wei et al., 2022)](https://arxiv.org/abs/2201.11903)
 - [Tree of Thoughts: Deliberate Problem Solving with Large Language Models](https://arxiv.org/abs/2305.10601)
 - [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
-- [OpenAI Prompt Engineering Guide](https://platform.openai.com/docs/guides/prompt-engineering)
-- [Anthropic Prompt Engineering Documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview)
+- [OpenAI Prompt Engineering Guide](https://developers.openai.com/api/docs/guides/prompt-engineering)
+- [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [OpenAI Function Calling](https://developers.openai.com/api/docs/guides/function-calling)
+- [Anthropic Prompt Engineering Documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview)

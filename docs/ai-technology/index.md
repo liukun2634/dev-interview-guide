@@ -27,16 +27,20 @@ Prompt 工程（System Prompt + 上下文组装）
   │     ├── Reranking → 精排
   │     └── 上下文注入 Prompt
   ├── 是否需要执行动作？
-  │     └── Agent → 规划 → 工具调用 → 反思循环
+  │     └── Agent Harness → 规划 → 行动/工具调用 → 观察 → 验证/恢复
+  │           └── 按需加载 Skill、连接 MCP、持久化检查点
   └── 否 → 直接调用 LLM
   ↓
 LLM 推理（Transformer → 自注意力 → 解码生成）
   ├── KV Cache 加速
   ├── 量化 / 推测解码优化
+  ├── Structured Outputs / 业务校验
   └── 安全护栏（Guardrails）
   ↓
 流式输出 → 前端渲染 → 用户看到回答
 ```
+
+生产链路通常还会在模型前增加 **AI Gateway + Model Router**，统一处理协议适配、鉴权、限流、Fallback、缓存、Batch 与成本；在全链路旁路记录 Trace，并用离线/在线 Evals 判断质量。分钟级 Agent 任务则使用持久化 Job/Task、队列和检查点，而不是依赖一条长连接。
 
 ## AI 知识体系全景
 
@@ -49,8 +53,8 @@ LLM 推理（Transformer → 自注意力 → 解码生成）
 │  (模型训练 / 推理优化 / 评估对齐 / 应用架构)            │
 ├─────────────────────────────────────────────────────┤
 │          AI Agent              │   RAG 系统           │
-│  (ReAct / Tool Use /           │  (检索 / 向量数据库 / │
-│   Memory / MCP)                │   Rerank / 评估)      │
+│  (Harness / Skills / Tool Use /│  (检索 / 向量数据库 / │
+│   MCP / A2A / 长任务)           │   Rerank / 评估)      │
 ├─────────────────────────────────────────────────────┤
 │               LLM 应用技术                            │
 │  (Prompt Engineering / Embedding / 向量数据库)         │
@@ -84,9 +88,12 @@ LLM 推理（Transformer → 自注意力 → 解码生成）
 | RAG | 检索外部知识 + 注入 Prompt，解决 LLM 知识截断和幻觉问题 | 企业级 AI 应用的主流架构 |
 | Agent | LLM + 规划 + 工具调用 + 记忆，从"回答问题"进化到"完成任务" | AI 应用的下一个范式 |
 | RLHF | 用人类反馈训练奖励模型，再优化 LLM 的输出偏好 | 让 LLM 从"能说话"到"说人话" |
-| LoRA | 冻结原始权重，只训练低秩增量矩阵 | 低成本微调的事实标准 |
+| LoRA | 冻结原始权重，只训练低秩增量矩阵 | 参数高效微调的主流基线之一 |
 | 量化 | 降低模型权重精度（FP16→INT4），减少显存和计算量 | 让大模型能在消费级硬件运行 |
 | Function Calling | LLM 输出结构化的函数调用指令，由系统执行 | Agent 调用工具的核心机制 |
+| Structured Outputs | 用受支持的 JSON Schema 约束输出结构 | 降低解析失败，但仍需事实与业务校验 |
+| AI Gateway | 统一模型协议、鉴权、路由、容错、成本和 Trace | 多模型生产治理入口 |
+| Harness | Agent 的运行时控制层，管理 Skill、工具、上下文、权限和循环 | 决定 Agent 能否可靠长期运行 |
 
 ---
 
@@ -120,7 +127,7 @@ AI 面试题有三个层次：
 | Embedding + 向量数据库 | 关键词搜索无法捕捉语义 → 语义相似度检索 |
 | RAG | LLM 知识有截断日期 + 会产生幻觉 → 注入实时外部知识 |
 | Agent | LLM 只能生成文本 → 让它能规划、使用工具、完成任务 |
-| LoRA / QLoRA | 全量微调成本太高 → 低秩适配，用 1% 参数量达到接近效果 |
+| LoRA / QLoRA | 全量微调成本太高 → 只训练低秩适配参数；参数占比与效果取决于秩、目标层、数据和任务 |
 | 量化 | 模型太大放不进显存 → 降低精度换空间 |
 | KV Cache | 自回归解码每步重复计算 → 缓存避免冗余 |
 | RLHF / DPO | 预训练模型不懂人类偏好 → 用反馈信号对齐 |
@@ -134,10 +141,11 @@ AI 面试题有三个层次：
 |---|---|---------|
 | RAG | 微调 | RAG 注入外部知识（不改模型），微调改变模型权重（不需要检索） |
 | RAG | Long Context | RAG 检索最相关片段（精准），Long Context 塞入全文（可能遗漏中间内容） |
-| RAG | Skill | RAG 是"教模型查资料"（注入知识），Skill 是"教模型按 SOP 办事"（注入流程 + 工具子集）；两者可组合，Skill 内部可调用 RAG |
-| Skill | Tool | Skill 是完整的任务流程（含指令+工具集+约束），Tool 是单个原子操作；Skill 通常会编排多个 Tool |
+| RAG | Skill | RAG 是“给任务找资料”，Skill 是“给 Agent 加载过程知识与资源”；两者可组合，权限仍由宿主 Harness 强制 |
+| Skill | Tool | Skill 是可加载的指令/脚本/参考资料包，Tool 是可调用能力；Skill 可以指导多个 Tool，但不会自动授予工具权限 |
 | MCP | A2A | MCP 是 Agent 与工具/数据源之间的协议（垂直），A2A 是 Agent 与 Agent 之间的协议（水平） |
-| Reasoning Model | 普通 LLM | Reasoning Model 在推理时显式生成长思维链（test-time compute），适合数学/代码；普通 LLM 走"快思考"路径，延迟低成本低 |
+| Function Calling | MCP | Function Calling 是模型生成工具调用的机制；MCP 是 AI 应用连接外部能力的协议，后者不替代前者 |
+| Reasoning Model | 普通 LLM | Reasoning Model 使用额外 test-time compute；按 reasoning effort 权衡质量、延迟和成本，原始思维链通常不直接暴露 |
 | 单模型调用 | Compound AI System | 单模型简单但不可靠，复合系统多组件协作更可靠但工程复杂 |
 | LoRA | 全量微调 | LoRA 只训练增量矩阵（省资源），全量微调更新所有参数（效果上限更高） |
 | RLHF | DPO | RLHF 需要单独训练奖励模型，DPO 直接从偏好数据优化（更简单） |
@@ -196,6 +204,7 @@ AI 的核心机制都可以用架构图表达：
 | AI Agent 智能体 | ReAct、记忆系统、Tool Use、MCP、多 Agent、框架对比 | 🔥🔥🔥 | [AI Agent](./ai-agents) |
 | Agent Skills 编写指南 | Skill 定义形式、指令设计、工具权限、触发路由、测试验证 | 🔥🔥 | [Skills 编写指南](./ai-agent-skills) |
 | Harness Engineering | Prompt 分层架构、执行循环、上下文预算、安全控制、可观测性 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
+| Computer Use 与多 Agent 编排 | GUI 操作循环、视觉定位、沙箱、安全与编排 | 🔥🔥 | [Computer Use](./agent-computer-use) |
 
 ### AI 工程实践
 
@@ -207,6 +216,8 @@ AI 的核心机制都可以用架构图表达：
 | AI 应用架构设计 | 架构模式、模型服务、API 设计、成本优化、可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
 | AI 系统设计面试题 | 设计框架、智能客服/代码补全案例、权衡分析 | 🔥🔥 | [系统设计](./ai-system-design) |
 | AI 前沿趋势与新范式 | Compound AI Systems、Model Routing、GraphRAG、Evals-Driven、AI 可观测性 | 🔥🔥🔥 | [前沿趋势](./ai-trends) |
+| 视觉语言模型 | 多模态架构、视觉编码、训练与应用 | 🔥🔥 | [视觉语言模型](./vision-language-models) |
+| AI 安全与越狱防护 | Prompt Injection、数据泄露、权限隔离与 Red Teaming | 🔥🔥🔥 | [安全与越狱](./security-and-jailbreak) |
 
 ### AI 面试准备
 
@@ -227,7 +238,7 @@ AI 的核心机制都可以用架构图表达：
   Prompt Engineering → Embedding 与向量数据库 → RAG
 
 第三阶段（高级应用）：
-  AI Agent → AI 应用架构设计 → AI 系统设计
+  AI Agent → Agent Skills → Harness Engineering → AI 应用架构设计 → AI 系统设计
 
 第四阶段（工程深入，按需学习）：
   模型训练（LoRA）→ 推理优化（KV Cache / 量化）→ 评估与对齐
@@ -247,6 +258,8 @@ AI 的核心机制都可以用架构图表达：
 | KV Cache 是什么？ | 缓存已计算的 K/V，Decode 阶段只算新 token 的 Q 与全部 K/V | [推理优化](./inference-optimization) |
 | Prompt Engineering 的核心技巧？ | Few-shot 示例 + CoT 推理链 + 结构化输出 + 角色设定 | [Prompt Engineering](./prompt-engineering) |
 | 如何评估 LLM？ | 自动基准(MMLU/HumanEval) + 人工评估 + LLM-as-Judge | [评估与对齐](./evaluation-and-alignment) |
+| MCP 会替代 Function Calling 吗？ | 不会；MCP 管连接与发现，Function Calling 管模型生成调用，两者可组合 | [应用架构](./ai-architecture) |
+| 长时间运行 Agent 怎么设计？ | 持久化 Task + Queue/Worker + Checkpoint + 预算/取消/审批 | [Harness Engineering](./harness-engineering) |
 
 ## 对比速查
 

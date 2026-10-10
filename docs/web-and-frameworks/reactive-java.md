@@ -348,7 +348,7 @@ class OrderActor extends AbstractBehavior<OrderActor.Command> {
 未来：    响应式 vs 虚拟线程 = "工具，不是宗教"
 ```
 
-详见 [Spring WebFlux · 虚拟线程时代的选型](./spring-mvc/webflux#虚拟线程时代-webflux-还有必要吗boot-32-必读)。
+详见 [Spring WebFlux · 虚拟线程时代的选型](./spring-mvc/webflux#虚拟线程时代-webflux-还有必要吗-boot-3-2-必读)。
 
 ---
 

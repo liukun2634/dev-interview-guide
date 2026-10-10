@@ -218,7 +218,7 @@ Object o = ois.readObject();   // ← 攻击点
 
 ## JWT 攻击专题
 
-详见 [Spring Security — JWT 顶门 5 大坑](../web-and-frameworks/spring-security#jwt-顶门-5-大坑)。
+详见 [Spring Security — JWT 顶门 5 大坑](../web-and-frameworks/spring-security#jwt-顶门-5-大坑-必背)。
 
 ## mTLS（双向 TLS）— K8s / 微服务必备
 

@@ -34,7 +34,7 @@ graph LR
 | 多步骤文档处理 | Prompt Chain | 步骤固定、可预测、无需动态决策 |
 | 企业知识问答 | RAG Pipeline | 需要外部知识、实时更新、数据隐私 |
 | 复杂研究任务 | Agent Loop | 需要动态决策、多工具协作 |
-| 软件开发、数据分析 | 多 Agent 协作 | 任务可分解、需要多种专业能力 |
+| 软件开发、数据分析 | 单 Agent + Harness，必要时多 Agent | 先用可控执行循环；只有角色隔离或并行确有收益时再拆分 |
 
 ---
 
@@ -169,8 +169,9 @@ class ModelRouter:
 
     def __init__(self):
         self.models = {
-            "simple": "claude-haiku-4-5-20251001",    # 低成本
-            "complex": "claude-sonnet-4-6",     # 高能力
+            # 业务代码依赖稳定逻辑名；真实模型 ID 由配置中心更新。
+            "simple": "fast-low-cost",
+            "complex": "frontier-reasoning",
         }
 
     def route(self, query: str) -> str:
@@ -186,7 +187,7 @@ class ModelRouter:
 
 ### LLM 网关与多模型管理
 
-2025 年起，**LLM 网关（Gateway）** 已成为生产 AI 应用的标准中间件——所有 LLM 调用不直接打到 OpenAI/Anthropic/DeepSeek，而是先经过统一网关。这是 2025-2026 年 AI 架构面试的高频考点。
+在多模型、多团队或强治理场景中，**AI Gateway（AI 网关）** 常作为生产调用入口；小型、单模型应用则未必需要额外一跳。网关不应只追求“兼容某一家 API”，还要处理不同供应商在推理参数、工具调用、结构化输出和流式事件上的语义差异。
 
 #### 为什么需要 LLM 网关
 
@@ -203,7 +204,7 @@ class ModelRouter:
 
 | 方案 | 部署 | 核心特性 | 适用 |
 |------|------|---------|------|
-| **LiteLLM** | 自建 / SaaS | 100+ 模型统一 SDK，路由 / 重试 / 缓存 / Spend Tracking | **最广泛使用**，Python 团队首选 |
+| **LiteLLM** | 自建 / SaaS | 多模型统一 SDK，路由 / 重试 / 缓存 / Spend Tracking | Python 团队快速接入 |
 | **Portkey** | SaaS / 自建 | 网关 + 可观测 + Prompt 库 + Guardrails | 想要"开箱即用全套" |
 | **Helicone** | SaaS / 自建 | 轻量代理，重点在可观测与成本分析 | 已有调用层，只想加观测 |
 | **OpenRouter** | SaaS | 100+ 模型聚合，按 token 转售 | 个人/小团队快速试模型 |
@@ -233,26 +234,26 @@ graph LR
 ```python
 import litellm
 
-# 1. 统一 API 调用任何模型
+# 1. 统一 API 调用不同供应商模型（ID 仅为示例，生产中应配置化）
 response = litellm.completion(
-    model="claude-sonnet-4-6",     # 改成 "gpt-4o" / "deepseek-chat" 即可
+    model="anthropic/claude-sonnet-5",
     messages=[{"role": "user", "content": "Hello"}],
 )
 
 # 2. 自动 Fallback：主模型失败时按列表降级
 response = litellm.completion(
-    model="claude-sonnet-4-6",
+    model="anthropic/claude-sonnet-5",
     messages=[...],
-    fallbacks=["gpt-4o", "deepseek-chat"],  # Claude 挂了打 GPT，再挂打 DeepSeek
+    fallbacks=["openai/gpt-5.6-terra", "deepseek/deepseek-chat"],
 )
 
 # 3. 路由策略（最低延迟 / 最低成本 / 加权轮询）
 from litellm import Router
 router = Router(
     model_list=[
-        {"model_name": "smart", "litellm_params": {"model": "claude-sonnet-4-6"}},
-        {"model_name": "smart", "litellm_params": {"model": "gpt-4o"}},
-        {"model_name": "smart", "litellm_params": {"model": "deepseek-chat"}},
+        {"model_name": "smart", "litellm_params": {"model": "anthropic/claude-sonnet-5"}},
+        {"model_name": "smart", "litellm_params": {"model": "openai/gpt-5.6-terra"}},
+        {"model_name": "smart", "litellm_params": {"model": "deepseek/deepseek-chat"}},
     ],
     routing_strategy="latency-based-routing",  # 自动挑当前最快的
 )
@@ -274,25 +275,50 @@ response = router.completion(model="smart", messages=[...])
 - **Model Router** 只决定"这个请求用哪个模型"，是网关内的一个模块
 - **LLM Gateway** 是包含 Router + 协议适配 + 容错 + 计费 + 缓存 + 可观测的**完整中间件层**
 
+生产路由不能只按“问题长度”决策。更稳妥的做法是先在离线评估集上得到每个模型的质量、延迟和成本曲线，再按租户、任务类型、数据地域、工具支持、上下文长度和实时健康状态路由；降级后还要验证输出契约是否兼容，避免“请求成功但语义降级”。
+
 ### 缓存策略
 
 | 层级 | 说明 | 效果 |
 |------|------|------|
-| **Prompt 缓存** | 缓存 System Prompt 的编码结果（Anthropic Prompt Caching） | 减少 90% 预处理 Token 成本 |
+| **Provider Prompt Cache** | 复用相同的长前缀；命中、TTL、写入费和最低长度因供应商/模型而异 | 降低重复 prefill 的延迟与费用 |
 | **语义缓存** | 对语义相似的查询返回缓存结果 | 避免重复 LLM 调用 |
-| **响应缓存** | 对完全相同的输入缓存输出 | 零延迟返回 |
+| **响应缓存** | 对完全相同的输入缓存输出 | 避免模型调用，通常显著降低延迟 |
+
+缓存键至少要包含模型/快照、Prompt 与工具版本、租户和权限域；语义缓存还要考虑时效、个性化与安全策略，不能跨权限复用结果。离线分类、Embedding、评估等非实时任务优先考虑供应商的 **Batch API**；OpenAI、Anthropic 与 Gemini 的官方 Batch 方案在本文核验时均提供相对标准同步调用的折扣，但完成窗口和支持模型不同，接入前应查官方文档。
 
 ### 成本估算参考
 
-> **注意**：模型定价变化频繁，以下仅为参考。请以各提供商官网最新定价为准。
+> **核验日期：2026-10-10。** 下表来自 [OpenAI Pricing](https://developers.openai.com/api/docs/pricing)、[Claude Pricing](https://platform.claude.com/docs/en/about-claude/pricing) 和 [Gemini Pricing](https://ai.google.dev/gemini-api/docs/pricing)，单位为美元 / 1M Token，采用标准文本调用，不含缓存写入、工具、运行时、Batch/Flex/Fast、区域处理和企业折扣。API ID 不等于客户端产品的显示名，调用前还需核对账户资格、快照和 SDK 支持。
 
-| 模型 | 输入价格（/1M Token） | 输出价格（/1M Token） |
-|------|----------------------|----------------------|
-| GPT-4o | $2.50 | $10.00 |
-| GPT-4.1 | $2.00 | $8.00 |
-| Claude Sonnet 4.6 | $3.00 | $15.00 |
-| Claude Haiku 4.5 | $0.80 | $4.00 |
-| Qwen 2.5（自部署） | 硬件成本 | 硬件成本 |
+| 模型 / API ID | 价格适用条件 | 输入 | 缓存命中输入 | 输出 |
+|---------------|--------------|------|--------------|------|
+| GPT-6 Astra / `gpt-6-astra` | 输入不超过 272K Token | $10.00 | $1.00 | $50.00 |
+| GPT-6.1 Sol / `gpt-6.1-sol` | 输入不超过 272K Token | $2.00 | $0.10 | $10.00 |
+| GPT-6 Luna / `gpt-6-luna` | 输入不超过 272K Token | $0.10 | $0.01 | $0.50 |
+| Claude Opus 5.5 / `claude-opus-5-5` | 标准调用，支持的长上下文按标准单价 | $4.00 | $0.20 | $20.00 |
+| Claude Sonnet 5.5 / `claude-sonnet-5-5` | 标准调用，缓存命中价已于 10 月更新 | $2.00 | $0.10 | $10.00 |
+| Claude Haiku 5.5 / `claude-haiku-5-5` | 单次输入不超过 100K Token | $0.10 | $0.01 | $0.50 |
+| Claude Haiku 5.5 / `claude-haiku-5-5` | 单次输入超过 100K Token，含缓存输入 | $0.50 | $0.05 | $2.50 |
+| Gemini 3.8 Flash / `gemini-3.8-flash` | 优惠价至 2026-12-31，缓存另收存储费 | $0.75 | $0.075 | $3.75 |
+
+Claude Sonnet 5 原计划在 2026-09-01 调整至 $3/$15 的涨价已取消，$2/$10 已成为标准价，旧预测不再适用。Gemini 3.8 Flash 官方公告的 2027-01-01 起 $1.50/$7.50 是未来计划，不是当前价格。OpenAI 的长上下文价格与表中不同，不能拿短上下文价格估算百万 Token 请求。
+
+成本模型不要只写“输入 + 输出”：
+
+$$
+Cost = Input + CacheWrite + CacheRead + Reasoning/Output + Tool + Runtime
+$$
+
+其中推理 Token 通常按输出计费；长上下文、区域处理和优先服务也可能改变单价。应从实际 Trace 的 Token 分布、缓存命中率和工具调用次数做容量估算，而不是用一次 Demo 的平均值外推。
+
+更有用的指标是**每个验收成功任务的总成本**：计入失败尝试、重试、子 Agent、工具、缓存写入和运行时，再除以通过验收的任务数。模型升级还可能改变 Tokenizer，不能把同一段文本的 Token 数跨模型直接复用。降低单价或提高 effort 是否有净收益，要用同一业务评测集证明。
+
+### Reasoning Effort 与结构化输出
+
+推理强度是质量、延迟和成本的独立调节旋钮。不同供应商的参数和值不统一（例如 OpenAI 的 `reasoning.effort`、Gemini 的 `thinking_level`、Claude 自适应思考配合 `output_config.effort`），默认值也依模型而变。生产中应按任务路由并通过 Evals 选择档位：分类/抽取偏低，复杂调试和长程规划才提高；同时记录实际 reasoning tokens，不能假设“高”一定更好。
+
+对需要机器消费的结果，优先使用供应商支持的 **Structured Outputs / strict function calling**，用 JSON Schema 约束结构，而不是提示“只返回 JSON”。它能保证受支持 Schema 的形状，不保证字段事实正确；仍需处理拒答、截断、内容过滤和业务校验。工具参数用 Function Calling，面向用户的结构化响应使用响应 Schema，两者不要混为一谈。
 
 ---
 
@@ -315,16 +341,21 @@ class InputGuard:
             r"ignore (previous|all) instructions",
             r"system prompt",
         ]
+        suspicious = False
         for pattern in injection_patterns:
             if re.search(pattern, user_input, re.IGNORECASE):
-                return False, "检测到潜在的 Prompt 注入"
+            suspicious = True
 
         # 3. PII 检测（个人身份信息）
         if self.detect_pii(user_input):
             return False, "输入包含个人身份信息"
 
-        return True, "通过"
+        # 字符串规则只能提供风险信号，不能作为最终授权或唯一拦截依据。
+        # 即使未命中，工具端仍需鉴权、参数校验、最小权限与高风险审批。
+        return True, "通过（需下游继续执行确定性安全控制）" if suspicious else "通过"
 ```
+
+    关键词/正则可能误报正常安全讨论，也容易被改写绕过。它适合打标、路由到更严格策略或触发人工复核，不适合单独承担 Prompt Injection 防线；网页、RAG 和工具结果中的**间接注入**尤其无法只靠检查用户输入发现。
 
 ### 输出过滤
 
@@ -348,8 +379,10 @@ class InputGuard:
 | **RAG** | 检索到的文档、相似度分数、重排序结果 |
 | **Agent** | 每步决策、工具调用、中间结果 |
 | **成本** | 单次调用成本、累计成本、预算剩余 |
+| **质量** | 任务成功率、事实性、引用正确率、结构契约通过率、用户反馈 |
+| **版本** | 模型快照、Prompt/Skill/工具 Schema、检索索引与评估集版本 |
 
-常用的 LLM 可观测性工具：**LangSmith**、**Helicone**、**Langfuse**。
+常用的 LLM 可观测性工具：**LangSmith**、**Helicone**、**Langfuse**。Trace 解决“发生了什么”，Evals 解决“结果是否足够好”：上线前跑离线黄金集，线上做分层抽样评估与用户反馈回流，并在模型、Prompt、工具或检索索引变更时执行回归。日志中的 Prompt、检索文档和工具结果可能包含 PII/密钥，必须脱敏、分权和设置保留期限。
 
 ---
 
@@ -383,14 +416,32 @@ graph TD
 
 ### MCP（Model Context Protocol）
 
-MCP 是由 Anthropic 提出并逐步成为行业标准的**模型-工具集成协议**。它定义了 LLM 应用与外部工具、数据源之间的标准化通信方式：
+MCP 最初由 Anthropic 提出，现作为 Linux Foundation 项目采用开放治理。它定义了 AI 应用与外部工具、数据源之间的标准化通信方式：
 
 - **统一接口**：工具提供方只需实现一次 MCP Server，即可被所有支持 MCP 的客户端调用
 - **动态发现**：LLM 应用可以在运行时发现和连接可用的工具和数据源
-- **标准化交互**：定义了 Resources（数据读取）、Tools（操作执行）、Prompts（提示模板）三类能力
-- **生态兼容**：已被 Claude Code、Cursor、VS Code 等主流开发工具采用
+- **Server 核心能力**：Resources（数据读取）、Tools（操作执行）、Prompts（提示模板）
+- **Client 与扩展能力**：Client 可提供 Elicitation；Tasks、MCP Apps、Skills over MCP 等属于双方显式协商的可选扩展，不应与核心原语混为一谈
+- **生态兼容**：已被多个 AI 助手和开发工具采用
 
-在架构设计中，MCP 正在替代传统的自定义 Function Calling 集成方式，成为 Agent 和工具调用场景的标准模式。
+MCP **不替代 Function Calling / Tool Calling**：Function Calling 是模型在一次推理中生成结构化工具调用的机制；MCP 是 Host/Client 与外部 Server 之间发现、传输和执行能力的协议。MCP Tool 通常仍会作为模型可调用的 Tool 暴露。对于进程内、少量且稳定的函数，原生 Function Calling 更简单；跨客户端复用、远程发现和统一授权时，MCP 更有价值。
+
+### Agent Harness 与协议分层
+
+生产 Agent 还需要独立的 **Harness（运行时控制层）**：组装指令、按需加载 Skill、注册工具、执行 Function Calling 循环、管理上下文与检查点、权限审批、重试/终止和 Trace。模型升级不能替代这些确定性控制。
+
+| 层次 | 解决的问题 | 不负责什么 |
+|------|-----------|-----------|
+| **Agent Skills** | 用 `SKILL.md` + 资源封装可复用 SOP，按需加载过程知识 | 不定义远程通信协议 |
+| **MCP** | AI 应用连接 Tools / Resources / Prompts | 不定义模型如何决定调用，也不负责 Agent 间委派 |
+| **A2A** | 独立 Agent 的发现、任务状态、消息与 Artifact 交换 | 不构建 Agent 内部执行循环 |
+| **Function Calling** | 模型输出受约束的工具名和参数 | 不提供跨进程发现、鉴权和传输 |
+
+截至 2026-08-09，MCP 与 A2A 均在 Linux Foundation 体系下开放治理，A2A 1.0 已发布；Agent Skills 是文件系统能力包规范，而 A2A Agent Card 中同名的 `AgentSkill` 只是远程能力描述。三层互补，不应包装成“统一协议已经解决全部互操作”。
+
+### 长时间运行 Agent
+
+分钟到小时级任务不能依赖单条同步 HTTP 连接。应把一次运行建模为持久化 Job/Task：保存目标、计划、事件日志、检查点、幂等键、预算和权限状态；通过队列调度 Worker，以轮询/Webhook/SSE 汇报进度，支持断点恢复、取消、超时和人工审批。供应商 Background API 或 A2A 长任务状态可作为执行通道，但业务状态与审计记录仍应由应用持久化。长任务还要设置最大步数/费用/工具调用数，定期压缩上下文，并在不可逆动作前暂停确认。
 
 将 DevOps 理念应用到 LLM 应用的全生命周期管理：
 
@@ -487,7 +538,7 @@ graph TD
 
 **成本优化**：
 - **模型路由**：简单查询→小模型（Haiku），复杂查询→大模型（Sonnet）
-- **Prompt 缓存**：Anthropic Prompt Caching 可减少 90% 预处理 Token 成本
+- **Prompt 缓存**：复用稳定长前缀，并监控 cache read/write tokens 与命中率
 - **语义缓存**：相似查询直接返回缓存结果
 - **Prompt 精简**：减少冗余指令，压缩 System Prompt
 - **输出长度控制**：设置合理的 max_tokens，避免冗长输出
@@ -506,7 +557,7 @@ graph TD
 | **迭代速度** | 最快 | 中等 | 最慢 |
 
 **选择原则**：
-1. **先试 Prompt Engineering**——80% 的需求可以通过好的 Prompt 解决
+1. **先试 Prompt Engineering**——先验证最小方案，再用评估结果决定是否增加复杂度
 2. **需要外部知识用 RAG**——特别是知识需要频繁更新的场景
 3. **行为模式改变用微调**——如统一输出风格、领域术语适配
 4. **三者可以组合**——如"微调模型 + RAG 知识库 + 精心设计的 Prompt"
@@ -515,7 +566,9 @@ graph TD
 
 ## 延伸阅读
 
-- [Building LLM Applications for Production (Chip Huyen)](https://huyenchip.com/2023/04/11/llm-engineering.html)
+- [Patterns for Building LLM-based Systems & Products](https://eugeneyan.com/writing/llm-patterns/)
 - [Efficient Memory Management for LLM Serving with PagedAttention (vLLM)](https://arxiv.org/abs/2309.06180)
 - [A Survey on Efficient Inference for Large Language Models](https://arxiv.org/abs/2404.14294)
-- [Model Context Protocol (MCP) Specification](https://modelcontextprotocol.io/)
+- [Model Context Protocol (MCP) Specification](https://modelcontextprotocol.io/specification/latest)
+- [A2A Protocol Specification](https://a2a-protocol.org/latest/specification/)
+- [Agent Skills Specification](https://agentskills.io/specification)

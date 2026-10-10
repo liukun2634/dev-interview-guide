@@ -15,9 +15,9 @@ LLM 推理优化是系统设计面试的高频考点。自回归解码的**逐 T
 LLM 推理分为两个阶段：
 
 - **预填充（Prefill）**：一次性处理所有输入 Token，是 **compute-bound**（计算密集型）
-- **解码（Decode）**：逐个生成输出 Token，每步需要访问所有历史 KV 状态，是 **memory-bound**（访存密集型）
+- **解码（Decode）**：逐个生成输出 Token，每步读取模型权重并访问相关历史 KV 状态，低批量时通常是 **memory-bound**（访存密集型）
 
-解码阶段是推理延迟的主要瓶颈——每生成一个 Token 都需要一次完整的前向传播，但实际计算量远小于显存读写量。优化推理的核心就是**减少访存、提高并行度、降低精度换取速度**。
+解码阶段常是长输出的主要瓶颈——每生成一个 Token 都需要一次前向传播。短输入或超长 Prompt 则可能由 Prefill/TTFT 主导；大批量、MoE 和多卡部署还可能转为计算或通信瓶颈。优化前应分别测 TTFT、TPOT、排队时间和吞吐，而不是默认只有一个瓶颈。
 
 ### 推理性能三角
 
@@ -57,13 +57,13 @@ graph LR
 
 ### KV Cache 显存开销
 
-KV Cache 的大小随序列长度线性增长：
+KV Cache 的大小随序列长度线性增长。对采用 GQA/MQA 的模型，应使用 **K/V 头数**而非 Q 头数：
 
 $$
-\text{KV Cache Size} = 2 \times n_{\text{layers}} \times n_{\text{heads}} \times d_{\text{head}} \times \text{seq\_len} \times \text{batch\_size} \times \text{bytes}
+  ext{KV Cache Size} = 2 \times n_{\text{layers}} \times n_{\text{kv-heads}} \times d_{\text{head}} \times \text{seq\_len} \times \text{batch\_size} \times \text{bytes}
 $$
 
-例如：LLaMA-70B（80 层、64 头、128 维、FP16）在序列长度 4096、batch=32 时，KV Cache 约需 **40 GB** 显存。
+例如 Llama 2 70B 使用 8 个 K/V 头（而不是 64 个 Q 头），80 层、head dim=128、FP16，在序列长度 4096、batch=32 时 KV Cache 约为 **40 GiB**；若错误代入 64 个 Q 头会高估 8 倍，得到约 320 GiB。若 batch=4，则约为 5 GiB。这也说明架构配置和批大小比“70B”标签更能决定 KV Cache 占用。
 
 ### KV Cache 优化技术
 
@@ -87,7 +87,7 @@ PagedAttention 借鉴操作系统的虚拟内存分页思想：
 - 按需分配，避免预分配浪费
 - 支持跨请求共享页（如共享 System Prompt 的 KV Cache）
 
-显存利用率从传统方案的 ~50% 提升到 **>95%**。
+PagedAttention 论文报告接近零的 KV Cache 浪费，并在其硬件、模型和负载下以相近延迟实现 2~4× 吞吐提升。它解决的是分页分配与共享，不保证任意生产负载都有固定的“>95% 利用率”。
 
 #### KV Cache 压缩
 
@@ -125,8 +125,8 @@ PagedAttention 借鉴操作系统的虚拟内存分页思想：
 
 ### 量化实践建议
 
-- **INT8 量化**：几乎无损，推荐作为默认部署精度
-- **INT4 量化**：适合显存受限场景，推荐使用 AWQ 或 GPTQ
+- **INT8/FP8 量化**：常是稳健起点，但是否加速取决于硬件 Kernel；Reasoning、代码、长上下文等任务仍需回归
+- **INT4 量化**：适合显存受限或带宽受限场景；小模型、异常值多的层和量化 KV Cache 更敏感
 - **本地部署**：使用 GGUF 格式 + llama.cpp / Ollama
 - **微调**：使用 QLoRA（4-bit 量化 + LoRA）
 
@@ -156,7 +156,7 @@ graph TD
     end
 ```
 
-**关键保证**：通过拒绝采样（rejection sampling），推测解码的输出分布**严格等同于大模型直接生成**——不是近似，而是数学上精确等价。
+**关键保证与边界**：标准的采样式推测解码使用校正后的拒绝采样时，目标输出分布与大模型直接采样相同（忽略浮点实现差异）。Medusa、EAGLE、贪心验证或工程化变体是否保持完全相同分布，要看其验证算法，不能把保证自动推广给所有“投机”方案。
 
 ### 加速效果
 
@@ -195,7 +195,7 @@ $$
 
 - 请求完成后**立即释放**资源
 - 新请求可在**任意解码步**加入当前批次
-- GPU 利用率从静态批处理的 ~30% 提升到 **>80%**
+- 避免短请求等待最长请求，通常显著提高利用率和吞吐；具体收益取决于到达率、长度分布、调度策略和显存预算
 
 这是 vLLM、TGI 等推理框架的核心调度策略。
 
@@ -203,14 +203,14 @@ $$
 
 ## MoE 推理优化
 
-MoE（Mixture of Experts）已是 2024-2025 年大模型的主流架构（DeepSeek-V3 671B / Mixtral 8x22B / LLaMA 4 / GPT-4o）。它在推理侧带来了**与 Dense 模型不同的瓶颈**——这是 2025-2026 年面试中"你了解 MoE 工程化吗"的高频追问点。
+MoE（Mixture of Experts）已被 DeepSeek-V3、Mixtral、Llama 4 等代表模型采用。GPT-4o 的底层是否为 MoE 未由 OpenAI 公开，不能列作确定案例。MoE 在推理侧带来了**与 Dense 模型不同的瓶颈**：
 
 ### Dense vs MoE 推理特性
 
 | 维度 | Dense（稠密） | MoE | 工程含义 |
 |------|------------|-----|---------|
 | **参数总量** | 全部激活 | 部分激活（如 DeepSeek-V3 671B 中只激活 37B） | MoE 算力需求小，**显存需求大** |
-| **显存占用** | 等于激活参数 | 等于**总参数**（所有专家都要常驻显存） | MoE 部署门槛反而更高 |
+| **显存占用** | 主要由全部权重决定 | 通常要容纳或分片**总参数**；也可 offload/按需加载，代价是带宽与延迟 | 激活参数不能代表显存需求 |
 | **计算量 FLOPs** | 与激活参数成正比 | 与激活参数成正比 | MoE 推理速度可媲美小 Dense 模型 |
 | **带宽瓶颈** | 加载全部权重 | 每 Token 仅加载被路由到的专家权重 | MoE 受**显存带宽**限制更显著 |
 | **批处理友好度** | 高 | 低（不同 Token 路由到不同专家，难凑批） | MoE 需要专门的批调度 |
@@ -254,13 +254,13 @@ Token Routing (Decode 阶段):
 |------|---------|---------|
 | **Expert Parallelism (EP)** | 单卡装不下所有专家 | DeepSpeed-MoE、Megatron-LM |
 | **Expert Caching** | 冷门专家按需 swap 进显存 | Mixtral 本地部署、llama.cpp MoE |
-| **Speculative Routing** | 提前预测路由减少 All-to-All 等待 | 研究阶段 |
-| **Grouped Expert Layout** | 把常一起激活的专家放同一 GPU | DeepSeek-V3 部署经验 |
-| **MoE 量化** | FP8 量化专家权重，显存减半 | DeepSeek-V3 原生 FP8、vLLM 0.6+ |
+| **通信—计算重叠** | 隐藏 All-to-All 等待 | DeepSeek-V3、主流分布式推理框架 |
+| **Grouped Expert Layout / Replication** | 把相关或热门专家合理放置/复制 | 依负载与框架实现 |
+| **MoE 量化** | 量化专家权重以减小容量与带宽 | 需硬件 Kernel 与逐任务质量评估 |
 
 ::: tip 💡 面试加分点
 
-能讲出 "MoE 模型推理时**算力像小模型，显存像大模型，通信开销远大于 Dense**" 这一句，就已经超出 80% 候选人。再补一句 DeepSeek-V3 用 FP8 + 无辅助损失负载均衡 + 多 Token 预测，整个面试官的眼睛会亮。
+**记忆法**：MoE 推理“**计算看激活参数，存储看总参数，扩展看通信与负载均衡**”。DeepSeek-V3 还公开了 FP8 混合精度训练、无辅助损失负载均衡和多 Token 预测；不要把训练特性直接等同为所有部署框架的推理优化。
 
 :::
 
@@ -274,8 +274,8 @@ Token Routing (Decode 阶段):
 
 | 阶段 | 主要瓶颈 | 数量级 |
 |------|---------|--------|
-| **Prefill（处理输入）** | 注意力 $O(n^2)$ 计算 | 100K Token 输入 ≈ 10× 短文本的 prefill 时间 |
-| **Decode（生成输出）** | KV Cache 显存读写带宽 | 100K Token 的 KV Cache 可达数十 GB |
+| **Prefill（处理输入）** | 全注意力 $O(n^2)$ 算术与显存 IO | 实际增长受 FlashAttention、分块和并行影响，不能用固定倍数估算 |
+| **Decode（生成输出）** | KV Cache 与权重读写带宽 | 大小取决于层数、K/V 头数、精度和并发，不能只看 Token 数 |
 
 ### 核心优化技术
 
@@ -299,8 +299,7 @@ GPU 3:     KV[750K:1M]
 ```
 
 - 让上下文长度**线性扩展**（卡数翻倍 → 上下文翻倍）
-- 是 Gemini 1.5 Pro、Claude 长上下文背后的关键技术之一
-- 代表实现：Megatron-LM Context Parallelism、vLLM 长上下文模式
+- 代表实现/相关方向包括 Ring Attention 与 Megatron-LM Context Parallelism；闭源模型未披露时，不能断言 Gemini 或 Claude 的内部实现就是 Ring Attention
 
 **③ Chunked Prefill**
 
@@ -312,7 +311,9 @@ GPU 3:     KV[750K:1M]
 
 多个请求共享相同前缀（System Prompt、Few-shot、长文档）时，**KV Cache 只算一次跨请求复用**：
 - vLLM 的 Automatic Prefix Caching、SGLang 的 RadixAttention 是代表
-- 与 [Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)（API 层）配套，构成"前端缓存命中 + 后端 KV 复用"的完整链路
+- 托管 API 的 [Prompt Caching](./ai-agents#prompt-caching) 可能在服务端复用前缀计算，但厂商未披露时不能断言底层一定保存可跨请求共享的 KV 页；应用层响应缓存、Prompt Cache 与自托管 Prefix KV Cache 也不是同一层
+
+**为什么有收益**：它主要省掉命中前缀的 Prefill 计算，通常不减少后续 Decode 的 TPOT。缓存键至少要区分模型/适配器版本、精确 Token 序列和影响 KV 的配置；动态时间戳、用户信息插在前缀中会破坏命中。多租户服务还要做访问隔离、淘汰和容量控制，避免跨租户复用或侧信道泄露。
 
 **⑤ KV Cache 压缩 / 驱逐**
 
@@ -323,18 +324,18 @@ GPU 3:     KV[750K:1M]
 
 ---
 
-## 推理引擎选型对比（2026 必背）
+## 推理引擎选型对比（截至 2026-08）
 
-**面试 Top 题**："vLLM、SGLang、TensorRT-LLM、llama.cpp 怎么选？"——能讲清各自核心优势 + 适用场景 + 真实数字，立刻区分中/高级工程师。
+引擎版本、模型支持和 Kernel 演进很快，不能长期固定为“吞吐第一/延迟第一”。可靠选型应在同一模型、硬件、精度、上下文分布、并发和 SLA 下复测。
 
 ### 主流引擎核心差异
 
 | 引擎 | 核心技术 | 强项 | 弱项 | 适用场景 |
 |------|---------|------|------|---------|
-| **vLLM** | **PagedAttention**（KV 分页）+ Continuous Batching | **吞吐量王者**（业界标杆）、生态最广、开源活跃 | 极致延迟不如 TensorRT-LLM、Windows 不友好 | **通用首选**：API 服务、高吞吐场景 |
-| **SGLang** | **RadixAttention**（前缀树共享 KV）+ 编译器优化 | **结构化输出 + Agent / RAG 场景吞吐第一**（前缀复用率高）、官方 DSL | 上线晚于 vLLM，生态稍小 | Agent / RAG / 多轮对话 / 结构化输出 |
-| **TensorRT-LLM** | **NVIDIA 官方 + 编译期 Kernel 融合 + FP8** | **单请求极致延迟最低**（Hopper 架构上比 vLLM 快 1.5-2×）| **仅 NVIDIA GPU**、编译时间长、配置复杂 | 延迟敏感生产（聊天前端）+ Triton 集成 |
-| **llama.cpp** | **GGUF 量化 + CPU/GPU 混合 + Metal** | **唯一支持 Mac / 边缘 / 嵌入式**、INT4 量化生态最完善 | 吞吐弱、不适合多并发服务 | 桌面应用、Mac 本地 LLM、边缘设备 |
+| **vLLM** | **分页式 KV 管理** + Continuous Batching | 模型/平台生态广、OpenAI 兼容服务成熟 | 新模型/新量化组合仍需核对支持矩阵 | 通用 GPU API 服务、高吞吐场景 |
+| **SGLang** | **RadixAttention**（前缀树共享 KV）+ 高性能 Runtime | 前缀复用、结构化输出与 Agent/RAG 工作负载 | 收益依赖请求重复率和具体版本 | Agent / RAG / 多轮对话 / 结构化输出 |
+| **TensorRT-LLM** | **NVIDIA 官方 + Kernel 融合 + FP8/INT4** | 深度利用 NVIDIA GPU 特性、可与 Triton 集成 | 仅 NVIDIA，构建和调优复杂 | NVIDIA 生产集群、延迟/吞吐精调 |
+| **llama.cpp** | **GGUF 量化 + CPU/GPU 混合 + Metal/Vulkan/CUDA** | 跨平台、本地与边缘生态成熟 | 大规模多租户吞吐通常不是其首要目标 | 桌面、Mac、本地与边缘设备 |
 | **TGI**（HF Text Generation Inference）| HuggingFace 官方 + 速度优化 | 与 HuggingFace 生态无缝、易上手 | 性能逐渐落后 vLLM/SGLang | HF 用户快速原型 |
 | **Ollama** | llama.cpp 封装 + 极简体验 | **零配置**本地体验 | 服务化弱、性能受限 llama.cpp | 个人 / 小团队本地实验 |
 
@@ -349,7 +350,7 @@ vLLM 思路: 像操作系统分页 → KV Cache 按 16 token 一块切分
   ├── 物理块池（连续 GPU 显存）
   └── 逻辑表（每请求一张 KV 块表）
 
-效果: 显存利用率从 20-40% → 90%+，并发量翻 2-4 倍
+效果: 减少内部/外部碎片和预留浪费；论文在特定负载中报告 2-4× 吞吐提升，实际值需压测
 ```
 
 **RadixAttention（SGLang）—— 解决前缀重复**
@@ -373,8 +374,8 @@ SGLang: 2000（共享）+ 10 × 200 = 4000 个槽 → 节省 80%
 | **OpenAI 风格 API 服务**（高吞吐） | **vLLM** | 默认最稳 |
 | **企业知识库 RAG**（长 System Prompt + 多用户） | **SGLang** | RadixAttention 前缀复用收益巨大 |
 | **Agent / 多轮对话** | **SGLang** | 上下文重复率高 |
-| **C 端聊天前端**（极致首 token 延迟） | **TensorRT-LLM** | Hopper FP8 + Kernel 融合最强 |
-| **Apple Silicon Mac 本地** | **llama.cpp / Ollama** | 唯一选择 |
+| **C 端聊天前端**（极致首 token 延迟） | **TensorRT-LLM / vLLM / SGLang 实测** | TTFT 还受排队、Prefill、网络和模型影响 |
+| **Apple Silicon Mac 本地** | **llama.cpp / Ollama 等** | Metal 与 GGUF 生态成熟，但不是唯一可运行方案 |
 | **生产 NVIDIA Triton 集群** | **TensorRT-LLM** | 官方深度集成 |
 | **快速试新模型** | **vLLM** 或 **TGI** | 上线时间最快 |
 
@@ -385,45 +386,40 @@ SGLang: 2000（共享）+ 10 × 200 = 4000 个槽 → 节省 80%
 | 方案 | 精度 | 显存节省 | 性能损失 | 主流支持 |
 |------|------|---------|---------|---------|
 | **FP16 / BF16**（基线）| 16-bit | 1× | 0% | 全部 |
-| **FP8（E4M3）** | 8-bit | 2× | < 1% | TensorRT-LLM / vLLM 0.6+ / DeepSeek-V3 原生 |
-| **INT8（W8A8）** | 8-bit | 2× | 1-3% | TensorRT-LLM / vLLM |
-| **AWQ INT4** | 4-bit 权重 | 4× | 1-3% | vLLM / TensorRT-LLM / llama.cpp |
-| **GPTQ INT4** | 4-bit 权重 | 4× | 2-5% | vLLM / TGI |
-| **GGUF Q4_K_M** | 4-bit | 4× | 3-5% | **llama.cpp 独家**、Mac/CPU 必选 |
-| **GGUF Q2_K**（极致压缩）| 2-bit | 8× | 10-20% | 仅嵌入式 / 探索性场景 |
+| **FP8** | 8-bit | 理论权重约 2× | 通常较小，需按任务验证 | 新一代 NVIDIA/AMD 等硬件及主流引擎逐步支持 |
+| **INT8（W8A8）** | 8-bit | 理论约 2× | 依模型、校准和 Kernel | TensorRT-LLM / vLLM 等 |
+| **AWQ INT4** | 4-bit 权重 | 理论约 4× | 依模型与任务 | vLLM / TensorRT-LLM 等 |
+| **GPTQ INT4** | 4-bit 权重 | 理论约 4× | 依模型与任务 | vLLM / TGI 等 |
+| **GGUF K-Quant** | 混合位宽 | 依量化类型 | 位宽越低通常风险越高 | llama.cpp 生态为主，其他 Runtime 也可能支持 |
 
 ::: warning ⚠️ KV Cache 量化的隐藏陷阱
 
-> **权重量化（FP8/INT4）已是生产共识**，但 **KV Cache 量化（FP8 KV）**要谨慎：
-> ① 长上下文场景（>32K）容易精度退化；
-> ② Reasoning 模型（o1/R1 类）对 KV 精度更敏感，建议 FP8 KV 关闭；
-> ③ vLLM 默认 KV 为 FP16，开 FP8 KV 必须先做评估集回归。
+> **权重量化与 KV Cache 量化要分开评估**。KV 量化误差会沿长上下文和多步解码累积，部分模型还需要校准 scale；不能用固定的 32K 阈值或笼统断言“Reasoning 模型必须关闭”。应在目标长度、任务、并发和硬件 Kernel 上同时回归质量、TTFT、TPOT 与显存。
 
 :::
 
-### 投机解码进阶：EAGLE / Medusa（2025 主流）
+### 投机解码进阶：EAGLE / Medusa
 
 **核心思想**：让小模型/小头先猜几个 token，大模型一次验证多个，**单步生成 2-3 个 token**。
 
 | 方案 | 实现 | 加速比 | 接受率 |
 |------|------|--------|--------|
-| **传统 Speculative Decoding** | 用 7B 草稿模型给 70B 大模型猜 | 1.5-2× | 60-70% |
-| **Medusa**（2024）| 在大模型上加 **N 个并行预测头**（无需草稿模型）| **2-2.5×** | 70-80% |
-| **EAGLE / EAGLE-2 / EAGLE-3**（2024-2025）| **特征级**猜测（不是 token，是 hidden state）| **3-4×** | **80-90%**（SOTA）|
-| **Lookahead Decoding** | 用 Jacobi 迭代猜后续 token | 1.5-2× | 中 |
+| **传统 Speculative Decoding** | 小草稿模型提出候选，目标模型并行验证 | 与草稿成本、接受长度和批量有关 | 同域、低批量时常更有利 |
+| **Medusa** | 在目标模型上加多个预测头形成候选树 | 需要额外头与树验证 | 无独立 Draft Model |
+| **EAGLE 系列** | 在特征空间预测候选并由目标模型验证 | 论文报告较高接受长度，但随模型/任务变化 | 需要匹配的 Draft Head/Checkpoint |
+| **Lookahead Decoding** | 通过 Jacobi 风格迭代并行提出候选 | 无固定通用倍数 | 对输出模式敏感 |
 
-**vLLM / SGLang / TensorRT-LLM 均原生支持**。生产场景**首选 EAGLE-2/3**（接受率高、显存开销小）。
+各引擎对模型、量化、张量并行和投机方法的组合支持会随版本变化。生产选择应比较**平均接受 Token 数、Draft 开销、目标验证开销、批量下的吞吐和尾延迟**；高并发时目标模型本已吃满，投机解码甚至可能降低总吞吐。
 
 ### 黄金答题模板
 
 > **面试官：你的推理服务怎么选型？**
 >
 > **答**：按 4 个维度决策：
-> ① **吞吐 vs 延迟**：高吞吐选 **vLLM**（PagedAttention 显存利用率 90%+），极致延迟选 **TensorRT-LLM**（Hopper FP8 + Kernel 融合最强）；
-> ② **场景重复率**：RAG / Agent / 多用户共享 System Prompt 选 **SGLang**（RadixAttention 前缀复用最高节省 80% KV 显存）；
-> ③ **硬件**：仅 NVIDIA 才能用 TensorRT-LLM，Mac / 边缘只能 **llama.cpp**；
-> ④ **量化**：生产首选 FP8 权重（DeepSeek-V3 原生支持，TensorRT-LLM/vLLM 0.6+），4-bit 选 AWQ（精度好于 GPTQ），KV Cache 量化要小心精度回退。
-> 加分项：上 **EAGLE-2/3 投机解码**——SOTA 加速 3-4×，2025 年起所有主流引擎都支持。
+> ① **先固定工作负载**：模型、精度、输入/输出长度分布、并发与 P99 SLA；
+> ② **看瓶颈**：高前缀重复率重点测 Prefix Cache，高并发测 Continuous Batching，超长输入测 Chunked Prefill；
+> ③ **看硬件与支持矩阵**：TensorRT-LLM 面向 NVIDIA，跨平台本地部署可测 llama.cpp；vLLM/SGLang 的优劣按具体版本实测；
+> ④ **量化和投机都做回归**：比较质量、TTFT、TPOT、吞吐、显存和成本，不预设 FP8/AWQ/EAGLE 必胜。
 
 
 ### 技术选型对照
@@ -441,12 +437,12 @@ SGLang: 2000（共享）+ 10 × 200 = 4000 个槽 → 节省 80%
 
 | 框架 | 开发者 | 核心特性 | 适用场景 | 典型性能 |
 |------|--------|----------|----------|----------|
-| **vLLM** | UC Berkeley | PagedAttention、连续批处理、高吞吐 | 高并发线上服务 | 吞吐量最高 |
+| **vLLM** | UC Berkeley / 开源社区 | 分页式 KV 管理、连续批处理、广泛模型支持 | 高并发线上服务 | 需按版本与负载压测 |
 | **TGI** | Hugging Face | 易部署、支持多种模型、生产就绪 | HF 生态快速部署 | 中等 |
-| **TensorRT-LLM** | NVIDIA | 深度 GPU 优化、FP8/INT4、Inflight Batching | 极致性能（NVIDIA GPU） | 延迟最低 |
-| **SGLang** | Stanford | 结构化生成优化（JSON/正则约束）、RadixAttention | 需要结构化输出的场景 | 结构化生成最快 |
+| **TensorRT-LLM** | NVIDIA | 深度 GPU 优化、FP8/INT4、Inflight Batching | NVIDIA GPU 生产优化 | 可深度调优 |
+| **SGLang** | 开源社区 | 结构化生成、RadixAttention、高性能 Runtime | Agent/RAG 与结构化输出 | 前缀复用场景有优势 |
 | **Ollama** | Ollama | 一键本地部署、GGUF 格式、极简 API | 本地开发/测试 | 适合个人使用 |
-| **llama.cpp** | ggerganov | CPU/GPU 混合推理、跨平台、量化支持 | 边缘设备/CPU 部署 | CPU 最优 |
+| **llama.cpp** | 开源社区 | CPU/GPU 混合推理、跨平台、量化支持 | 边缘设备/CPU/桌面部署 | 跨平台生态成熟 |
 
 **选型建议**：
 - 线上服务高并发 → vLLM
@@ -461,7 +457,7 @@ SGLang: 2000（共享）+ 10 × 200 = 4000 个槽 → 节省 80%
 
 ::: warning ⚠️ 常见误区
 
-1. **认为量化一定会显著降低质量**：INT8 量化几乎无损，INT4 在使用 AWQ/GPTQ 时质量损失也很小。量化前后应用具体任务的评估指标衡量，而非仅看困惑度（Perplexity）。
+1. **认为量化一定显著降质，或一定无损**：损失取决于模型规模、异常值、校准集、量化粒度、KV/激活是否量化和目标任务。应在应用评估集上比较，而非只看困惑度或位宽。
 
 2. **忽视 KV Cache 的显存占用**：对于长上下文场景，KV Cache 的显存消耗可能超过模型权重本身。必须在系统设计中预留 KV Cache 的显存预算。
 
@@ -505,7 +501,7 @@ KV Cache 利用自回归生成的特性——每步生成新 Token 时，历史 
 **三大优化方向**：
 
 1. **减少 KV 头数**：GQA（分组共享 K/V 头）在质量几乎不降的前提下将 Cache 缩小到 1/g
-2. **优化显存管理**：PagedAttention（vLLM）采用虚拟内存分页思想，按需分配、消除碎片，显存利用率从 ~50% 提升到 >95%
+2. **优化显存管理**：PagedAttention（vLLM）采用虚拟内存分页思想，按需分配并减少碎片；论文在特定设置下实现近零 KV 浪费和 2~4× 吞吐提升
 3. **压缩/淘汰**：H2O 保留高注意力分数的"重要" Token KV，StreamingLLM 保留开头+滑动窗口
 
 ---
@@ -523,7 +519,7 @@ KV Cache 利用自回归生成的特性——每步生成新 Token 时，历史 
 | **生态支持** | AutoGPTQ、vLLM、TGI | AutoAWQ、vLLM、TGI |
 
 **选择建议**：
-- 两者质量接近，AWQ 量化速度更快，推荐作为首选
+- 两者质量没有跨模型的固定胜负；按模型支持、目标硬件 Kernel、校准成本和领域评估选择
 - 如已有 GPTQ 格式模型（HuggingFace 上大量社区量化版本），直接使用即可
 - 本地/CPU 部署优先选择 GGUF 格式
 
@@ -538,7 +534,7 @@ KV Cache 利用自回归生成的特性——每步生成新 Token 时，历史 
 1. **推理引擎选择**：vLLM（PagedAttention + 连续批处理），已验证的高吞吐方案
 2. **模型优化**：
    - 使用 GQA 模型（如 LLaMA 2 70B）减少 KV Cache
-   - INT4/INT8 量化降低显存占用，提升单卡可服务的并发数
+  - 在质量回归通过且硬件 Kernel 有效时，用 FP8/INT8/INT4 降低显存与带宽压力
 3. **系统层优化**：
    - 连续批处理：在每个解码步粒度调度请求
    - Prefix Caching：缓存共享 System Prompt 的 KV Cache
@@ -563,3 +559,6 @@ KV Cache 利用自回归生成的特性——每步生成新 Token 时，历史 
 - [AWQ: Activation-aware Weight Quantization](https://arxiv.org/abs/2306.00978)
 - [Fast Inference from Transformers via Speculative Decoding](https://arxiv.org/abs/2211.17192)
 - [Efficient Streaming Language Models with Attention Sinks (StreamingLLM)](https://arxiv.org/abs/2309.17453)
+- [FlashAttention-2: Faster Attention with Better Parallelism](https://arxiv.org/abs/2307.08691)
+- [SGLang: Efficient Execution of Structured Language Model Programs](https://arxiv.org/abs/2312.07104)
+- [EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty](https://arxiv.org/abs/2401.15077)

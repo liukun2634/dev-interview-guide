@@ -271,7 +271,7 @@ LVS（L4，硬件级，单机 1000w QPS）
 | CDN 边缘节点 / 一致性哈希 | [CDN 与负载均衡](../computer-networks/cdn-load-balancing) |
 | 数据库读写分离 / 分库分表 | [存储选型](./database-selection)、[MySQL 分库分表](../databases/sharding) |
 | Redis Cluster 分片 | [Redis](../databases/redis) |
-| Bloom Filter 防穿透 | [哈希表 — Bloom Filter](../data-structures-and-algorithms/hash-table#bloom-filter) |
+| Bloom Filter 防穿透 | [哈希表 — Bloom Filter](../data-structures-and-algorithms/hash-table#bloom-filter-判-不存在-神器) |
 
 ## 面试常问 & 怎么答
 

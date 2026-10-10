@@ -33,7 +33,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run docs:build
+        run: npm run docs:check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

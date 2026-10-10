@@ -463,7 +463,7 @@ sudo tcplife
 | **bcc-tools** | tcptop / tcpconnect / tcpretrans |
 | **bpftrace** | 类 awk 的 eBPF DSL |
 
-详见 [可观测性 — eBPF Tracing](../engineering-practice/monitoring-observability#ebpf-tracing零代码全栈观测2026-兴起)。
+详见 [可观测性 — eBPF Tracing](../engineering-practice/monitoring-observability#ebpf-tracing-零代码全栈观测-2026-兴起)。
 
 ---
 

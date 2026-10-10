@@ -341,7 +341,7 @@ java -XX:CRaCCheckpointTo=./cr -jar app.jar
 java -XX:CRaCRestoreFrom=./cr   # 50-200 ms 即可对外服务
 ```
 
-详见 [Spring Boot 3 新特性 · CRaC](./spring-boot3-new-features#crac-coordinated-restore-at-checkpoint)。
+详见 [Spring Boot 3 新特性 · CRaC](./spring-boot3-new-features#crac-coordinated-restore-at-checkpoint-启动加速)。
 
 ---
 

@@ -27,8 +27,21 @@ graph TD
     S2 --- S2a["架构模式选择、数据流"]
     S3 --- S3a["模型/Prompt/数据管道/安全"]
     S4 --- S4a["准确率 vs 延迟 vs 成本"]
-    S5 --- S5a["缓存/监控/故障恢复"]
+    S5 --- S5a["网关/缓存/评估/故障恢复"]
 ```
+
+  ### 2026 版生产检查清单
+
+  | 层次 | 面试中要主动覆盖 |
+  |------|----------------|
+  | **入口与治理** | AI Gateway、租户鉴权、限流/预算、数据地域、模型与 Prompt 版本 |
+  | **模型策略** | 基于 Evals 的 Model Routing、Reasoning Effort、Fallback 的能力兼容性 |
+  | **执行契约** | Structured Outputs / strict tool schema、业务校验、幂等与审批 |
+  | **成本与吞吐** | Prompt/响应缓存、Batch 异步处理、上下文压缩、并发与背压 |
+  | **质量闭环** | Trace + 离线回归集 + 在线抽样 Evals + 用户反馈 |
+  | **Agent 运行时** | Harness、检查点、最大步数/预算、取消/恢复、Human-in-the-loop |
+
+  模型名称和价格是配置而不是架构。回答时可举当前模型族的例子，但应说明选择依据来自自有评估集，生产固定版本/快照并制定迁移计划，不能把 GPT-4o 等历史模型写成“当前默认”。
 
 ---
 
@@ -65,22 +78,23 @@ graph TD
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
 | **架构模式** | RAG + Agent (Tool Use) | 需要检索知识库 + 调用业务 API |
-| **模型选择** | Claude Sonnet / GPT-4o-mini | 性价比优，速度快，足以胜任客服场景 |
+| **模型选择** | 经客服评估集验证的低延迟模型 + 复杂请求升级模型 | 不绑定历史默认模型；按质量、延迟、成本与地域约束路由 |
 | **知识库** | 向量数据库 + BM25 混合检索 | 语义检索 + 关键词检索互补 |
 | **转人工策略** | 置信度阈值 + 规则触发 | 涉及投诉、金额争议、连续未解决时自动转人工 |
 
 ### 权衡讨论
 
-**准确率 vs 延迟**：订单金额查询**必须 100% 准确**（通过 API 直接查询，不用 LLM 生成）；政策类回答可容忍小幅不准确，通过 RAG + 引用原文提高可信度。
+**准确率 vs 延迟**：订单金额必须来自权威业务 API，不能让 LLM 编造；同时处理 API 失败、过期数据和展示格式。政策类回答通过 RAG + 引用原文提高可核验性，低置信度时转人工。
 
 **成本控制**：
 - 常见问题使用**语义缓存**（相似问题命中缓存）
 - 简单意图（查快递）走规则引擎，不调用 LLM
 - 复杂问题才使用 LLM Agent
+- 夜间质检、工单分类等非实时任务走 Batch；稳定长前缀使用 Provider Prompt Cache，并记录命中率
 
 **安全防护**：
 - 输入过滤：防止 Prompt 注入
-- 输出过滤：不输出其他用户数据、不给出超范围承诺
+- 输出过滤：不输出其他用户数据、不给出超范围承诺；订单/退款动作参数使用严格 Schema 并做服务端权限校验
 - System Prompt 明确限定角色和能力边界
 
 ---
@@ -109,7 +123,7 @@ graph TD
     Trigger -->|HTTPS gzip| Infer["推理服务"]
     
     subgraph Infer["推理服务"]
-        FIM["FIM 引擎<br/>PRE + SUF → MID<br/>模型: CodeLlama / StarCoder2"]
+        FIM["FIM 引擎<br/>PRE + SUF → MID<br/>低延迟代码补全模型"]
         Opt["优化层<br/>Prefix Cache / 推测解码 / 提前终止"]
     end
     
@@ -120,7 +134,7 @@ graph TD
 
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
-| **模型大小** | 1B~7B 专用代码模型 | 延迟 < 200ms 硬约束，大模型无法满足 |
+| **模型大小** | 经端到端延迟压测的专用代码补全模型 | 参数量不是延迟的充分条件；需同时评估推理后端、量化、网络与缓存 |
 | **补全模式** | FIM (Fill-in-the-Middle) | 需要同时利用光标前后的上下文 |
 | **部署方式** | 自建推理服务 + GPU 集群 | 代码隐私要求高、请求量大，API 成本不可控 |
 | **触发策略** | Debounce + 智能触发 | 避免无效请求，减少服务端压力 |
@@ -133,24 +147,24 @@ graph TD
 |--------|------|------|
 | **客户端** | Debounce、请求取消（新输入取消旧请求） | 减少 60%+ 无效请求 |
 | **网络** | gzip 压缩、边缘节点就近推理 | 减少网络延迟 |
-| **推理** | Prefix Caching（文件头 KV 缓存） | 减少 30%+ 计算 |
+| **推理** | Prefix Caching（文件头 KV 缓存） | 复用重复前缀；收益由前缀占比和命中率决定 |
 | **推理** | 推测解码 | 加速 2~3x |
 | **推理** | INT4 量化 | 减少显存，提高吞吐 |
 | **生成** | 提前终止（遇到自然断点停止） | 减少无用生成 |
 
 ### 权衡讨论
 
-**模型大小 vs 质量**：1B 模型延迟低但补全质量有限（适合行级补全）；7B 模型质量更高但延迟增加（适合块级补全）。可采用**级联策略**——先用小模型快速补全，用户停顿时用大模型提供更高质量建议。
+**延迟 vs 质量**：即时补全走低延迟专用模型；用户停顿后的块级编辑可路由到更强模型。采用**级联策略**前要测接受率、P95 首 Token 延迟和升级比例，不能只按参数量推断质量或速度。
 
-**代码隐私**：企业用户要求代码不离开内网。解决方案：私有化部署推理服务，或使用本地小模型（如 Ollama + CodeLlama）。
+**代码隐私**：若企业要求代码不离开内网，可私有化部署推理服务或使用本地模型；同时要控制遥测、日志、缓存和索引的数据边界。
 
 ---
 
 ## 设计题：Computer Use Agent
 
-**问题**：设计一个 Computer Use Agent（类似 Claude Computer Use / OpenAI Operator），让用户用自然语言驱动它在真实桌面上完成跨应用任务（例如"打开 Excel 把当前网页表格复制进去并生成图表"）。
+**问题**：设计一个 Computer Use Agent，让用户用自然语言驱动它在真实桌面上完成跨应用任务（例如"打开 Excel 把当前网页表格复制进去并生成图表"）。
 
-这是 2025-2026 年 AI 系统设计面试的**新热门题**——既考 Agent 架构，也考视觉模型、安全沙箱、成本治理。
+这是近年可见度上升的 AI 系统设计题——既考 Agent 架构，也考视觉模型、安全沙箱、成本治理。
 
 ### 需求澄清（必问清单）
 
@@ -167,7 +181,7 @@ graph TD
 
 ```mermaid
 graph TD
-    U["用户自然语言指令"] --> P["规划 Agent<br/>(大模型，慢思考)"]
+    U["用户自然语言指令"] --> P["规划 Agent<br/>(按任务设置 reasoning effort)"]
     P --> S["子任务队列"]
     S --> E["执行 Agent 循环"]
     E --> SC["截屏"]
@@ -198,7 +212,7 @@ graph TD
 #### ② 视觉-动作模型选型
 
 ```
-策略 A: 通用 VLM（Claude / GPT-4V / Gemini）
+策略 A: 通用 VLM（当前支持视觉的 Claude / GPT / Gemini 等模型）
   + 通用性最强，能识别任意 UI
   + 无需训练
   - 延迟高（每步 2-5s）、成本高
@@ -242,9 +256,9 @@ class ComputerUseLoop:
                 return await self.escalate("检测到死循环，需人工介入")
 ```
 
-#### ④ Prompt Caching 是必需的
+#### ④ Prompt Caching 与上下文预算
 
-每步都要传一张 1080p 截屏（约 1500-3000 Token）+ 工具定义（数千 Token）+ 历史动作。没有缓存的话，50 步任务 = 数十万 Token。开启 [Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段) 后，静态前缀部分降到 1/10 成本。
+每步都可能携带截屏、工具定义和历史动作，成本会随循环快速累积。应把稳定的 System Prompt、工具 Schema 和共享上下文放在前缀并使用 [Prompt Caching](./ai-agents#prompt-caching)，同时压缩旧轨迹、只保留必要截图并监控缓存读写 Token。具体最低缓存长度、TTL 和读写价格依供应商与模型而异，不能承诺固定“降到 1/10”。
 
 #### ⑤ 安全防线（多层）
 
@@ -279,13 +293,17 @@ Layer 5: 全程审计日志 + 截屏录像
 
 ### 容量与成本估算
 
-假设：单任务平均 20 步，每步 2 秒，截屏 + 上下文 ~5K Token，VLM 输出 ~500 Token。
+先从 Trace 统计每类任务的步骤分布、每步输入/输出/推理 Token、截图计费、工具费、缓存读写和沙箱运行时，再代入**核验当日**的供应商价格。不要用固定截图 Token 数或旧模型单价外推日成本。
 
-- 单次任务：~110K input + 10K output Token，按 Claude Sonnet 价 ≈ **$0.50**
-- 开启 Prompt Caching 后：≈ **$0.10-0.15**
-- 1 万日活、人均 5 任务：约 **$5,000-7,500/天** 推理成本
+$$
+Cost_{task}=\sum_{step=1}^{N}(Input+CacheWrite+CacheRead+Reasoning/Output+Tool)+SandboxRuntime
+$$
 
-**优化方向**：缓存命中率 > 90%、专用 GUI 模型替代 VLM 做定位、热门工作流走 RPA 快路径。
+**优化方向**：提高有效缓存命中率、用专用 GUI 模型或 DOM/Accessibility Tree 做定位、热门且确定的工作流走 Playwright/RPA 快路径，并按任务风险动态调整 reasoning effort。
+
+### 长时间运行任务
+
+Computer Use、Deep Research 和编码 Agent 可能运行数分钟甚至更久。生产系统应把运行建模为持久化任务，而不是一直占用前端连接：队列调度、事件流、检查点、幂等动作、断点恢复、取消、预算上限与人工审批缺一不可。供应商的 background execution 可减少连接超时，但应用仍需保存业务状态和审计日志；跨独立 Agent 委派时可用 A2A 的 Task/Artifact 状态模型。
 
 ### 常被追问的问题
 
@@ -302,7 +320,7 @@ Layer 5: 全程审计日志 + 截屏录像
 
 **问题**：设计一个面向企业数据团队的智能 BI 助手——用户用中文/英文自然语言提问（"上季度华东区销售额 Top 10 的产品是哪些？"），系统自动生成 SQL、执行、并用图表+解释返回结果。
 
-这是 2025-2026 年**企业级 AI 应用的"标准设计题"**，几乎所有 To B AI 公司都在做。
+这是 2025-2026 年常见的企业级 AI 系统设计题。
 
 ### 需求澄清
 
@@ -387,10 +405,12 @@ LLM 生成的 SQL **绝不能**直接执行，必须经过：
 
 #### ④ 错误自修复循环
 
-LLM 第一次生成的 SQL 在复杂场景下失败率 20-40%。引入**反馈循环**能把成功率拉到 90%+：
+复杂 SQL 往往需要校验和修复。引入**有界反馈循环**通常能提高执行成功率，但提升幅度必须在自有评估集上测量，不能把“执行成功”当成“业务结果正确”：
 
 ```python
-async def nl_to_sql_with_retry(question: str, max_retries: int = 3):
+async def nl_to_sql_with_retry(question: str, schema: str,
+                 max_retries: int = 3):
+  errors: list[str] = []
     for attempt in range(max_retries):
         sql = await llm.generate_sql(question, schema, history=errors)
         validation = validate_sql(sql)
@@ -401,7 +421,7 @@ async def nl_to_sql_with_retry(question: str, max_retries: int = 3):
             result = await db.execute(sql, timeout=30)
             return result
         except DatabaseError as e:
-            errors.append(f"执行错误: {e.message}")  # 反馈给 LLM
+          errors.append(f"执行错误: {e}")  # 反馈给 LLM
     return {"error": "无法生成有效 SQL", "tried": errors}
 ```
 
@@ -416,18 +436,18 @@ async def nl_to_sql_with_retry(question: str, max_retries: int = 3):
 
 ### 准确率提升的杠杆点（按收益排序）
 
-| 优化 | 准确率提升 | 实施成本 |
+| 优化 | 主要收益 | 实施成本 |
 |------|----------|---------|
-| **业务术语词典** | +20-30% | 低（与业务方共建）|
-| **历史查询 Few-shot 检索** | +15-25% | 中（需积累）|
-| **Schema 注释质量提升** | +10-15% | 高（需治理）|
-| **错误反馈自修复循环** | +10-15% | 低 |
-| **强约束 SQL（dialect 限定）** | +5-10% | 低 |
-| **微调一个 SQL 专用模型** | +5-15% | 极高（需大量标注）|
+| **业务术语词典** | 消除业务口径歧义 | 低（与业务方共建）|
+| **历史查询 Few-shot 检索** | 复用已验证的查询模式 | 中（需积累）|
+| **Schema 注释质量提升** | 改善表列选择与 JOIN | 高（需治理）|
+| **错误反馈自修复循环** | 修复语法和执行错误 | 低，但必须限制重试 |
+| **强约束 SQL（dialect 限定）** | 减少方言和格式错误 | 低 |
+| **微调一个 SQL 专用模型** | 在稳定分布上改善一致性 | 高（需数据与持续评估）|
 
 ::: tip 💡 面试加分点
 
-90% 候选人讲的是"用 GPT 写 SQL"，能拿到 offer 的讲的是 **schema 治理 + 业务术语 + 安全校验 + 错误自修复 + 评估集**。说一句"NL2SQL 的瓶颈不在模型，在数据治理和业务术语沉淀"，立刻显得是有真实经验的人。
+只讲“用模型写 SQL”是不完整的；成熟答案还应覆盖 **schema 治理 + 业务术语 + 安全校验 + 有界错误修复 + 评估集**。NL2SQL 的瓶颈通常不只在模型，也在数据治理和业务口径沉淀。
 
 :::
 
@@ -461,7 +481,7 @@ AI 系统设计面试中，权衡讨论往往比架构设计本身更能体现�
 | 场景 | 优先级 | 策略 |
 |------|--------|------|
 | 医疗/法律问答 | 准确率 > 成本 > 延迟 | 大模型 + RAG + 多轮验证 |
-| 实时聊天助手 | 延迟 > 准确率 > 成本 | 小模型 + 流式输出 |
+| 实时聊天助手 | 延迟与最低质量门槛优先 | 低延迟模型 + 流式输出 + 复杂请求升级 |
 | 批量数据处理 | 成本 > 准确率 > 延迟 | 小模型 + 批处理 + 异步 |
 | 代码补全 | 延迟 > 准确率 > 成本 | 小模型 + 推测解码 + 缓存 |
 
@@ -472,7 +492,7 @@ AI 系统设计面试中，权衡讨论往往比架构设计本身更能体现�
 | **初始成本** | 高（GPU 采购/租用） | 低（按用量付费） |
 | **边际成本** | 低（固定硬件费用） | 线性增长 |
 | **数据隐私** | 完全可控 | 数据离开内网 |
-| **灵活性** | 可自定义模型/微调 | 受限于 API 提供的能力 |
+| **灵活性** | 可自定义模型/推理栈 | 受限于 API 提供的能力 |
 | **运维负担** | 高 | 零 |
 | **适用场景** | 高 QPS、隐私敏感、需微调 | 早期验证、低 QPS、快速上线 |
 
@@ -485,15 +505,21 @@ AI 系统设计面试中，权衡讨论往往比架构设计本身更能体现�
 ```mermaid
 graph TD
     A["用户请求"] --> B{"路由判断<br/>规则/小模型"}
-    B -->|简单| C["小模型<br/>Haiku / GPT-4o-mini"]
-    B -->|复杂| D["大模型<br/>Opus / GPT-4"]
+    B -->|简单| C["低成本模型"]
+    B -->|复杂| D["高能力/高推理档位模型"]
     C --> E{"置信度检查"}
     E -->|低| D
     E -->|高| F["返回结果"]
     D --> F
 ```
 
-**效果**：可降低 50~70% API 成本，同时保持与纯大模型接近的质量。
+**效果**：在请求难度分布合适、路由器校准良好时可降低成本；节省比例和质量损失必须用线上分层流量与离线 Evals 验证。
+
+### Harness、工具协议与结构化契约
+
+Function Calling 是模型产生工具调用的机制；MCP 是 AI 应用连接远程 Tools/Resources/Prompts 的协议，不能说 MCP “替代” Function Calling。A2A 用于独立 Agent 之间的任务委派，Agent Skills 用文件包封装可复用 SOP。真正执行循环的是 Harness：控制允许的工具、Schema 校验、授权、重试、检查点、上下文压缩、终止条件和 Trace。
+
+对订单操作、SQL 计划和 Agent 动作，优先使用 Structured Outputs 或 strict tool schema。Schema 约束只保证结构，不保证事实和权限正确，因此服务端仍要做业务校验、鉴权、幂等和副作用审批。
 
 ---
 
@@ -557,7 +583,7 @@ graph TD
 **核心约束**：延迟 < 200ms，这决定了整个架构选择。
 
 **架构设计**：
-1. **模型选择**：1B~7B 专用代码模型（CodeLlama / StarCoder2），延迟优先
+1. **模型选择**：经真实代码与端到端延迟评估的专用补全模型，延迟优先
 2. **补全模式**：FIM（Fill-in-the-Middle）——同时利用光标前后的上下文
 3. **上下文构建**：当前文件光标前后 N 行 + import 依赖文件 + 最近编辑片段
 4. **触发策略**：Debounce 300ms + 智能触发（行尾、函数签名后）
@@ -573,7 +599,8 @@ graph TD
 
 ## 延伸阅读
 
-- [Building LLM Applications for Production (Chip Huyen)](https://huyenchip.com/2023/04/11/llm-engineering.html)
 - [Patterns for Building LLM-based Systems & Products](https://eugeneyan.com/writing/llm-patterns/)
 - [Efficient Transformers: A Survey (Tay et al., 2022)](https://arxiv.org/abs/2009.06732)
-- [Copilot Internals (GitHub Blog)](https://github.blog/2023-05-17-how-github-copilot-is-getting-better-at-understanding-your-code/)
+- [Copilot Internals (GitHub Blog)](https://github.blog/ai-and-ml/github-copilot/how-github-copilot-is-getting-better-at-understanding-your-code/)
+- [OpenAI Background Mode](https://developers.openai.com/api/docs/guides/background)
+- [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)

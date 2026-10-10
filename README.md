@@ -4,7 +4,7 @@
 
 **A comprehensive, structured knowledge base for software engineer interviews — in Chinese.**
 
-**系统化的程序员面试知识体系 — 覆盖算法、系统设计、Spring、AI 等 9 大领域，200+ 高频面试题**
+**系统化的程序员面试知识体系 — 覆盖算法、系统设计、Spring、AI 等 9 大领域，200+ 篇专题正文**
 
 [![在线阅读](https://img.shields.io/badge/📖_在线阅读-Docs-0969da?style=for-the-badge)](https://liukun2634.github.io/dev-interview-guide/)
 [![GitHub Stars](https://img.shields.io/github/stars/liukun2634/dev-interview-guide?style=for-the-badge&color=f5c542)](https://github.com/liukun2634/dev-interview-guide/stargazers)
@@ -35,15 +35,17 @@
 
 | 领域 | 核心内容 | 文章数 |
 |:------|:------|:------|
-| **🤖 AI 技术** | LLM 原理 (Transformer)、Prompt Engineering、RAG、Embedding、向量数据库、AI Agent & Skills、MCP、推理优化 (KV Cache/量化)、AI 系统设计 | 14 |
-| **📊 数据结构与算法** | 数组、链表、栈/队列、哈希、树 (二叉树/BST/Trie)、图 (BFS/DFS/拓扑/并查集)、动态规划 (线性/背包/区间/状压/数位/博弈 DP)、贪心 | 30+ |
-| **🌍 Web 与框架** | Spring Core (IoC/AOP/Bean)、Spring MVC、Spring Boot 自动配置、@Transactional 事务、Spring Security、Spring Cloud、React (Hooks/状态管理)、Angular (RxJS/DI) | 16 |
-| **☕ 编程语言** | Java 基础、集合框架、JVM 内存模型与 GC、并发编程 (JUC/线程池/锁) | 6 |
-| **🗄️ 数据库** | MySQL 索引 (B+Tree)、事务与锁 (MVCC)、分库分表、日志系统 (redo/undo/binlog)、Redis (数据类型/持久化/集群) | 8 |
-| **🌐 计算机网络** | TCP/UDP 三次握手、HTTP/HTTPS、DNS、WebSocket、网络安全、CDN、负载均衡 | 8 |
-| **💻 操作系统** | 进程与线程、内存管理 (虚拟内存/分页)、文件与 IO、Linux 常用命令 | 5 |
-| **🏗️ 系统设计** | 分布式理论 (CAP/BASE)、缓存策略、限流熔断、消息队列、微服务、一致性哈希 | 8 |
-| **🔧 工程实践** | 设计模式、Docker/K8s、Redis 实践、消息队列、分布式 ID、监控与可观测性 | 7 |
+| **🤖 AI 技术** | LLM 与多模态、RAG、Embedding、Agent Harness、Skills、MCP/A2A、训练、推理、评估与安全、最新发布与 AI 系统设计 | 19 |
+| **📊 数据结构与算法** | 数组、链表、哈希、树与堆、图搜索、动态规划、贪心、工程数据结构与系统手撕 | 58 |
+| **🌍 Web 与框架** | Spring、云原生与响应式 Java、ASP.NET Core、TypeScript、React、Angular | 27 |
+| **☕ 编程语言** | Java、C++、C#、Python、Go、Rust 的基础、并发、内存管理与工程实践 | 30 |
+| **🗄️ 数据库** | MySQL、PostgreSQL、Redis、NewSQL、NoSQL、搜索、数据仓库、向量数据库与云存储 | 14 |
+| **🌐 计算机网络** | 网络模型、TCP/UDP、HTTP/HTTPS/QUIC、DNS、WebSocket、安全、CDN 与网络排障 | 9 |
+| **💻 操作系统** | 进程与线程、调度、同步、内存、文件系统、I/O、系统调用与容器隔离 | 8 |
+| **🏗️ 系统设计** | 分布式、缓存、读写架构、消息队列、微服务与 18 个实战案例 | 33 |
+| **🔧 工程实践** | Docker/K8s、Helm、GitOps、Redis、消息队列、监控、线上排障与分布式 ID | 11 |
+
+统计核验：2026-10-10，共 209 篇专题正文，不含各级 `index.md` 概览及未发布目录。
 
 ## 🎯 适合谁
 
@@ -64,6 +66,17 @@ cd dev-interview-guide
 npm install
 npm run docs:dev
 ```
+
+本地地址以启动日志为准，默认包含 `/dev-interview-guide/` 基础路径。
+
+文档质量检查：
+
+```bash
+npm run docs:check:source
+npm run docs:check
+```
+
+前者快速检查 Markdown 内部链接与锚点；后者完成生产构建并检查实际生成页面，GitHub Pages 部署使用同一门禁。搜索索引覆盖标题、正文和行内代码，不索引大段代码块；代码示例仍在文章中完整显示。
 
 ## 🤝 参与贡献
 

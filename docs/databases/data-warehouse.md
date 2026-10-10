@@ -389,7 +389,7 @@ GRANT SELECT ON COLUMN sales.users.email TO ROLE pii_reader;
 
 ## Lakehouse 表格式（Iceberg vs Delta Lake vs Hudi）
 
-**2026 数据湖 ACID 三巨头**——已在 [RAG/对象存储/数据湖](./cloud-storage#iceberg-delta-lake-hudi-对比2026-热点) 介绍。
+**2026 数据湖 ACID 三巨头**——已在 [RAG/对象存储/数据湖](./cloud-storage#iceberg-delta-lake-hudi-对比-2026-热点) 介绍。
 
 ### 2026 决战
 

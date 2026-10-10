@@ -7,7 +7,7 @@ title: AI 概述与发展历程
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥 低频</span>
 
 ::: tip 💡 核心要点
-人工智能（Artificial Intelligence, AI）是让机器模拟人类智能的技术总称。当前 AI 的核心是**大语言模型（LLM）**，基于 Transformer 架构和海量数据训练，具备强大的语言理解与生成能力。理解 AI 的发展脉络和核心概念分类，是深入学习 LLM、RAG、Agent 等技术的基础。
+人工智能（Artificial Intelligence, AI）是让机器执行通常需要人类智能任务的技术总称。当前生成式 AI 的重要基础是**大语言模型（LLM）与多模态基础模型**；它们多数以 Transformer 为骨干，通过大规模预训练和训练后训练获得语言、视觉、工具使用等能力。理解 AI 的发展脉络和核心概念分类，是深入学习 LLM、RAG、Agent 等技术的基础。
 :::
 
 ## 什么是人工智能
@@ -16,7 +16,7 @@ title: AI 概述与发展历程
 
 | 层次 | 定义 | 现状 |
 |------|------|------|
-| **弱 AI（Narrow AI）** | 针对特定任务的智能系统 | 当前所有 AI 系统，包括 GPT-4o、Claude 4、o3 |
+| **弱 AI（Narrow AI）** | 针对有限任务范围的智能系统 | 当前可部署系统，包括前沿语言/多模态模型与自动驾驶系统 |
 | **强 AI（AGI）** | 具备人类级别通用智能 | 尚未实现，是行业主要研究方向 |
 | **超级 AI（ASI）** | 全面超越人类智能 | 纯理论阶段 |
 
@@ -43,13 +43,16 @@ graph LR
 | 1950 | 图灵测试提出 | 首次定义"机器智能"的评判标准 |
 | 1997 | 深蓝击败国际象棋冠军 | 规则系统的巅峰 |
 | 2012 | AlexNet 赢得 ImageNet | 深度学习革命的起点 |
-| 2017 | Transformer 论文发表 | 注意力机制取代 RNN，成为后续所有 LLM 的基础 |
+| 2017 | Transformer 论文发表 | 以注意力为核心、摆脱循环计算，成为此后主流 LLM 的架构基础 |
 | 2018 | BERT / GPT 发布 | 预训练+微调范式确立 |
 | 2020 | GPT-3（175B 参数） | 展示 In-Context Learning 涌现能力 |
 | 2022 | ChatGPT 发布 | LLM 进入大众视野，RLHF 对齐技术成熟 |
 | 2023 | GPT-4 / Claude 2 | 多模态能力、长上下文、推理能力大幅提升 |
 | 2024 | 模型全面进化 | Claude 3/3.5、GPT-4o、Gemini 1.5、LLaMA 3、o1 推理模型；开源模型缩小与闭源差距 |
 | 2025 | 推理模型与 Agent 爆发 | Claude 4、GPT-4.1、o3/o4-mini、Gemini 2.5、DeepSeek R1、LLaMA 4；AI Agent 进入生产 |
+| 2026 | 推理、多模态与 Agent 融合 | 前沿模型把可调推理、长上下文、视觉/计算机使用和大规模工具调用逐步整合；评估重心从单轮问答扩展到长程任务的成功率、可靠性与成本 |
+
+**本章核验：2026-10-10。** 近期已确认 GPT-6 与交互式输出、Claude 5.5、Gemini 3.8 Flash、分阶段开放的 Gemini 4 Argon、端侧多模态 EmbeddingGemma 2，以及开放权重 DeepSeek-V4.1-Flash。日期、来源、访问范围和生命周期集中在 [最新进展快照](./ai-trends#latest-updates)，不把受限测试写成全面可用。
 
 ---
 
@@ -83,7 +86,7 @@ LLM 的训练本质上是**自监督学习**——通过预测下一个 Token �
 | **Decoder-Only** | 因果注意力，自回归生成 | GPT、Claude、LLaMA | 文本生成、对话、推理 |
 | **Encoder-Decoder** | 编码器理解+解码器生成 | T5、BART | 翻译、摘要 |
 
-**当前主流 LLM 几乎全部采用 Decoder-Only 架构。**
+**当前生成式文本 LLM 仍以 Decoder-Only 为主。** 但多模态模型可能再加视觉编码器、跨模态连接器或早期融合模块，部分新架构还会混合状态空间层、稀疏注意力等组件，因此“Decoder-Only”不等于内部只有原始 Transformer 解码器。
 
 ---
 
@@ -99,26 +102,26 @@ $$
 
 核心发现：
 - **参数量、数据量、计算量**三者同步增长时，模型性能持续提升
-- 存在**涌现能力（Emergent Abilities）**：某些能力只在模型达到一定规模后才突然出现
-- **Chinchilla 定律**（2022）：最优训练应保持参数量和数据 Token 数大致 1:20 的比例
+- 某些下游指标会表现出**涌现（Emergence）**，但“突然出现”可能同时受离散评分、提示方式和评测分辨率影响，不能把它理解为统一的物理阈值
+- **Chinchilla 研究**（2022）在其模型、数据和计算设定下得到约每参数 20 个训练 Token 的经验点；更稳健的结论是：固定训练计算下，参数量与训练 Token 应近似同步扩展，而不是把 1:20 当作跨架构不变常数
 
-这解释了为什么 LLM 的参数量从 GPT-2 的 1.5B 一路增长到 GPT-4 级别的数千亿参数。
+这解释了为什么业界同时扩大模型、数据和训练计算。需要注意：前沿闭源模型通常不披露参数量或是否采用 MoE，不能根据产品名或性能反推出“数千亿参数”。此外，训练计算最优不等于生命周期成本最优：服务量很大时，较小但训练更久的模型可能以更低推理成本胜出。
 
 ---
 
-## 2024-2025 主流模型格局
+## 2024-2026 主流模型格局
 
 | 模型 | 开发者 | 架构 | 参数规模 | 开源 | 特点 |
 |------|--------|------|----------|------|------|
-| **GPT-4o / 4.1** | OpenAI | Decoder-Only (MoE) | 未公开 | 否 | 多模态原生；GPT-4.1（2025.4）强化指令遵循与长上下文 |
-| **o1 / o3 / o4-mini** | OpenAI | Decoder-Only | 未公开 | 否 | 推理模型系列，链式思考（CoT）推理能力突出 |
-| **Claude 3.5 Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 长上下文（200K）、代码能力强、安全对齐 |
-| **Claude 4.6 Opus/Sonnet** | Anthropic | Decoder-Only | 未公开 | 否 | 2025 旗舰，代码与推理能力大幅提升，支持 Agent 场景 |
-| **Gemini 2.0/2.5** | Google | Decoder-Only | 未公开 | 否 | 原生多模态、长上下文（1M+）、搜索集成 |
-| **LLaMA 3 / 4** | Meta | Decoder-Only | 8B-405B / MoE | 是 | 社区生态丰富；LLaMA 4（2025）引入 MoE 架构 |
-| **Qwen 2.5** | 阿里云 | Decoder-Only | 0.5B ~ 72B | 是 | 中英文表现优异 |
-| **DeepSeek V3 / R1** | DeepSeek | Decoder-Only (MoE) | 671B (37B 激活) | 是 | V3 高性价比训练；R1（2025）推理能力对标 o1 |
-| **Mistral Large** | Mistral | Decoder-Only (MoE) | 未公开 | 部分 | 欧洲团队、高效架构 |
+| **GPT-5.x** | OpenAI | 未公开 | 未公开 | 否 | 2026 主线已整合可调推理、编码、工具与计算机使用；具体上下文和模态按产品/API 版本核对 |
+| **Claude Fable 5 / Opus 5 / Sonnet 5** | Anthropic | 未公开 | 未公开 | 否 | 面向长程 Agent、编码和知识工作；当前型号支持文本/图像输入、文本输出，不能据此推断底层是纯 Decoder-Only |
+| **Gemini 3.x** | Google | 未公开 | 未公开 | 否 | 多模态理解与 Agent 能力；稳定版、预览版和专用音视频生成模型需要区分 |
+| **Llama 4 Scout / Maverick** | Meta | 原生多模态 MoE（早期融合） | 109B/400B 总参数，均约 17B 激活 | 开放权重 | 首代 Llama MoE；开放权重不等于 OSI 定义的开源软件，使用受许可证约束 |
+| **Qwen 系列** | 阿里云 | 依具体型号 | 依具体型号 | 多数开放权重 | 覆盖语言、代码、视觉等型号；部署前核对各模型许可证 |
+| **DeepSeek V3 / R1** | DeepSeek | MoE | V3 为 671B 总参数、每 Token 37B 激活 | 开放权重 | V3 使用 MLA、无辅助损失负载均衡与多 Token 预测；R1 展示可验证任务上的强化学习推理训练 |
+| **gpt-oss-120b / 20b** | OpenAI | MoE | 117B/21B 总参数，约 5.1B/3.6B 激活 | 开放权重 | 文本推理模型，适合自托管；与 GPT-5 产品线不是同一型号 |
+
+> **阅读型号表的边界**：产品能力、API 能力和单个底层模型不是同义词。例如搜索、图像生成、语音或 Computer Use 可能由工具或专用模型协作完成。闭源厂商未披露的参数量、MoE、注意力形式应写“未公开”，不要用传闻补齐。
 
 ### MoE（Mixture of Experts）架构
 
@@ -136,8 +139,9 @@ graph TD
     M --> O["输出"]
 ```
 
-- **优势**：总参数量大（知识容量高），但每次推理计算量与小模型相当
-- **代表**：GPT-4（传闻 8×220B）、DeepSeek V3（671B 总参/37B 激活）、Mixtral、LLaMA 4 Scout/Maverick
+- **优势**：在每 Token 只激活少数专家时，可用较少计算访问更大的参数容量
+- **代价**：所有专家权重通常仍要存储或分片，Router 还会带来负载不均与跨设备 All-to-All 通信；所以“激活参数少”不等于显存占用和延迟等同于同规模稠密小模型
+- **代表**：DeepSeek V3（671B 总参/37B 激活）、Mixtral、Llama 4 Scout/Maverick。GPT-4/4o 是否采用何种 MoE 未获官方公开，不宜作为确定示例
 
 ---
 
@@ -147,12 +151,15 @@ graph TD
 
 | 模态 | 能力 | 代表模型 |
 |------|------|----------|
-| **文本 + 图像理解** | 看图说话、图表分析、OCR | GPT-4o、Claude 4.6 Sonnet、Gemini 2.5 |
-| **图像生成** | 根据文本描述生成图像 | DALL-E 3、Midjourney、Stable Diffusion |
-| **语音** | 语音识别 + 语音合成 | Whisper、GPT-4o |
-| **视频** | 视频理解与生成 | Sora、Gemini |
+| **文本 + 图像理解** | 看图问答、图表分析、文档理解 | GPT-6、Claude 5.5、Gemini 3.8、DeepSeek-V4.1-Flash 等具体型号 |
+| **图像生成** | 根据描述生成或编辑图像 | GPT Image、Gemini Nano Banana、Qwen-Image-2.1 等专用模型；不等于所有聊天模型直接生成图像 |
+| **语音** | 语音识别、理解、合成与实时对话 | 专用 Realtime/Transcribe、Gemini Live/TTS；分别核对模态与会话接口 |
+| **视频** | 视频理解或视频生成（两者需区分） | Gemini 理解、Veo/Gemini Omni 生成；Sora 2 API 已关闭，不再作为新接入示例 |
+| **跨模态检索** | 用文本查图片、音频查视频片段 | Gemini Embedding 2、EmbeddingGemma 2；输出向量而不是事实回答 |
 
-多模态能力使 AI 从"只能读文字"扩展到"能看、能听、能画"，极大拓宽了应用场景。
+历史模型可用于理解演进，不能据此假设其 API 永久可用。接口关闭状态见 [OpenAI 官方生命周期清单](https://developers.openai.com/api/docs/deprecations)，Google 的当前能力见 [Gemini API 文档](https://ai.google.dev/gemini-api/docs)。
+
+多模态能力使 AI 从“只能读文字”扩展到“能看、能听、能生成媒体”。**原生多模态**通常指多种模态在同一训练目标或共享骨干中联合训练，而不是简单调用 OCR、ASR、图像生成等外部工具；厂商未公开训练架构时，应只描述已验证的输入/输出能力。
 
 ---
 
@@ -194,7 +201,7 @@ AI Technology
 
 2. **认为参数量越大模型越好**：Scaling Laws 只说明性能随规模提升，但实际效果还取决于训练数据质量、对齐方法、架构设计等。小模型配合好的数据和微调，可能在特定任务上超过大模型。
 
-3. **混淆开源与闭源模型的使用场景**：闭源模型（GPT-4o、Claude 4）通常更强但有 API 成本和数据隐私顾虑；开源模型（LLaMA、Qwen、DeepSeek）可私有部署但需要自己管理基础设施。选择取决于具体需求。
+3. **混淆开源、开放权重与闭源**：API 模型由厂商托管，能力与运维门槛通常较低，但有成本、版本变更和数据治理问题；Llama、Qwen、DeepSeek 等许多模型是**开放权重**，许可证未必符合 OSI 开源定义。它们可私有部署，但需承担硬件、安全、评估和升级成本。
 
 :::
 
@@ -246,9 +253,9 @@ Scaling Laws（规模定律）的核心发现：
 - 性能提升是**可预测**的——可以用小规模实验预测大规模训练的结果
 
 **指导意义**：
-1. 为"堆算力"提供了理论依据——只要资源到位，性能提升是确定性的
-2. **Chinchilla 定律**指出最优的参数-数据配比约为 1:20，避免了"只堆参数不堆数据"的浪费
-3. 解释了**涌现能力**——某些能力（如推理、代码生成）只在模型达到一定规模后才出现
+1. 为规划训练计算提供经验依据——在同分布、同指标和可扩展训练配方下，可用小实验预测损失趋势，但并不保证所有下游能力等比例提升
+2. **Chinchilla 研究**提示固定计算预算下应同时扩大参数和数据；约 1:20 是特定实验得到的经验值，不是不可变定律
+3. 帮助研究规模与下游能力的关系；某些指标看似突然跃迁，但应排除评分离散化、提示和数据污染等因素
 4. 指导了训练资源的分配决策——在固定计算预算下，如何分配参数量和训练数据量
 
 ---
@@ -278,3 +285,7 @@ Scaling Laws（规模定律）的核心发现：
 - [Scaling Laws for Neural Language Models (Kaplan et al., 2020)](https://arxiv.org/abs/2001.08361)
 - [Training Compute-Optimal Large Language Models (Chinchilla, 2022)](https://arxiv.org/abs/2203.15556)
 - [A Survey of Large Language Models (Zhao et al., 2023)](https://arxiv.org/abs/2303.18223)
+- [OpenAI Model Release Notes](https://help.openai.com/en/articles/9624314-model-release-notes)
+- [Anthropic Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview)
+- [Google Gemini API Models](https://ai.google.dev/gemini-api/docs/models)
+- [The Llama 4 Herd: Native Multimodality and MoE](https://ai.meta.com/blog/llama-4-multimodal-intelligence/)

@@ -421,7 +421,7 @@ void testWithVirtualTime() {
 
 **心智模型**：「**虚拟线程让 Reactor 退出"高并发解药"位置，回到它真正擅长的'流式 + 编排 + 背压' 领域**」。
 
-详见 [Spring WebFlux · 虚拟线程时代选型](./spring-mvc/webflux#虚拟线程时代-webflux-还有必要吗boot-32-必读)。
+详见 [Spring WebFlux · 虚拟线程时代选型](./spring-mvc/webflux#虚拟线程时代-webflux-还有必要吗-boot-3-2-必读)。
 
 ---
 

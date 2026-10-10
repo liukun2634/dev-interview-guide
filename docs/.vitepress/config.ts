@@ -1,13 +1,14 @@
 import { defineConfig } from 'vitepress'
 import mathjax3 from 'markdown-it-mathjax3'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import { sections } from './sections'
 
 export default withMermaid(defineConfig({
   title: '程序员面试手册',
   description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
   base: '/dev-interview-guide/',
-  ignoreDeadLinks: true,
+  ignoreDeadLinks: false,
   srcExclude: ['**/superpowers/**', '**/devops/**'],
 
   sitemap: {
@@ -35,7 +36,7 @@ export default withMermaid(defineConfig({
   },
 
   themeConfig: {
-    nav: [],
+    nav: sections,
 
     sidebar: {
       '/data-structures-and-algorithms/': [
@@ -566,6 +567,19 @@ export default withMermaid(defineConfig({
     search: {
       provider: 'local',
       options: {
+        _render(src, env, md) {
+          const fence = md.renderer.rules.fence
+          const codeBlock = md.renderer.rules.code_block
+          md.renderer.rules.fence = () => ''
+          md.renderer.rules.code_block = () => ''
+          try {
+            const html = md.render(src, env)
+            return env.frontmatter?.search === false ? '' : html
+          } finally {
+            md.renderer.rules.fence = fence
+            md.renderer.rules.code_block = codeBlock
+          }
+        },
         translations: {
           button: {
             buttonText: '搜索文档',

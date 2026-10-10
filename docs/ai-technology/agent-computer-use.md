@@ -7,14 +7,14 @@ title: Computer Use 与多 Agent 编排
 <span class="dig-tag dig-tag--category">AI Agent</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 中等</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点（2026 必备）
-**Computer Use** 是 Anthropic 2024 年提出的 Agent 新范式——让 LLM **直接操作屏幕**（看截图 + 移动鼠标 + 键盘）。**多 Agent 编排**（LangGraph / AutoGen / CrewAI）则解决了"单 Agent 走不远"的问题。这两个方向是 2025-2026 高级岗位**必考**。
+**Computer Use** 让模型通过截图理解界面，并让宿主 Harness 执行鼠标、键盘或浏览器动作；Anthropic 于 2024 年较早公开了通用桌面方案，但这不是单一厂商专属概念。**多 Agent 编排**用于需要上下文隔离、专业分工或并行探索的任务，不是“单 Agent 必然走不远”的默认答案。
 :::
 
 ## Part 1：Computer Use（计算机操控 Agent）
 
 ### 概念
 
-**Computer Use** = LLM 直接观察屏幕截图、生成鼠标/键盘动作，**像人一样操作任意 GUI 应用**。
+**Computer Use** = 模型观察屏幕截图并生成鼠标/键盘动作，由宿主在桌面或浏览器环境中执行。它能覆盖许多没有 API 的 GUI，但不保证适配任意应用。
 
 ```
 传统 Agent:    LLM ──API── 工具（Tool Function）
@@ -25,14 +25,14 @@ Computer Use: LLM ──截图── 屏幕 ──动作── 鼠标/键盘
 
 | 维度 | API Agent | RPA | Computer Use |
 |------|----------|-----|---------------|
-| **接口** | API JSON | 录屏规则脚本 | 像素 + OS 事件 |
-| **适用应用** | 有 API 的服务 | 重复固定流程 | **任意 GUI 应用** |
-| **变化容忍** | API 变就坏 | UI 一改就坏 | **泛化好，UI 改了仍能工作** |
-| **典型代表** | OpenAI Tools / Claude Tools | UiPath / 影刀 | **Claude Computer Use** / OpenAI Operator |
+| **接口** | API JSON | 录制/规则/选择器 | 截图坐标 + OS/浏览器事件；也可混合 DOM/可访问性树 |
+| **适用应用** | 有 API 的服务 | 重复固定流程 | 无需专用 API 的广泛 GUI 场景；仍需处理布局、遮挡和视觉歧义 |
+| **变化容忍** | 契约变更需适配 | 依赖规则与选择器 | 可能跨应用泛化，但仍会受布局、遮挡和视觉歧义影响 |
+| **典型代表** | OpenAI Tools / Claude Tools | UiPath / 影刀 | Claude Computer Use / OpenAI Responses API `computer` |
 
 ### Anthropic Computer Use 实现细节
 
-**Claude 3.5/4 Sonnet 是首个生产可用的 Computer Use 模型**（2024.10 发布）。原理：
+截至 2026-08-09，Anthropic Computer Use 仍是 **Beta**。当前较新的接口使用 beta header `computer-use-2025-11-24` 和工具类型 `computer_20251124`，支持 Claude Opus 5、Sonnet 5、Opus 4.8/4.7/4.6、Sonnet 4.6、Opus 4.5；较旧模型使用 `computer-use-2025-01-24` / `computer_20250124`。模型名、beta header 和工具 schema 是三个独立版本点，升级时必须一起核对。
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -43,29 +43,25 @@ Computer Use: LLM ──截图── 屏幕 ──动作── 鼠标/键盘
 │       {action: "screenshot|left_click|type|key|...",│
 │        coordinate: [x, y], text: "...", duration:..}│
 │    ④ 在虚拟机执行动作                                 │
-│    ⑤ 等待 UI 响应（默认 sleep 2s）                   │
+│    ⑤ 等待 UI 稳定或目标状态出现                      │
 │    ⑥ goto ①                                          │
 └─────────────────────────────────────────────────────┘
 ```
 
-**3 个核心工具**（Anthropic 官方）：
+Anthropic quickstart 常把以下三个**客户端工具**组合使用，但只有 `computer` 是 Computer Use 必需工具，另外两个是可选增强：
 
 | 工具 | 输入 | 用途 |
 |------|------|------|
-| **`computer`** | screenshot / left_click(x,y) / type(text) / key(combo) / cursor_position | 屏幕通用操作 |
+| **`computer_20251124`** | screenshot / left_click / type / key / mouse_move / scroll / drag / zoom 等 | 屏幕通用操作；`zoom` 需显式开启 |
 | **`bash`** | command | Shell 命令（兜底）|
-| **`text_editor`** | view / create / str_replace / insert / undo_edit | 文件编辑 |
+| **`text_editor_20250728`** | view / create / str_replace / insert | 文件编辑；当前版本不含 `undo_edit` |
 
 ### 关键设计抉择（必背）
 
 #### 1. 坐标系统：像素 vs 网格
 
 ```python
-# ❌ 早期 Operator 方案：让模型说"点击右上角"
-# 模型不擅长精确空间定位
-
-# ✅ Anthropic 方案：模型输出 [x, y] 像素坐标
-# 训练时用专门的 grounding 数据
+# 视觉 Computer Use 常输出截图坐标；DOM/可访问性树路线也可输出元素引用
 {"action": "left_click", "coordinate": [856, 423]}
 ```
 
@@ -76,14 +72,14 @@ Computer Use: LLM ──截图── 屏幕 ──动作── 鼠标/键盘
 ```
 原子动作: 截屏 → 决策 → 单次点击 → 截屏 → 决策 → ...
   ✅ 容错好，每步可观察
-  ❌ 慢（一次操作 5-10 秒）
+    ❌ 模型往返多，延迟较高
 
 复合动作: 截屏 → 决策 → "点登录 → 输入用户名 → 输入密码 → 点提交"
   ✅ 快
   ❌ 中间任一步出错就崩
 ```
 
-**生产实践**：**原子为主，预定义复合宏（如填表单）**。
+**生产实践**：高风险和状态不稳定的步骤保持细粒度并逐步验证；低风险、可回滚且状态明确时可批量执行。OpenAI 当前 `computer` tool 会在一次 `computer_call.actions[]` 中返回一组有序动作，因此“永远只做一个原子动作”也不是通用规则。
 
 #### 3. 失败恢复
 
@@ -104,7 +100,7 @@ class ComputerAgent:
         execute(action)
         after = screenshot()
 
-        # ★ 关键：用 LLM 判断状态是否改变
+        # ★ 关键：先用确定性信号，必要时再让模型判断状态变化
         if self.detect_stuck(before, after, step_count):
             return self.recover()  # 回退 / 求助人 / 换策略
 
@@ -114,13 +110,13 @@ class ComputerAgent:
 
 #### 4. 沙箱与权限
 
-**绝对不要直接给 Computer Use Agent 控制宿主机**：
+**不要默认给 Computer Use Agent 控制真实宿主机**。官方参考实现使用容器化桌面；生产环境还应限制凭据、文件挂载、网络和可执行动作：
 
 ```yaml
 # Anthropic 官方 reference docker-compose
 services:
   agent:
-    image: anthropic/computer-use-demo
+    # 参考实现位于 anthropics/anthropic-quickstarts/computer-use-demo
     # ★ 跑在容器/虚拟机内
     # ★ 通过 VNC 暴露屏幕
     # ★ 仅访问明确指定的目录
@@ -128,29 +124,31 @@ services:
       - ./data:/data:ro    # 只读
 ```
 
-**生产部署 3 层隔离**：
-- ① 应用沙箱：Firecracker / gVisor 微 VM
-- ② 网络隔离：默认无网络，按需开白名单
-- ③ 操作审计：所有 action JSON 持久化
+**生产安全边界**：
+- ① 隔离浏览器、容器或 VM，使用最小权限账户，不继承宿主环境变量/凭据
+- ② 文件、域名、下载、网络出口和可执行动作默认拒绝，按任务最小化放行
+- ③ 页面、PDF、邮件、聊天、截图和工具输出一律视为不可信内容，不能提供授权
+- ④ 删除、发送、购买、改权限、输入敏感数据等动作在**风险发生前**确认；验证码、改密码最终步骤等场景交还用户
+- ⑤ 记录动作、确认、截图引用和状态变化，准备超时、停止、回滚与事故审计
 
 ### Computer Use 应用全景
 
 | 场景 | 例子 | 成熟度 |
 |------|------|------|
-| **数据录入** | 把 Excel 数据填进老系统 | 已生产 |
-| **流程自动化** | 跨多个 SaaS 系统抓取报告 | 已生产 |
-| **网页操作** | 订机票 / 填表单 / 比价 | 已生产 |
+| **数据录入** | 把表格数据填进老系统 | 可落地，但需按具体流程评测 |
+| **流程自动化** | 跨多个 SaaS 系统抓取报告 | 有条件可用 |
+| **网页操作** | 填表单 / 比价 / 信息收集 | 有条件可用；交易需确认 |
 | **桌面助手** | "帮我整理桌面 / 改 PPT 配色" | 早期 |
 | **QA 测试** | UI 回归自动化（取代 Selenium）| 兴起 |
 | **辅助残障人士** | 视障辅助交互 | 探索 |
 
 ::: warning ⚠️ Computer Use 的 5 大局限
 
-> ① **速度慢**：单步 5-10 秒，做完一个表单 1-2 分钟；
-> ② **成本高**：每次截图 image token 烧钱，长任务 $1-10/次；
-> ③ **可靠性 80-90%**：远低于 API 调用的 99.9%；
+> ① **延迟较高**：每轮需要模型推理、动作执行和界面加载，具体耗时由模型、页面和 Harness 决定；
+> ② **上下文与成本增长快**：截图、动作历史和工具结果都会占 token，应按真实 trace 计量；
+> ③ **可靠性依任务变化大**：坐标、弹窗、异步加载和跨应用状态都会引入错误，不能引用统一成功率；
 > ④ **不擅长游戏 / 视频** 这类高帧率交互；
-> ⑤ **安全风险**：被截图里的恶意指令注入（[Prompt Injection](./security-and-jailbreak#类型-2间接注入indirect-injection-更危险)）。
+> ⑤ **安全风险**：被截图里的恶意指令注入（[Prompt Injection](./security-and-jailbreak#indirect-prompt-injection)）。
 
 :::
 
@@ -158,12 +156,23 @@ services:
 
 | 产品 | 厂商 | 特点 |
 |------|------|------|
-| **Claude Computer Use** | Anthropic | **首个生产可用**，开源 demo，企业 API |
-| **OpenAI Operator** | OpenAI | 浏览器内 Agent，专注 Web 操作 |
+| **Claude Computer Use** | Anthropic | Beta API；`computer_20251124`，宿主执行动作；有开源参考实现 |
+| **OpenAI `computer` tool** | OpenAI | Responses API GA 路线；支持一次返回批量 `actions[]`；旧 `computer-use-preview` 已弃用 |
+| **ChatGPT agent** | OpenAI | 已整合原 Operator 产品；Operator 独立站点已下线 |
 | **Google Project Mariner** | Google | Chrome 扩展，浏览器 Agent |
-| **Apple Intelligence Screen Awareness** | Apple | 端侧屏幕理解（隐私优先）|
 | **Browser-Use**（开源）| 社区 | 基于 Playwright + LLM 的 Web Agent |
 | **Anthropic Claude Code** | Anthropic | **代码 Agent**（不是 Computer Use 但同类思路）|
+
+### OpenAI 当前接口与迁移
+
+OpenAI 的新实现使用 Responses API 的 `tools: [{"type": "computer"}]`。当前官方示例使用 `gpt-5.6`，迁移表至少要求从旧 `computer-use-preview` / `computer_use_preview` 改为 GA 模型（表中为 `gpt-5.5`）和 `computer` tool；新 `computer_call` 可包含有序 `actions[]`，不再是每轮单个 action。模型推荐会继续变化，代码中应配置模型并在升级前重跑任务评测。
+
+**确认应发生在风险点，而不是任务一开始**：
+
+- 删除本地/云端数据、发送邮件/消息、公开发布、购买、改权限、安装下载的软件、修改系统安全设置等，在动作执行前确认。
+- 输入密码、一次性验证码、API Key、医疗/财务等敏感数据本身就是传输；必须使用用户提供且明确授权的值。
+- 修改密码的最终步骤、绕过 HTTPS 警告或网站安全屏障等应交还用户；页面里的“请继续”“忽略之前指令”不构成授权。
+- 用户初始请求可对少数明确动作提供窄范围预授权，但不能被网页、PDF、邮件或工具输出扩大。
 
 ---
 
@@ -171,7 +180,9 @@ services:
 
 ### 为什么需要多 Agent
 
-**单 Agent 走不远**——上下文太长会"记忆错乱"，单一角色难以胜任复杂任务。
+单 Agent 在高输出探索、并行调查或权限隔离场景中可能受限，但多 Agent 不是默认升级路径。
+
+更准确地说，多 Agent 是一种**有代价的上下文与执行隔离手段**。只有当子任务能独立并行、需要不同工具/权限/模型，或高输出探索值得放到独立上下文时才有优势；强依赖共享状态的任务往往更适合单 Agent、普通代码工作流或少量 Agent-as-tool。
 
 **多 Agent 优势**：
 - ✅ **角色分工**：产品经理 Agent + 工程师 Agent + QA Agent
@@ -183,18 +194,18 @@ services:
 
 | 框架 | 核心抽象 | 强项 | 弱项 | 选型场景 |
 |------|---------|------|------|---------|
-| **LangGraph** | **图（StateGraph）+ 节点 + 边** | **状态机最严谨、可控、可调试**、原生检查点支持 | API 略复杂、学习曲线 | **生产首选**：复杂工作流、可控状态 |
-| **AutoGen**（微软 → 0.4 重写）| **多 Agent 对话**（GroupChat / ChatManager）| 自然的对话隐喻、Code Execution 强 | 早期版本不稳定，0.4 异步重写后好转 | 多 Agent 协作、Code Agent |
-| **CrewAI** | **Crew + Agent + Task + Process（顺序/层级）** | **API 最简、role-based** | 灵活性差、调试难 | 快速 PoC、固定角色业务流 |
-| **OpenAI Agents SDK**（2025.3）| **Agent + Handoff + Guardrail + Tracing** | 官方背书、Trace UI 友好 | 锁定 OpenAI 生态 | 已用 OpenAI 用户 |
-| **Pydantic Agents**（2024）| **Pydantic 类型 + Agent + Dependency Injection** | **强类型校验**、Python 友好 | 较新、社区小 | Python 后端工程师 |
+| **LangGraph** | **StateGraph + 节点 + 边** | 低层图编排、持久化、durable execution、interrupt/HITL | API 较低层，需自行设计 Agent 架构 | 长运行、有状态、确定性与 Agentic 混合流程 |
+| **AutoGen 0.7.x** | **AgentChat + 事件驱动 Core + Extensions** | 对话式单/多 Agent、分布式 runtime、代码执行扩展 | 抽象层较多，需区分 AgentChat 与 Core | 研究、原型、事件驱动多 Agent 系统 |
+| **CrewAI** | **Flow + Crew + Agent + Task** | Flow 控制状态/流程，Crew 做角色协作 | 角色协作也会增加协调开销 | 业务 Flow 中嵌入自治协作 |
+| **OpenAI Agents SDK** | **Agent + Runner + Agent-as-tool / Handoff + Guardrails** | Sessions、HITL、Tracing、MCP、Sandbox Agents | Responses API 路径最完整，其他模型能力取决于 provider | 轻量 Python Agent runtime |
+| **Pydantic AI** | **Agent + 类型化依赖/输出 + Graph** | 强类型、模型可替换、Python 友好 | 编排与生态选择需自行评估 | 强类型 Python 应用 |
 | **Magentic-One**（微软研究）| **Orchestrator + Specialized Agents** | 设计严谨、benchmark 强 | 研究项目，生产慎用 | 学习参考 |
 | **MetaGPT** | **SOP 软件工程公司** | 模拟"产品-设计-开发-测试" | 学院风格 | 教育、Demo |
 | **Swarm**（OpenAI 实验）| **轻量级 Agent 切换** | 极简（< 500 行） | 已被 Agents SDK 取代 | 历史参考 |
 
-### LangGraph 核心模式（必背）
+### LangGraph 核心模式
 
-LangGraph 是 **2025-2026 生产 Agent 编排的事实标准**，必懂。
+LangGraph 是流行的低层编排 runtime 之一，擅长长运行、有状态、需要 durable execution 与人工中断的工作流；它不是唯一标准，也不应仅凭流行度默认选用。简单流程可直接用代码或 SDK Runner，团队型协作也可评估 AutoGen、CrewAI、OpenAI Agents SDK 或自建 Harness。
 
 #### 1. 基础结构：StateGraph
 
@@ -302,7 +313,7 @@ result = app.invoke({"messages": ["写一篇 RAG 综述"]})
 
 **适合**：长任务，先规划再执行（AutoGPT 风格）。
 
-#### 3. LangGraph 杀手特性：Checkpoint（断点续跑）
+#### 3. LangGraph 重要能力：Checkpoint（持久化与续跑）
 
 ```python
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -314,8 +325,7 @@ app = graph.compile(checkpointer=memory)
 config = {"configurable": {"thread_id": "user-123"}}
 result = app.invoke({"messages": [...]}, config=config)
 
-# ★ 神奇之处：crash 后从最后断点恢复
-# ★ 也可以 time travel: 跳回任意历史状态修改并重跑
+# 持久化状态可支持失败恢复、状态历史与人工中断后继续
 ```
 
 **生产价值**：
@@ -323,9 +333,9 @@ result = app.invoke({"messages": [...]}, config=config)
 - 调试时回到关键节点，改变状态重跑（**time travel**）
 - Human-in-the-loop：在某节点暂停等待人工 → 继续
 
-### AutoGen 0.4（异步重写版）
+### AutoGen 当前架构
 
-**2024.11 微软发布 AutoGen 0.4，整个重写**。核心：
+AutoGen 当前稳定文档为 0.7.x，分为高层 **AgentChat**、事件驱动 **Core**、集成实现 **Extensions** 与原型 UI **Studio**。不要继续把“0.4 重写”当成当前版本名称。
 
 ```python
 from autogen_agentchat.agents import AssistantAgent
@@ -346,7 +356,7 @@ async def main():
         print(msg)
 ```
 
-**新特性**：
+**当前架构特性**：
 - 全异步（asyncio）
 - 多模型解耦（每个 Agent 配不同 LLM）
 - 内置流式
@@ -356,13 +366,13 @@ async def main():
 
 | 你需要 | 推荐 |
 |--------|------|
-| **生产可控的复杂工作流** | **LangGraph** |
-| **快速 PoC** | **CrewAI** |
-| **强类型 Python 后端** | **Pydantic Agents** |
+| **图状态、持久化与人工中断** | **LangGraph** |
+| **Flow + 角色型协作** | **CrewAI** |
+| **强类型 Python 后端** | **Pydantic AI** |
 | **已在 OpenAI 生态** | **OpenAI Agents SDK** |
-| **Code Agent / Code Execution** | **AutoGen 0.4** |
-| **多模型解耦** | **AutoGen 0.4** 或 **LangGraph** |
-| **超大规模生产** | **LangGraph + 自定义** |
+| **对话式 Code Agent / Code Execution** | **AutoGen AgentChat + Extensions** |
+| **多模型解耦** | **AutoGen**、**LangGraph** 或模型可替换的 SDK |
+| **跨组织的远程 Agent 协作** | **A2A 1.0 + 适合的内部 runtime** |
 
 ---
 
@@ -370,30 +380,30 @@ async def main():
 
 ### 题目 1：Computer Use 怎么实现？
 
-> **答**：核心是**截屏 → LLM 视觉决策 → 输出像素坐标动作 → 执行 → 再截屏**的循环。Anthropic Claude Computer Use 是首个生产可用方案，3 个核心工具：`computer`（screenshot/click/type）、`bash`（兜底 shell）、`text_editor`（文件操作）。
+> **答**：核心是**截屏 → 模型返回动作 → 宿主校验并执行 → 再截屏验证**的循环。Anthropic 当前 Computer Use 使用 `computer-use-2025-11-24` / `computer_20251124`，仍为 Beta；OpenAI 新实现使用 Responses API 的 `computer` tool，旧 `computer-use-preview` 已弃用。`bash` 和 `text_editor` 可增强 Claude 流程，但不是 Computer Use 必需工具。
 >
-> 关键设计：① **坐标必须像素而非"右上角"**——需要 grounding 训练；② **原子动作为主 + 预定义复合宏**——平衡速度与容错；③ **失败检测必备**——前后截图对比 + 步数上限 + 卡死回退；④ **三层沙箱**——Firecracker 微 VM + 默认无网络 + 完整审计。
+> 关键设计：① 视觉路线要处理坐标 grounding，浏览器路线也可混合 DOM/可访问性信息；② 根据风险和状态稳定性选择细粒度或批量动作；③ 每批动作后读取真实界面状态，设置步数/时间上限和回退；④ 使用隔离环境、最小权限、域名/动作白名单、风险点确认和完整审计。
 >
-> 局限：单步 5-10 秒慢、$1-10/次贵、可靠性 80-90%、最大安全风险是**截图里的恶意指令注入**。
+> 局限：多轮视觉交互延迟高，截图消耗上下文，坐标和异步 UI 容易出错；最大安全风险之一是**界面内容中的间接 Prompt Injection**。因此页面内容不能视为授权，高风险动作要在执行点确认。
 
 ### 题目 2：你怎么编排多 Agent？
 
-> **答**：**LangGraph 是 2025-2026 生产事实标准**。核心抽象是 **StateGraph + 节点 + 条件边**，每个节点是一个 Agent / Function。
+> **答**：先判断是否真的需要多 Agent。需要图状态、持久化和 HITL 时可选 LangGraph；偏对话式协作可看 AutoGen；Flow 中嵌入角色团队可看 CrewAI；OpenAI 生态可用 Agents SDK 的 Agent-as-tool 或 Handoff。它们是不同抽象，不存在唯一“事实标准”。
 >
 > 4 大常用模式：① **Supervisor** —— LLM 决定路由到哪个专家 Agent；② **Hierarchical** —— 多层管理结构，超大任务用；③ **Reflection** —— 生成 + 反思迭代，适合写作 / 代码；④ **Plan-and-Execute** —— 先规划再执行，适合长任务。
 >
-> 杀手特性是 **Checkpoint**：crash 自动从断点恢复、time travel 调试、人工审批暂停继续——这些是其他框架（CrewAI、AutoGen）缺的关键能力。
+> LangGraph 的突出能力是 **Checkpoint / persistence**：为失败恢复、状态历史和人工中断后继续提供基础。但“保存状态”不等于“安全恢复”——外部副作用还需幂等键、事务/补偿、版本兼容和恢复前验证。
 >
-> 选型简单：复杂可控用 LangGraph，快速 PoC 用 CrewAI，Python 强类型用 Pydantic Agents，Code Execution 用 AutoGen 0.4。
+> OpenAI Agents SDK 中，Agent-as-tool 由 manager 保留会话控制；Handoff 则把会话交给目标 Agent。跨服务器、跨厂商委派再考虑 A2A 1.0，不要把框架内 Handoff 与 A2A 混为一谈。
 
 ---
 
 ## 看到什么就先想到这类
 
 - **"让 Agent 操作老旧 GUI"** → Computer Use
-- **"绕过没 API 的 SaaS"** → Computer Use
+- **"操作没有 API 的受信任 SaaS"** → Computer Use，并检查服务条款与授权
 - **"复杂工作流要可控"** → LangGraph + StateGraph
 - **"Agent crash 怎么续跑"** → LangGraph Checkpoint
-- **"多 Agent 自然对话"** → AutoGen 0.4 GroupChat
+- **"多 Agent 自然对话"** → AutoGen AgentChat / GroupChat
 - **"快速搭多 Agent 系统"** → CrewAI Crew/Task
 - **"如何防 Agent 注入"** → [LLM 安全](./security-and-jailbreak)

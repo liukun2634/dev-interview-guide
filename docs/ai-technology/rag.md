@@ -7,7 +7,7 @@ title: RAG 检索增强生成
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-RAG（Retrieval-Augmented Generation，检索增强生成）通过在生成前从外部知识库中检索相关信息，为大语言模型提供**实时、准确**的上下文，解决 LLM 的**幻觉问题（Hallucination）**和**知识截止（Knowledge Cutoff）**限制。随着大模型上下文窗口突破百万 Token（如 Gemini、Claude），长上下文方案正在改变 RAG 的应用格局，但 RAG 在**大规模知识库、动态数据、成本控制**等场景下仍然不可替代。
+RAG（Retrieval-Augmented Generation，检索增强生成）通过在生成前从外部知识库中检索相关信息，为大语言模型提供**可更新、可追溯**的上下文，以缓解 LLM 的**幻觉问题（Hallucination）**和**知识截止（Knowledge Cutoff）**限制。RAG 不保证回答准确：检索遗漏、错误来源、权限过滤和生成不忠实都可能造成失败。长上下文正在改变其应用边界，但在大规模知识库、动态数据、权限隔离和成本控制场景下，检索仍然重要。
 :::
 
 ## 为什么需要 RAG
@@ -16,7 +16,7 @@ RAG（Retrieval-Augmented Generation，检索增强生成）通过在生成前�
 
 | 问题 | 说明 | RAG 如何解决 |
 |------|------|-------------|
-| **幻觉（Hallucination）** | 模型可能生成看似合理但事实错误的内容 | 提供检索到的真实文档作为生成依据 |
+| **幻觉（Hallucination）** | 模型可能生成看似合理但事实错误的内容 | 提供可验证文档作为依据，配合引用和忠实度评测降低风险 |
 | **知识截止（Knowledge Cutoff）** | 训练数据有时间截止，无法获取最新信息 | 从实时更新的知识库中检索 |
 | **领域知识不足** | 通用模型缺乏特定行业的专业知识 | 接入企业内部文档和专业数据库 |
 | **数据隐私** | 不便将私有数据用于模型训练 | 数据留在本地，仅在推理时检索 |
@@ -53,7 +53,7 @@ graph TD
 
 ## RAG vs 长上下文窗口
 
-2024-2025 年，主流大模型的上下文窗口从 4K/8K 迅速扩展到 **100 万+ Token**（Gemini 1.5 Pro、Claude 等），这对 RAG 的定位产生了深远影响：直接将文档塞进上下文窗口成为一种可行方案。
+2024 年以来，部分模型的上下文窗口扩展到数十万乃至百万级 Token，这对 RAG 的定位产生了深远影响：对可放入窗口的小型、相对稳定语料，直接提供全文成为一种可行方案。具体上限、定价和长上下文质量随模型版本变化，应以供应商当前文档和本地评测为准。
 
 ### 对比分析
 
@@ -61,16 +61,16 @@ graph TD
 |----------|-----|-------------|----------|
 | **架构复杂度** | 高 — 需要分块、Embedding、向量数据库、检索链路 | 低 — 直接将文档拼接到 Prompt | 中等 |
 | **单次查询成本** | 低 — 只传入检索到的少量片段 | 高 — 每次查询都传入全量文档 | 中等 |
-| **知识库规模** | 可扩展到**数百万文档** | 受限于上下文窗口（通常 < 1M Token） | 大规模知识库 + 精细推理 |
+| **知识库规模** | 可扩展到大规模语料 | 受限于具体模型上下文窗口 | 大规模知识库 + 精细推理 |
 | **实时性** | 支持动态更新，索引后即可检索 | 需要每次查询时重新加载 | 灵活 |
-| **准确性** | 依赖检索质量，可能漏召回 | 模型可"看到"全部内容，不会遗漏 | 最高 — 检索缩小范围 + 全量推理 |
+| **准确性** | 依赖检索质量，可能漏召回 | 无检索阶段漏召回，但仍可能受截断、位置偏差和推理错误影响 | 依赖召回范围、上下文噪声和目标模型 |
 | **延迟** | 较低（检索 + 生成） | 较高（处理大量 Token 耗时） | 中等 |
 
 ### 决策指南
 
 ::: tip 💡 如何选择
 
-- **文档量 < 200K Token**（约一本书）→ 优先考虑**长上下文方案**，架构简单、无检索遗漏风险
+- **文档量可稳定放入目标模型上下文**（Anthropic 的 Contextual Retrieval 指南以 200K Token 作为其示例边界）→ 可评估**长上下文方案**，架构简单但仍存在位置偏差、输入截断和成本问题
 - **文档量 > 1M Token 或数据持续更新** → 使用 **RAG**，成本可控且可扩展
 - **对准确性要求极高**（如医疗、法律、金融）→ 采用**混合方案**：RAG 检索缩小候选范围，再将候选文档放入长上下文让模型精细推理
 
@@ -78,7 +78,7 @@ graph TD
 
 ### 混合架构（Hybrid RAG + Long Context）
 
-混合方案正在成为 2025 年的行业共识。典型流程：
+混合方案是常见的生产选择之一。典型流程：
 
 ```mermaid
 graph LR
@@ -87,7 +87,7 @@ graph LR
     C --> D["LLM 在大上下文中<br/>精细推理和生成"]
 ```
 
-与传统 RAG 只传入少量片段不同，混合方案利用长上下文窗口传入**更多候选文档**（如 Top-50 甚至 Top-100），让模型在更大范围内进行交叉验证和推理，显著降低因检索遗漏或截断导致的信息损失。
+与传统 RAG 只传入少量片段不同，混合方案可以传入更多候选文档，让模型在更大范围内交叉验证和推理。但候选越多也可能增加噪声、延迟和“Lost in the Middle”，应通过 Token 预算和评测选择 Top-K，而不是固定使用 Top-50/Top-100。
 
 ---
 
@@ -159,6 +159,17 @@ graph TD
 
 - **Chunk Size（分块大小）**：通常 256~1024 Token。太小会丢失上下文，太大会引入噪声
 - **Chunk Overlap（重叠）**：通常 10%~20%，防止关键信息被分隔符截断
+
+### Contextual Retrieval（上下文化检索）
+
+传统分块可能丢失文档级信息，例如片段中的“该公司”缺少公司名和报告期。Contextual Retrieval 在索引前为每个 Chunk 生成一段简短的、面向检索的文档内上下文，并将其前置到 Chunk 后同时用于 Dense Embedding 和 BM25 索引：
+
+```text
+原始片段: 该公司的收入环比增长 3%。
+上下文化: 本片段来自 ACME 2023 年 Q2 财报，讨论该季度收入变化。该公司的收入环比增长 3%。
+```
+
+它是**索引预处理**，不是简单把全文摘要复制到每块，也不会自动保证提升。Anthropic 在其测试集上报告 Contextual Embeddings + Contextual BM25 降低了 Top-20 检索失败率，加入 Reranker 后进一步改善；这些数字不能直接外推到其他语料，仍需评估生成上下文的事实性、索引成本和领域效果。
 
 ### Python 分块示例
 
@@ -256,7 +267,7 @@ $$
 
 ### 混合检索 Hybrid Retrieval
 
-结合稠密检索和稀疏检索的优势，通过加权融合提升检索质量：
+结合稠密检索和稀疏检索的优势，通过排名融合提升检索覆盖。两路原始分数尺度不同，不应未经校准直接相加；RRF 不依赖分数可比性，权重和候选深度仍需评测：
 
 ```python
 def hybrid_search(query: str, top_k: int = 10,
@@ -302,7 +313,7 @@ def hybrid_search(query: str, top_k: int = 10,
 
 ## 重排序 Reranking
 
-初次检索（First-stage Retrieval）召回的结果可能包含噪声。**重排序（Reranking）**使用交叉编码器（Cross-Encoder）对 Query-Document 对进行精细打分，显著提升最终结果的相关性。
+初次检索（First-stage Retrieval）召回的结果可能包含噪声。**重排序（Reranking）**使用交叉编码器（Cross-Encoder）对 Query-Document 对进行精细打分，通常能改善最终结果的相关性，但会增加延迟和成本。
 
 ```mermaid
 graph LR
@@ -341,6 +352,8 @@ def query_rewrite(original_query: str, llm) -> list:
     queries = response.strip().split("\n")
     return [original_query] + queries  # 包含原始查询
 ```
+
+改写可能把用户意图、专有名词或时间条件“改没了”，因此通常保留原查询，与改写结果并行召回后融合；订单号、错误码、法规条款等精确词应锁定或交给稀疏检索。多跳问题可先分解子查询，但要限制查询数、超时和可访问数据源。
 
 ### HyDE（Hypothetical Document Embeddings）
 
@@ -391,7 +404,7 @@ Adaptive RAG 在最前端加一个**查询复杂度分类器**，根据问题难
 | **单跳问答** | "DeepSeek R1 用的是什么 RL 算法？" | 单次 RAG 检索 |
 | **多跳推理** | "DeepSeek 的 RL 算法和 RLHF 的核心差异是什么？" | 多步检索 + Agent 规划 |
 
-**收益**：在生产中可降低 30-50% 的检索成本，同时提升简单问题的响应速度。
+**收益**：简单问题可以跳过昂贵检索，多跳问题再升级检索深度；实际成本与质量收益取决于分类准确率、各路径单价和查询分布，应通过路由混淆矩阵与线上 Trace 评估。
 
 ### GraphRAG
 
@@ -409,7 +422,7 @@ GraphRAG 将传统 RAG 中的"扁平文档检索"升级为**基于知识图谱�
 
 #### Microsoft GraphRAG 完整流水线（2024 论文级实现）
 
-**面试 2026 高频追问**："GraphRAG 怎么实现？比向量 RAG 强在哪？成本多少？"——能讲清完整 5 阶段 + 真实成本数字立刻区分高级。
+**面试 2026 高频追问**："GraphRAG 怎么实现？比向量 RAG 强在哪？成本如何评估？"——关键是讲清完整流程、查询模式和适用边界。
 
 ```text
 ┌────────────── 索引阶段（贵）──────────────┐
@@ -440,21 +453,14 @@ Local Search: "Steve Jobs 是谁的导师？"
 └────────────────────────────────────┘
 ```
 
-**真实成本（10 万 token 文档）**：
-
-| 阶段 | 成本（GPT-4o）| 时间 |
-|------|--------------|------|
-| 实体抽取 | ~$5-10 | 5-10 分钟 |
-| 社区摘要 | ~$10-20 | 10-20 分钟 |
-| 单次 Global 查询 | ~$0.5-1 | 30-60 秒 |
-| 单次 Local 查询 | ~$0.05-0.1 | 5-10 秒 |
+成本取决于语料长度、Chunk 大小、实体密度、抽取/摘要模型、并发和查询模式。Microsoft 官方文档也提供用传统 NLP 替代部分 LLM 抽取的 FastGraphRAG，以较低成本换取更嘈杂、较低保真的图。上线前应分别计量索引 Token、增量维护、Global/Local/DRIFT 查询的 P95 延迟和单问成本。
 
 ::: warning ⚠️ GraphRAG 不是银弹
 
-> ① **索引成本是普通 RAG 的 50-100×**——单次 100K 文档要花 $15-30；
-> ② **全局查询慢**（30-60 秒），不适合实时对话；
-> ③ **必须周期重建**——文档更新不能增量改图谱；
-> ④ **小规模数据没必要**：< 10 篇文档用传统 RAG 完全够。
+> ① LLM 实体/关系抽取与社区摘要通常使索引显著贵于普通向量 RAG，但不存在通用的固定倍数；
+> ② Global Search 是遍历社区报告的 Map-Reduce，通常比 Local/Basic Search 更耗资源；
+> ③ 文档更新会带来实体合并、关系和社区摘要维护成本，增量能力取决于具体实现和版本，不能假设零成本更新；
+> ④ **小规模数据通常没必要**：少量文档可先评估长上下文或传统 RAG，关系和全局分析需求明确后再引入图索引。
 
 **适用场景判断**：
 - ✅ 跨文档推理的**全局问题**（"竞品总览"、"研究趋势"）
@@ -469,8 +475,8 @@ Local Search: "Steve Jobs 是谁的导师？"
 | 项目 | 厂商 | 特色 |
 |------|------|------|
 | **Microsoft GraphRAG** | 微软 | 论文官方实现，最完整 |
-| **LightRAG** | 港大 2024.10 | 速度快、成本低 50%、增量更新 |
-| **nano-graphrag** | 社区 | 极简（< 800 行），可读性最佳 |
+| **LightRAG** | 港大 2024.10 | 轻量图检索，项目提供增量插入能力 |
+| **nano-graphrag** | 社区 | 精简实现，便于理解原型流程 |
 | **Neo4j GraphRAG** | Neo4j | 商业级，集成 LangChain |
 | **LlamaIndex GraphRAG** | LlamaIndex | 集成度高、易上手 |
 
@@ -487,6 +493,8 @@ Local Search: "Steve Jobs 是谁的导师？"
 | **失败恢复** | 无 | 检索结果不满足时换策略重试 |
 
 **典型场景**：跨多个知识库的复杂分析、需要计算或最新数据的混合问答、企业内多源数据问答。
+
+Agentic RAG 增加了工具误用、间接 Prompt Injection、循环失控和成本不可预测风险。生产中应限制允许的数据源、轮数、Token/费用和总时限；每次检索和工具调用都由服务端重新鉴权，高风险动作不能由“检索到的内容”授权。
 
 **与 CRAG/Self-RAG 的关系**：CRAG 和 Self-RAG 可视为 Agentic RAG 的**特定退化形式**——只有一个固定的"评估-纠错"循环；而 Agentic RAG 的工具集和循环结构是开放的。
 
@@ -523,12 +531,12 @@ ColBERT (Late Interaction):
 ```
 
 **优势**：
-- ✅ **召回精度比 dense 高 10-30%**（长文档场景尤其明显）
+- ✅ 在不少检索基准和长文档场景中优于单向量 Dense，但提升幅度取决于数据集和基线
 - ✅ **OOD 泛化好**（不易被陌生领域打败）
 - ✅ **可解释**（能看到哪个 query token 匹配了 doc 哪个 token）
 
 **劣势**：
-- ❌ **存储大 100×**（一个 1000 token 文档 = 1000 × 128d 向量）
+- ❌ 原始 Token 级表示远大于单向量 Dense；ColBERTv2/PLAID 可通过残差压缩等技术降低开销，但仍需专用容量评估
 - ❌ **检索复杂**：需特殊索引（PLAID）
 
 **何时用 ColBERT**：
@@ -554,39 +562,42 @@ ColBERT (Late Interaction):
 | 方案 | 代表 | 优势 | 劣势 |
 |------|------|------|------|
 | **Caption + Text RAG** | LlamaIndex Multi-Modal | 与现有 RAG 兼容、容易部署 | 信息损失大、依赖 caption 质量 |
-| **多模态 Embedding** | **Voyage-Multimodal-3** / Cohere Embed v3 / CLIP | 真正图文统一表示、零OCR | 模型选择有限、长文档难处理 |
-| **ColPali**（2024.6）| ColPali / ColQwen2 | **完全跳过 OCR**，VLM 直接读 PDF 截图，对复杂版面无敌 | 存储大、推理贵 |
+| **多模态 Embedding** | Voyage Multimodal / Cohere Embed / CLIP 等 | 图文统一表示，可减少 OCR 依赖 | 模型选择、语言和长文档效果需评测 |
+| **ColPali**（2024.6）| ColPali / ColQwen 系列 | 可跳过传统 OCR 流水线，直接检索 PDF 页图像 | 多向量存储大、推理成本高 |
 
 #### ColPali：2024 现象级新范式
 
 **ColPali** = ColBERT 思路 + 视觉 PDF 处理。**直接把 PDF 每页变成图像 + VLM 抽特征**，不再做 OCR / 版面解析。
 
 ```python
-# RAGatouille / colpali_engine
-from colpali_engine.models import ColPali
+# colpali-engine 的最小流程；具体模型与设备参数以当前版本文档为准
+from colpali_engine.models import ColPali, ColPaliProcessor
 
-model = ColPali.from_pretrained("vidore/colpali-v1.2")
+model_name = "vidore/colpali-v1.3"
+model = ColPali.from_pretrained(model_name).eval()
+processor = ColPaliProcessor.from_pretrained(model_name)
 
-# 索引: 直接喂 PDF 页图像
-embeddings = model.encode_image(pdf_pages_images)   # 每页 N 个 token 向量
+# 索引：处理 PDF 页图像，再由模型生成每页的多向量表示
+image_batch = processor.process_images(pdf_page_images)
+image_embeddings = model(**image_batch)
 
-# 查询: 文本 query
-query_emb = model.encode_query("营收增长率多少？")
-scores = colbert_score(query_emb, embeddings)
+# 查询：文本 query 同样编码为多向量，再做 late-interaction 打分
+query_batch = processor.process_queries(["营收增长率多少？"])
+query_embeddings = model(**query_batch)
+scores = processor.score_multi_vector(query_embeddings, image_embeddings)
 ```
 
 **为什么是突破**：
-- ✅ 复杂表格 / 图表 / 多栏排版 **无需 OCR 也能精确检索**
-- ✅ 财报 / 学术论文 / 招标书等"PDF 中藏宝"场景质量飞跃
-- ✅ ViDoRe benchmark 上比传统流水线 +15 NDCG@5
+- ✅ 保留复杂表格、图表和多栏排版的视觉线索，可减少 OCR/版面解析造成的信息损失
+- ✅ 在 ViDoRe 的部分视觉文档检索任务上优于文本解析基线，但收益依模型、语言、基准版本与文档类型而异
 
-**2026 现状**：财务 / 法律 / 医学 PDF 检索新项目首选 ColPali / ColQwen2.5。
+**2026 现状**：对于财务、法律、医学等复杂 PDF，ColPali / ColQwen 值得纳入候选评测；是否采用还要比较 OCR 质量、领域语言、存储、延迟、合规和可解释性。
 
 ---
 
-### 混合架构：RAG + 长上下文（2025-2026 业界共识）
+### 混合架构：RAG + 长上下文
 
-**核心洞察**：RAG 和长上下文窗口**不是替代关系，是互补关系**。Gemini 2.5 Pro 已支持 2M token，但 RAG 仍未死。
+**核心洞察**：RAG 和长上下文窗口**不是替代关系，是互补关系**。当前已有百万级上下文模型，但上下文上限不等于有效召回、权限隔离和成本问题自动消失。
 
 #### 决策树（必背）
 
@@ -594,12 +605,12 @@ scores = colbert_score(query_emb, embeddings)
 知识库大小？
 ├─ < 100K token（约 1 本书）
 │   └─ 直接长上下文，无需 RAG
-│       优势: 召回率 100%、零索引成本、推理灵活
-│       成本: 每次查询贵（2M token 上下文 = $20+）
+│       优势: 无检索阶段漏召回、零索引成本、推理灵活
+│       成本: 每次查询需处理全量输入，价格依模型和缓存命中而变
 │
 ├─ 100K - 1M token
 │   └─ 混合：用 RAG 召回 50K → 塞进长上下文
-│       优势: 召回保证 + 推理质量高
+│       优势: 扩大候选上下文并保留精细推理空间
 │
 ├─ 1M - 100M token
 │   └─ 标准 RAG（chunk + dense retrieval + Reranker）
@@ -625,11 +636,11 @@ scores = colbert_score(query_emb, embeddings)
 | **新鲜数据** | 长上下文每次都要重新喂、贵 |
 | **隐私分级** | 按 ACL 检索是必需的 |
 | **多源数据** | DB / API / 文档混合 |
-| **成本敏感** | RAG 单次查询 $0.01-0.1 vs 长上下文 $1-10 |
+| **成本敏感** | RAG 只送入候选片段，长上下文处理更多输入；实际差异取决于模型价格、缓存命中、检索/重排成本和请求长度 |
 
-#### Prompt Caching：长上下文的成本救星
+#### Prompt Caching：长上下文的成本优化手段
 
-详见 [Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)——把固定知识库前缀缓存后，**命中可降本 90%**，让"长上下文 + RAG"混合方案在成本上接近纯 RAG。
+详见 [Prompt Caching](./ai-agents#prompt-caching)——固定知识库前缀命中缓存时可降低输入成本和延迟，但折扣、最小缓存长度、TTL 和失效条件由供应商决定，也不能消除长上下文质量问题。
 
 
 
@@ -642,6 +653,16 @@ scores = colbert_score(query_emb, embeddings)
 | **渐进式索引** | 增量更新知识库，避免全量重建索引 |
 | **A/B 测试** | 对比不同分块策略、检索算法、Prompt 模板的效果 |
 
+### 权限过滤与信任边界
+
+RAG 不能“先全库检索、再让模型判断用户能否看”。租户、用户、文档 ACL、地域和保留期等授权条件必须由可信身份派生，并在**召回前或召回执行过程中**强制过滤；Post-filter 既可能泄露分数/内容，也可能使 Top-K 数量不足。
+
+- 文档和 Chunk 继承同一权限标签，索引更新、删除、缓存和备份都要保持一致
+- Query rewriting、Embedding 和 Reranker 不得去掉 ACL；跨租户缓存键必须包含授权上下文
+- 对网页、邮件、用户上传和工具结果保留来源、信任级别与 taint 标签；它们是数据，不是授权指令
+- 引用只返回用户有权访问的来源；日志和评测样本同样需要脱敏与访问控制
+- 用“无权限文档能否被召回/引用/缓存命中”的负向测试验证隔离，而不是只测正常问答
+
 ### Prompt Caching 在 RAG 中的应用
 
 RAG 场景下的 Prompt Caching 与 Agent 略有不同——RAG 的**检索片段每次都在变**，所以**不能像 Agent 一样缓存上下文中部**。正确的姿势：
@@ -649,17 +670,17 @@ RAG 场景下的 Prompt Caching 与 Agent 略有不同——RAG 的**检索片�
 ::: tip 💡 RAG 的 Prompt 排版黄金顺序
 
 ```
-1. System Prompt（不变 → 必缓存）
-2. 检索指引 / 输出格式约束（不变 → 必缓存）
-3. Few-shot 示例（不变 → 必缓存）
+1. System Prompt（不变 → 支持时优先评估缓存）
+2. 检索指引 / 输出格式约束（不变 → 支持时优先评估缓存）
+3. Few-shot 示例（不变 → 支持时优先评估缓存）
 4. ──── 缓存断点（cache_control）────
 5. 检索到的 Top-K 文档片段（每次变）
 6. 用户问题（每次变）
 ```
 
-把所有"不依赖检索结果"的内容**全部前置**，断点之后才放检索片段。在高 QPS 的 RAG 服务（如客服机器人）中，这一调整能让 System Prompt + Few-shot 部分（通常 2-5K Token）命中缓存，整体成本降低 30-50%。
+把所有“不依赖检索结果”的稳定内容前置，断点之后才放检索片段。收益取决于稳定前缀占比、最小缓存长度、命中率、TTL、写入/读取计价和供应商实现；应根据 API usage 字段与线上流量实测，不能预设固定节省百分比。
 
-详细缓存机制和定价对比见 [AI Agent — Prompt Caching](./ai-agents#prompt-caching-降低-agent-成本的关键手段)。
+详细缓存机制和定价对比见 [AI Agent — Prompt Caching](./ai-agents#prompt-caching)。
 
 :::
 
@@ -678,48 +699,25 @@ RAG 系统的评估需要从**检索质量**和**生成质量**两个维度进�
 | **Faithfulness** | 生成 | 生成的回答是否忠实于检索到的上下文 |
 | **Answer Relevancy** | 生成 | 生成的回答与原始问题的相关性 |
 | **Answer Correctness** | 端到端 | 最终回答的准确性（与标准答案对比） |
+| **Citation Correctness / Completeness** | 生成 | 引用是否真正支持对应主张、关键主张是否都有来源 |
+| **ACL Leakage Rate** | 安全 | 无权限文档被召回、引用或泄露的比例（目标为 0） |
+
+离线检索还常用 **Recall@K、MRR、nDCG@K**；在线需观察无答案拒答率、P50/P95 延迟、Token/查询、缓存命中和用户反馈。RAGAS/LLM-as-Judge 可扩展评测，但会有 Judge 偏差，关键事实与权限边界应结合确定性检查和人工抽检。评测集应同时包含可回答、不可回答、多跳、时间敏感、精确标识符、对抗注入和越权查询。
 
 ### 评估框架
 
 常用的 RAG 评估框架包括：
-- **RAGAS**：提供自动化的 RAG 评估流程，覆盖上述所有指标
+- **RAGAS**：提供多种生成质量和上下文质量指标；ACL 泄露率等业务安全指标需要自定义确定性测试
 - **LlamaIndex Evaluation**：内置多种评估器
 - **TruLens**：支持可视化的评估仪表盘
 
-```python
-# 使用 RAGAS 进行评估（伪代码）
-from ragas.metrics import faithfulness, answer_relevancy, context_precision
-
-def evaluate_rag(questions: list, answers: list,
-                 contexts: list, ground_truths: list) -> dict:
-    """
-    评估 RAG 系统的检索和生成质量。
-
-    Args:
-        questions: 测试问题列表
-        answers: RAG 生成的回答列表
-        contexts: 检索到的上下文列表
-        ground_truths: 标准答案列表
-    Returns:
-        各项评估指标的得分
-    """
-    results = {
-        "faithfulness": faithfulness.score(
-            questions=questions,
-            answers=answers,
-            contexts=contexts
-        ),
-        "answer_relevancy": answer_relevancy.score(
-            questions=questions,
-            answers=answers
-        ),
-        "context_precision": context_precision.score(
-            questions=questions,
-            contexts=contexts,
-            ground_truths=ground_truths
-        ),
-    }
-    return results
+```text
+版本无关的评测流程：
+1. 将 question / answer / retrieved_contexts / reference_answer 组织成评测数据集
+2. 用 RAGAS 或自建 Judge 计算 Faithfulness、Answer Relevancy、Context Precision 等指标
+3. 用检索标注单独计算 Recall@K、MRR、nDCG@K
+4. 用确定性负向测试验证 ACL 泄露、引用越权和缓存跨租户命中
+5. 对低分与高风险样本做人工复核，并记录所用模型、Prompt 与框架版本
 ```
 
 ---
@@ -790,11 +788,13 @@ class SimpleRAGPipeline:
 
 2. **忽视 Embedding 模型与查询语言的匹配**：使用英文为主的 Embedding 模型处理中文文档，会导致语义捕获不准确。中文场景应优先选用 BGE、GTE 等针对中文优化的模型。
 
-3. **只用稠密检索忽视稀疏检索**：稠密检索擅长语义匹配但可能漏掉精确关键词，BM25 等稀疏检索在精确匹配场景下更可靠。混合检索通常效果最佳。
+3. **只用稠密检索忽视稀疏检索**：稠密检索擅长语义匹配但可能漏掉精确关键词，BM25 等稀疏检索在精确匹配场景下更可靠。混合检索通常值得优先评估，但不保证对所有语料都更好。
 
 4. **检索数量 Top-K 设置不合理**：K 太小可能漏掉关键信息，K 太大会引入噪声且增加 LLM 的上下文负担。建议先召回较多候选（如 Top-20），再通过 Reranking 精选（如 Top-5）。
 
 5. **缺乏评估体系**：上线后不监控检索质量和生成质量，无法发现和修复系统退化。应建立包含 Faithfulness、Relevancy 等指标的持续评估机制。
+
+6. **检索后才做权限过滤**：把越权片段交给模型后再要求“不引用”已经越过信任边界。ACL 必须进入检索执行计划，并覆盖缓存、Reranker、引用与日志。
 
 :::
 
@@ -862,7 +862,7 @@ RAG 系统分为**离线索引**和**在线查询**两个阶段：
 2. **分数融合**：使用 RRF（Reciprocal Rank Fusion）或加权求和合并排名
 3. **（可选）重排序**：对融合后的结果使用 Cross-Encoder 精排
 
-实践表明，混合检索相比单一检索方式通常能提升 5%~15% 的召回率。权重比例（稠密 vs 稀疏）需要根据具体场景调优，通常稠密检索权重略高（如 0.7:0.3）。
+混合检索的收益和权重没有通用数值。应在标注查询集上比较 Dense、Sparse、RRF/加权融合以及 Reranker 的 Recall@K、nDCG、P95 延迟和成本；精确标识符密集的语料可能需要更高的稀疏权重。
 
 ---
 
@@ -896,5 +896,7 @@ RAG 系统的评估需要覆盖检索和生成两个维度，核心指标包括�
 - [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (Lewis et al., 2020)](https://arxiv.org/abs/2005.11401)
 - [Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection](https://arxiv.org/abs/2310.11511)
 - [Precise Zero-Shot Dense Retrieval without Relevance Labels (HyDE)](https://arxiv.org/abs/2212.10496)
+- [Anthropic — Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval)
+- [Microsoft GraphRAG Documentation](https://microsoft.github.io/graphrag/)
 - [LangChain Documentation — RAG](https://python.langchain.com/docs/tutorials/rag/)
 - [LlamaIndex Documentation](https://docs.llamaindex.ai/)

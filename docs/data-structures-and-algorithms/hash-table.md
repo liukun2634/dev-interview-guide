@@ -308,7 +308,7 @@ d 个 hash 函数 + w 列计数器矩阵 (d×w)
 
 #### 经典应用
 
-- **Top-K 热点**：Caffeine 的 W-TinyLFU 内部就用 CMS 跟踪访问频次（详见 [Java 并发 — Caffeine](../programming-languages/java-concurrency#caffeine)）
+- **Top-K 热点**：Caffeine 的 W-TinyLFU 内部就用 CMS 跟踪访问频次（详见 [Java 并发 — Caffeine](../programming-languages/java-concurrency#caffeine-现代-jvm-缓存事实标准)）
 - **DDoS 检测**：估算源 IP 访问频次，超阈值告警
 - **Redis hotkey 检测**：阿里、字节内部用它在代理层识别热点
 

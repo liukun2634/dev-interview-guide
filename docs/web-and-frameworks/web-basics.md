@@ -133,7 +133,7 @@ Filter 在请求到达 Servlet 之前和响应返回客户端之前执行，形�
 | **Session ID + Redis（BFF 模式）** | Next.js / SvelteKit / Nuxt 全栈 | 需要 BFF 节点；同源部署最佳 |
 | **OAuth2 PKCE + 后端 Cookie** | SPA + 第三方登录 | 实现复杂，但**官方推荐**（取代 Implicit Flow） |
 
-**心智模型**：「**Token 适合 API**，**Cookie 适合页面**」——BFF 把 Token 留在服务端，对浏览器只下发 HTTP-Only Cookie，兼得安全性与水平扩展能力。详见 [Spring Security · OAuth2](./spring-security#oauth2-四种授权模式必背)。
+**心智模型**：「**Token 适合 API**，**Cookie 适合页面**」——BFF 把 Token 留在服务端，对浏览器只下发 HTTP-Only Cookie，兼得安全性与水平扩展能力。详见 [Spring Security · OAuth2](./spring-security#oauth2-四种授权模式-必背)。
 
 ## HTTP/3、Servlet 6 与现代 Web
 

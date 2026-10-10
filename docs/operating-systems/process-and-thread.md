@@ -311,7 +311,7 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
 > **Java 虚拟线程不需要 async/await 关键字染色**——这是它和 Kotlin 协程、JS async/await 最大的区别。所有现有阻塞 IO 库（JDBC、HttpClient）**直接受益**，**业务代码完全不用改**。这是 Java 后端在 2025-2026 年大幅简化高并发开发的核心新能力。
 
-**前提**：JDK 24+ 已修复 `synchronized` 内 Pinning 问题（详见 [JDK 22-25 新进展](../programming-languages/java-modern-features#8-jdk-22-25-新进展-2024-2025)）。
+**前提**：JDK 24+ 已修复 `synchronized` 内 Pinning 问题（详见 [JDK 22-25 新进展](../programming-languages/java-modern-features#_8-jdk-22-25-新进展-2024-2025)）。
 
 :::
 
@@ -430,7 +430,7 @@ class BoundedBuffer {
 | **synchronized + wait/notify** | 一般 | 短 | 简单场景、面试基础 |
 | **ReentrantLock + Condition** | 好 | 中 | 需要多条件区分（满 vs 空）|
 | **BlockingQueue** | **最好** | **极短** | **生产首选**，封装好 |
-| **Disruptor**（无锁）| 最快 | 长 | 单机百万 TPS（详见 [现代并发工具](../programming-languages/java-concurrency#disruptor)）|
+| **Disruptor**（无锁）| 最快 | 长 | 单机百万 TPS（详见 [现代并发工具](../programming-languages/java-concurrency#disruptor-单机百万-tps-的无锁队列)）|
 
 ### 题 2：读者-写者问题
 
