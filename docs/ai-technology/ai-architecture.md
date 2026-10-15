@@ -344,7 +344,7 @@ class InputGuard:
         suspicious = False
         for pattern in injection_patterns:
             if re.search(pattern, user_input, re.IGNORECASE):
-            suspicious = True
+                suspicious = True
 
         # 3. PII 检测（个人身份信息）
         if self.detect_pii(user_input):
@@ -355,7 +355,7 @@ class InputGuard:
         return True, "通过（需下游继续执行确定性安全控制）" if suspicious else "通过"
 ```
 
-    关键词/正则可能误报正常安全讨论，也容易被改写绕过。它适合打标、路由到更严格策略或触发人工复核，不适合单独承担 Prompt Injection 防线；网页、RAG 和工具结果中的**间接注入**尤其无法只靠检查用户输入发现。
+关键词/正则可能误报正常安全讨论，也容易被改写绕过。它适合打标、路由到更严格策略或触发人工复核，不适合单独承担 Prompt Injection 防线；网页、RAG 和工具结果中的**间接注入**尤其无法只靠检查用户输入发现。
 
 ### 输出过滤
 

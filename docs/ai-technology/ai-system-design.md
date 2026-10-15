@@ -341,11 +341,11 @@ graph TD
     R --> P["Prompt 构建<br/>问题 + Schema + 业务术语 + Few-shot"]
     P --> L["LLM 生成 SQL"]
     L --> V["SQL 校验<br/>语法 + 权限 + 安全"]
-    V -->|通过| E["执行 SQL"]
+    V -->|通过| EX["EXPLAIN 预检<br/>扫描成本与资源预算"]
     V -->|失败| FB["反馈错误<br/>LLM 自修复"]
     FB --> L
-    E --> EX["EXPLAIN 分析<br/>慢查询拦截"]
-    EX --> RUN["执行查询"]
+    EX -->|预算内| RUN["在只读权限与超时限制下执行查询"]
+    EX -->|超预算| FB
     RUN --> A["结果解读 + 图表生成"]
     A --> O["返回用户"]
 ```
@@ -395,11 +395,11 @@ User: {question}
 
 LLM 生成的 SQL **绝不能**直接执行，必须经过：
 
-1. **AST 解析**（sqlglot / sqlparse）—— 拒绝任何 DDL/DML，只允许 SELECT
-2. **权限重写** —— 自动注入用户的数据可见范围（行级 / 列级）
-3. **资源限制** —— 强制加 LIMIT，禁止 `SELECT *`（防止全表扫描）
-4. **EXPLAIN 预检** —— 估算扫描行数，超阈值拦截或要求用户确认
-5. **执行隔离** —— 走只读副本 + 查询超时（如 30s）
+1. **方言感知的 AST 校验** —— 使用 sqlglot 等解析器，限定单条允许的查询，检查嵌套语句、函数与外部访问；sqlparse 的解析/格式化不能代替语义安全验证
+2. **资源授权** —— 由可信身份派生表、行、列权限，必要时做 AST 级重写，并由数据库权限兜底
+3. **输出限制** —— 限定返回行数、列和字节数；`LIMIT` 与禁止 `SELECT *` 不能保证不全表扫描，也不能约束聚合或 JOIN 的计算量
+4. **EXPLAIN 预检** —— 执行前检查估算计划和预算，超阈值拒绝或升级；计划估算并非实际成本保证，`EXPLAIN ANALYZE` 会真正执行查询，不用于此处预检
+5. **执行隔离** —— 只读账号/副本、语句超时、扫描与内存配额；副本本身不等于账号只读，获批也不能绕过授权与硬资源上限
 
 :::
 
@@ -408,22 +408,25 @@ LLM 生成的 SQL **绝不能**直接执行，必须经过：
 复杂 SQL 往往需要校验和修复。引入**有界反馈循环**通常能提高执行成功率，但提升幅度必须在自有评估集上测量，不能把“执行成功”当成“业务结果正确”：
 
 ```python
-async def nl_to_sql_with_retry(question: str, schema: str,
-                 max_retries: int = 3):
+async def nl_to_sql_with_retry(
+  question: str, schema: str, max_retries: int = 3
+):
   errors: list[str] = []
-    for attempt in range(max_retries):
-        sql = await llm.generate_sql(question, schema, history=errors)
-        validation = validate_sql(sql)
-        if not validation.ok:
-            errors.append(validation.error)
-            continue
-        try:
-            result = await db.execute(sql, timeout=30)
-            return result
-        except DatabaseError as e:
-          errors.append(f"执行错误: {e}")  # 反馈给 LLM
-    return {"error": "无法生成有效 SQL", "tried": errors}
+  for attempt in range(max_retries):
+    sql = await llm.generate_sql(question, schema, history=errors)
+    validation = validate_sql(sql)
+    if not validation.ok:
+      errors.append(validation.error)
+      continue
+    try:
+      result = await db.execute(sql, timeout=30)
+      return result
+    except DatabaseError as e:
+      errors.append(f"执行错误: {e}")  # 反馈给 LLM
+  return {"error": "无法生成有效 SQL", "tried": errors}
 ```
+
+这是控制流伪代码：`validate_sql` 必须包含上述授权与计划预算预检，`db.execute` 必须实施只读和资源限制；反馈给模型的数据库错误需脱敏。生产流程应区分可修复的语法错误与不可通过重写绕开的权限拒绝。
 
 #### ⑤ 结果解读与可视化
 

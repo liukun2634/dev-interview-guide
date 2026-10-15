@@ -513,6 +513,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: 'AI 概述与发展历程', link: '/ai-technology/ai-overview' },
             { text: 'LLM 大语言模型原理', link: '/ai-technology/llm-fundamentals' },
+            { text: '推理模型与测试时计算', link: '/ai-technology/reasoning-models' },
             { text: '🔥 VLM 视觉语言模型', link: '/ai-technology/vision-language-models' },
           ],
         },
@@ -521,6 +522,7 @@ export default withMermaid(defineConfig({
           collapsed: false,
           items: [
             { text: 'Prompt Engineering 提示工程', link: '/ai-technology/prompt-engineering' },
+            { text: '上下文工程与 Agent 记忆', link: '/ai-technology/context-and-memory' },
             { text: 'Embedding 与向量数据库', link: '/ai-technology/embedding-and-vector-db' },
             { text: 'RAG 检索增强生成', link: '/ai-technology/rag' },
           ],
@@ -535,6 +537,7 @@ export default withMermaid(defineConfig({
             { text: 'A2A 智能体协作协议', link: '/ai-technology/a2a' },
             { text: 'Harness Engineering', link: '/ai-technology/harness-engineering' },
             { text: '🔥 Computer Use 与多 Agent 编排', link: '/ai-technology/agent-computer-use' },
+            { text: '实时语音与 Voice Agent', link: '/ai-technology/voice-agents' },
           ],
         },
         {
@@ -542,7 +545,8 @@ export default withMermaid(defineConfig({
           collapsed: false,
           items: [
             { text: '模型微调与训练', link: '/ai-technology/model-training' },
-            { text: '模型评估、对齐与 AI 安全', link: '/ai-technology/evaluation-and-alignment' },
+            { text: 'AI 评估与可靠性工程', link: '/ai-technology/ai-evaluation' },
+            { text: '模型对齐与 AI 安全', link: '/ai-technology/evaluation-and-alignment' },
             { text: '🔥 Prompt Injection 攻防与 LLM 安全', link: '/ai-technology/security-and-jailbreak' },
             { text: 'LLM 推理优化', link: '/ai-technology/inference-optimization' },
             { text: 'AI 应用架构设计', link: '/ai-technology/ai-architecture' },

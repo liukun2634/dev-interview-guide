@@ -73,11 +73,18 @@ $$
 RoPE（Rotary Position Embedding）的核心思想是通过**旋转矩阵**将位置信息编码到向量中。对于位置 $m$ 处的向量 $x$，RoPE 将其每两个维度视为一个二维平面上的向量，按照与位置成正比的角度进行旋转：
 
 $$
-f(x, m) = \begin{pmatrix} x_1 \\ x_2 \end{pmatrix} \otimes \begin{pmatrix} \cos m\theta \\ \sin m\theta \end{pmatrix}
+f(x, m) =
+\begin{pmatrix}
+\cos(m\theta) & -\sin(m\theta) \\
+\sin(m\theta) & \cos(m\theta)
+\end{pmatrix}
+\begin{pmatrix} x_1 \\ x_2 \end{pmatrix}
 $$
 
+上式展示一对维度；完整向量的不同维度对使用各自的旋转频率。通常将旋转施加到 Q/K，使位置对点积的影响通过相对位移体现。
+
 **关键优势**：
-- **相对位置感知**：两个 Token 的注意力得分只取决于它们的**相对距离**，而非绝对位置
+- **相对位置感知**：旋转引入的位置信息依赖两个 Token 的相对距离；注意力得分仍取决于 Q/K 的内容
 - **便于做长度扩展**：可结合位置插值、NTK-aware Scaling、YaRN 等方法扩展，但原始 RoPE 本身不保证训练长度外仍保持质量
 - **兼容线性注意力**：旋转操作不破坏点积结构
 
@@ -232,6 +239,8 @@ BPE（Byte-Pair Encoding）是最主流的分词算法，其训练过程如下�
 ---
 
 ## Reasoning 与测试时计算
+
+本节先区分概念；串行/并行计算、验证器、推理预算与 API 状态管理详见 [推理模型与测试时计算](./reasoning-models)。
 
 推理模型并不是换掉“下一个 Token 预测”的生成机制，而是通过训练后训练和推理时计算，让模型在最终回答前分配更多计算进行分解、验证、回溯或工具调用。
 

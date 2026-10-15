@@ -359,6 +359,8 @@ class AgentHarness:
 
 ### 4. 上下文管理（Context Engineering）
 
+本节聚焦运行时如何分配和维护上下文；信息选择、记忆来源、冲突、过期与删除策略见 [上下文工程与 Agent 记忆](./context-and-memory)。
+
 随着对话轮次增加和工具结果累积，上下文窗口会逐渐被填满。Harness 需要主动管理上下文的容量和质量。
 
 #### 上下文预算分配

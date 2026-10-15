@@ -1,13 +1,13 @@
 ---
-title: 模型评估、对齐与 AI 安全
+title: 模型对齐与 AI 安全
 ---
 
-# 模型评估、对齐与 AI 安全
+# 模型对齐与 AI 安全 {#模型评估、对齐与-ai-安全}
 
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-模型评估回答“模型/系统在什么条件下有多好”，对齐技术回答“如何让行为更符合目标与约束”，AI 安全回答“如何降低误用、失控和外部攻击风险”。三者构成 AI 产品化的**信任基础**。评估体系包括**自动基准、人工评估、LLM-as-Judge、Agent 环境评估和 Evals-Driven Development**；训练后训练并不是 RLHF 被 DPO 单线替代，而是 SFT、离线偏好优化、在线 RL、可验证奖励与安全训练并存。
+对齐技术通过数据与反馈改善模型行为，安全工程在实际运行中限制风险；两者都需要独立评估，不能把“经过对齐”当成不会失败的保证。本页聚焦 RLHF、DPO、GRPO/RLVR、AI 反馈和安全防护。基准、Judge、Agent 轨迹、评测集、统计指标与发布流程已独立为 [AI 评估与可靠性工程](./ai-evaluation)。
 :::
 
 ---
@@ -33,198 +33,33 @@ title: 模型评估、对齐与 AI 安全
 └─────────────────────────────────────────────────────┘
 ```
 
-**从下往上理解**：评估告诉你模型"哪里不好"，对齐让模型"变好"，安全工程确保模型在生产环境"不出事"。
+**从下往上理解**：评估定位不足，对齐尝试改善行为，安全工程通过权限、隔离、验证与审计降低运行风险。图中的方法可以组合，不是一条必然的技术替代链。
 
 ---
 
 ## LLM 评估方法
 
-### 基准测试 Benchmarks
+<a id="基准测试-benchmarks"></a>
+<a id="如何控制评测污染"></a>
+<a id="人工评估"></a>
+<a id="llm-as-judge"></a>
+<a id="agent-评估-评的是模型-×-harness-×-环境"></a>
+<a id="frontier-evals"></a>
+<a id="process-eval-与-outcome-eval"></a>
+<a id="evals-driven-development-评估驱动开发"></a>
 
-| 基准 | 考察能力 | 评估方式 | 说明 |
-|------|----------|----------|------|
-| **MMLU** | 多学科知识（57 个学科） | 多选题准确率 | 综合知识能力的标准测试 |
-| **HumanEval** | 代码生成 | Pass@k（生成 k 次至少通过一次） | 164 道 Python 编程题 |
-| **GSM8K** | 数学推理 | 答案准确率 | 小学数学应用题 |
-| **MT-Bench** | 多轮对话质量 | GPT-4 评分（1~10） | 80 道多轮对话题 |
-| **MATH** | 高等数学 | 答案准确率 | 竞赛级数学题 |
-| **ARC** | 科学推理 | 多选题准确率 | 小学科学考试题 |
-| **TruthfulQA** | 事实准确性 | 准确率 + 信息量 | 测试模型是否倾向于生成常见误解 |
-| **GPQA** | 研究生级推理 | 多选题准确率 | 物理/化学/生物的博士级题目 |
-| **SWE-Bench** | 真实代码修复 | 通过率 | GitHub 真实 issue 修复 |
+评估需要先定义成功、禁止行为与预算，再选择评分方法。对齐前后都要在独立的业务评测集上比较，不能只看训练奖励或公共榜单。
 
-**局限性**：基准测试存在**数据污染**风险（题目、答案或近重复变体进入训练集）、**指标单一**、**静态固化**以及 **Harness 敏感**（Prompt、工具、采样次数和计算预算不同）等问题。基准排名变化很快，可参考 [Arena](https://arena.ai/) 和 [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard)，但不能把单榜名次当作生产结论。
+本节的详细内容已迁到独立章节：
 
-#### 如何控制评测污染
+- [基准与长程 Agent 成绩](./ai-evaluation#benchmarks)：区分模型、Harness、环境与采样预算。
+- [评测集与污染控制](./ai-evaluation#datasets)：开发、训练、回归与独立验收不能混用。
+- [人工评价与 Judge 校准](./ai-evaluation#judge-calibration)：偏差、一致性、证据与评分安全。
+- [结果与过程评估](./ai-evaluation#agent-evaluation)：Outcome、Trajectory、ORM/PRM 与副作用。
+- [pass@k 与 pass^k](./ai-evaluation#pass-metrics)：候选覆盖率和重复成功率不是一回事。
+- [评估流水线与发布门槛](./ai-evaluation#eval-pipeline)：可复现运行、失败切片、灰度与反馈。
 
-| 做法 | 为什么有效 | 仍有边界 |
-|------|------------|----------|
-| **时间切分/滚动更新** | 用模型训练截止日之后的新题，如 LiveBench | 截止日可能不透明；新题公开后仍会进入后续训练 |
-| **私有或保留测试集** | 降低直接背题概率 | 需要访问控制，也可能与公开题近重复 |
-| **近重复与来源审计** | 检查题干、答案和语义变体与训练语料重合 | 闭源模型通常无法完整审计训练数据 |
-| **扰动与对照题** | 改数字、实体、约束，区分记忆与能力 | 改写可能改变难度或引入歧义 |
-| **报告 Harness 与预算** | 让结果可比较：Prompt、工具、温度、样本数、Token/时间预算 | 仍不能消除服务端版本漂移 |
-
-**记忆法**：污染不是“看没看过原题”这一项，而是**题、答案、近重复、解题轨迹和 Judge**都可能泄漏。
-
-### 人工评估
-
-**Arena**（早期名为 **LMSYS Chatbot Arena**，后曾使用 **LM Arena/LMArena** 品牌）是有影响力的众包成对评估平台；截至 2026-08 官方入口为 `arena.ai`：
-
-- 用户与两个匿名模型同时对话，投票选出更好的回答
-- 排名可使用 Bradley-Terry 等成对比较统计方法，并给出不确定性；“Elo 分差”不是准确率差
-- 结果反映平台流量与用户偏好，会受提示分布、风格、长度、语言、抽样和版本变化影响
-
-**评估一致性**使用 **Cohen's Kappa 系数**衡量标注者间的一致程度：
-
-| $\kappa$ 范围 | 一致性程度 | 解读 |
-|------------|----------|------|
-| < 0.20 | 极低 | 标注方案需要重新设计 |
-| 0.20~0.40 | 一般 | 需改进标注指南 |
-| 0.40~0.60 | 中等 | 可接受 |
-| 0.60~0.80 | 较好 | 多数任务的目标 |
-| > 0.80 | 优秀 | 标注高度一致 |
-
-**计算方法**：
-
-$$
-\kappa = \frac{P_o - P_e}{1 - P_e}
-$$
-
-其中 $P_o$ 是实际一致率，$P_e$ 是偶然一致率。例如两个标注者各自对 100 条数据标注"好/坏"，如果实际一致了 85 次（$P_o = 0.85$），而随机标注预期一致 50 次（$P_e = 0.50$），则 $\kappa = (0.85 - 0.50) / (1 - 0.50) = 0.70$（较好）。
-
-### LLM-as-Judge
-
-用强模型评估弱模型输出，是高效且可扩展的评估方式。
-
-**核心方法**：
-
-```python
-judge_prompt = """请对以下两个回答进行评分（1-10 分）。
-
-问题: {question}
-
-回答 A: {answer_a}
-回答 B: {answer_b}
-
-请从以下维度评分：
-1. 准确性：信息是否正确
-2. 完整性：是否覆盖关键点
-3. 清晰度：表达是否清楚
-
-请先给出评分，再给出理由。"""
-```
-
-**已知偏差及缓解**：
-
-| 偏差类型 | 描述 | 缓解方法 |
-|----------|------|----------|
-| **位置偏差** | 倾向于选择排在前面的回答 | 交换 A/B 顺序，取两次评估的平均 |
-| **冗长偏差** | 倾向于选择更长的回答 | 在评分指南中明确"简洁优于冗余" |
-| **自我偏好** | GPT-4 倾向于选择 GPT-4 的回答 | 使用多个不同的 Judge 模型 |
-| **风格偏差** | 偏好特定格式（如 Markdown 列表） | 标准化输出格式后再评估 |
-
-**最佳实践**：开放式质量判断中 Pairwise Comparison（成对比较）通常比 Single Rating（单独评分）稳定，但有唯一答案时优先使用单元测试、解析器或可验证结果。Judge 要先与人工标注校准，并报告一致率、置信区间和失败切片。
-
-### Agent 评估：评的是模型 × Harness × 环境
-
-Agent 结果不只由底层模型决定，还由工具定义、Prompt/Scaffold、记忆、权限、重试、环境状态和预算共同决定。SWE-bench、$\tau$-bench、AgentBench、OSWorld 等测到的是一套**系统配置**，不同 Harness 的分数不能直接归因于模型本身。
-
-| 维度 | 典型指标 | 为什么不能只看最终成功率 |
-|------|----------|--------------------------|
-| **Outcome（结果）** | 任务成功率、测试通过率、最终数据库状态 | 最接近业务价值，但可能碰巧成功或用违规捷径完成 |
-| **Process/Trajectory（过程）** | 工具选择、参数正确率、策略合规、无效步骤、恢复能力 | 可定位失败和危险动作，但“像参考轨迹”不等于唯一正确路径 |
-| **Reliability（可靠性）** | pass^k、连续多次成功率、方差、超时率 | Agent 常有随机性；一次成功会掩盖不稳定 |
-| **Efficiency（效率）** | Token、工具调用、墙钟时间、费用 | 无限重试可以抬高成功率，却不一定可部署 |
-| **Safety（安全）** | 越权动作、敏感数据外发、人工确认命中率 | 最终任务成功也可能伴随不可接受的副作用 |
-
-例如 $\tau$-bench 通过比较最终数据库状态评估 Outcome，并用多次试验衡量一致性。生产评测还应固定环境快照、工具版本和最大步骤，记录完整轨迹但注意脱敏。
-
-### 2026-10：长程 Agent 基准怎么读 {#frontier-evals}
-
-[Opus 5.5](https://www.anthropic.com/claude-opus-5-5)、[Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5)与 [Gemini 4 Argon](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-argon/)使用更接近真实工作的基准，仍属于特定环境和预算下的报告，不是通用生产成功率：
-
-| 基准族 | 考察内容 | 必须核对的口径 |
-|--------|----------|----------------|
-| Terminal-Bench 4.0 | 终端多步骤任务 | 版本、Harness、effort、时间与采样次数，不与旧版直接比数值 |
-| FrontierCode 1.1 / DeepSWE v1.1 | 代码修改与长程工程任务 | 是否允许人工修订、是否惩罚超范围修改、工具和子 Agent 配置 |
-| OSWorld 2.1 | GUI 操作 | 是否离线子集、是否部分得分；partial credit 不等于完整任务成功 |
-| GDPval-AA v2.1 | 多职业知识工作 | 评分方法、Judge 与任务分布；Elo 不能换算成正确率 |
-| 业务私有评测 | 本产品的最终状态与风险 | 权限、安全回退、长尾失败、人工接管与完整成本 |
-
-Sonnet 5.5 官方脚注说明，高 effort 的某些运行因复杂评审/子 Agent 引发超时或超范围修改而降分。因此“想得更久”不必然更可合并，验收、范围与预算更重要。
-
-评测至少锁定模型快照、SDK/Harness、Prompt/Skill/工具版本、输入与环境快照、权限、安全回退、effort、Token/时间预算、重试、Judge 和样本数；报告不确定性及失败切片，而不是最高分。付款任务最终订单正确但重复扣款，应判失败，不能用最终页面正确掩盖副作用。
-
-### Process Eval 与 Outcome Eval
-
-- **Outcome Reward Model（ORM）**只看最终结果：标签便宜、可规模化，适合答案或测试可验证的任务；缺点是信用分配粗，容易奖励“答案对但过程错”或钻验证器漏洞。
-- **Process Reward Model（PRM）**逐步评价推理：能定位第一个错误并用于搜索/重排；缺点是步骤标签昂贵、不同正确路径难覆盖，而且自然语言推理链未必忠实反映内部计算。
-- 《Let's Verify Step by Step》在 MATH 子集上发现过程监督优于结果监督，这是特定数学设定的证据，**不是所有任务 PRM 都必胜 ORM**。Agent 过程评估更应优先检查可观察动作、状态变化和策略合规，而不是强求某一条文字 CoT。
-
-### Evals-Driven Development（评估驱动开发）
-
-**这是 2025 年 AI 工程的核心共识**：失败的 AI 产品几乎都缺少系统化的评估体系。Evals 不是上线前的一次性测试，而是贯穿开发全流程的持续实践。
-
-```
-定义评估标准（What does "good" look like?）
-  ↓
-构建评估数据集（Golden dataset + 边界案例）
-  ↓
-自动化评估管线（CI 中运行，每次 Prompt 修改都触发）
-  ↓
-分析评估结果（哪些类型的输入失败了？）
-  ↓
-改进系统（调 Prompt / 加 Few-shot / 换模型 / 加 Guardrails）
-  ↓
-回到步骤 3（持续迭代）
-```
-
-**构建评估管线的关键要素**：
-
-```python
-class EvalPipeline:
-    """生产级评估管线。"""
-
-    def __init__(self, judge_model: str = "claude-sonnet-4-6"):
-        self.judge_model = judge_model
-        self.golden_dataset: list[EvalCase] = []
-        self.metrics: dict[str, list[float]] = {}
-
-    def add_case(self, input: str, expected: str,
-                 category: str, difficulty: str):
-        """添加评估用例。"""
-        self.golden_dataset.append(EvalCase(
-            input=input,
-            expected=expected,
-            category=category,  # e.g. "factual", "reasoning", "safety"
-            difficulty=difficulty
-        ))
-
-    def run_eval(self, system_under_test) -> EvalReport:
-        """对被测系统运行全量评估。"""
-        results = []
-        for case in self.golden_dataset:
-            actual = system_under_test.generate(case.input)
-            score = self.judge(case, actual)
-            results.append(EvalResult(case, actual, score))
-
-        return EvalReport(
-            overall_score=mean([r.score for r in results]),
-            by_category=self.group_by_category(results),
-            failures=[r for r in results if r.score < 0.6],
-            regressions=self.detect_regressions(results)
-        )
-
-    def judge(self, case: EvalCase, actual: str) -> float:
-        """用 LLM-as-Judge 评分。"""
-        # 成对比较 + 交换顺序消除位置偏差
-        score_ab = self.llm_judge(case.expected, actual)
-        score_ba = self.llm_judge(actual, case.expected)
-        return (score_ab + (1 - score_ba)) / 2
-```
-
-**Eval-Fine-tuning 飞轮**：评估数据同时可以作为微调数据的来源——失败案例经人工修正后成为高质量训练样本。
+失败案例可经审核用于改进模型或系统，但一旦用于训练或反复调参，就不再是独立的验收证据。要标记数据用途并补充新的保留测试集。
 
 ---
 

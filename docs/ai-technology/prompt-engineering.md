@@ -29,6 +29,8 @@ Prompt 只能影响概率分布，不能提供确定性保证。应先定义成�
 
 ## 从 Prompt Engineering 到 Context Engineering
 
+本节提供概览；上下文预算、压缩、Agent 记忆的写入/更新/删除及评测，详见 [上下文工程与 Agent 记忆](./context-and-memory)。
+
 2025 年起，行业（Anthropic、Cognition、OpenAI 等团队）越来越多地用 **Context Engineering（上下文工程）** 来描述真正的生产实践——Prompt Engineering 只是它的一个子集。这个转变是 2025-2026 年 AI 面试的高频概念追问。
 
 ### 概念演进

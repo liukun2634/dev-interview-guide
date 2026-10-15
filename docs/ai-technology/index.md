@@ -94,6 +94,10 @@ LLM 推理（Transformer → 自注意力 → 解码生成）
 | LoRA | 冻结原始权重，只训练低秩增量矩阵 | 参数高效微调的主流基线之一 |
 | 量化 | 降低模型权重精度（FP16→INT4），减少显存和计算量 | 让大模型能在消费级硬件运行 |
 | Function Calling | LLM 输出结构化的函数调用指令，由系统执行 | Agent 调用工具的核心机制 |
+| [上下文工程与记忆](./context-and-memory) | 选择本轮信息，并受控地保留跨任务知识 | 管理预算、来源、冲突、时效与删除 |
+| [测试时计算](./reasoning-models) | 使用模型时增加思考、候选搜索与验证 | 通过评测选择质量、延迟和成本的平衡 |
+| [Voice Agent](./voice-agents) | 通过语音会话完成有授权的任务 | 处理轮次、打断、音频与业务状态一致性 |
+| [AI 评估](./ai-evaluation) | 在指定任务和预算下验证系统质量与可靠性 | 评测集隔离、过程约束、发布门槛与反馈 |
 | Structured Outputs | 用受支持的 JSON Schema 约束输出结构 | 降低解析失败，但仍需事实与业务校验 |
 | AI Gateway | 统一模型协议、鉴权、路由、容错、成本和 Trace | 多模型生产治理入口 |
 | [Harness](./harness-engineering) | Agent 的运行时控制层，管理 Skill、工具、上下文、权限和循环 | 落实可恢复执行、审批与验证 |
@@ -191,12 +195,14 @@ AI 的核心机制都可以用架构图表达：
 |------|---------|---------|---------|
 | AI 概述与发展历程 | 弱AI/AGI/ASI、ML 分类、Scaling Laws、MoE | 🔥 | [AI 概述](./ai-overview) |
 | LLM 大语言模型原理 | Transformer、自注意力、位置编码、Tokenization、解码策略 | 🔥🔥🔥 | [LLM 原理](./llm-fundamentals) |
+| 推理模型与测试时计算 | 串行/并行计算、搜索、验证器、effort、预算与状态 | 专题 | [推理模型](./reasoning-models) |
 
 ### LLM 应用技术
 
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
 | Prompt Engineering | Zero/Few-shot、CoT、Self-Consistency、ToT、Prompt 安全 | 🔥🔥🔥 | [Prompt Engineering](./prompt-engineering) |
+| 上下文工程与 Agent 记忆 | 上下文组装、压缩、记忆分类、写入/更新/删除、隔离与评测 | 专题 | [上下文与记忆](./context-and-memory) |
 | Embedding 与向量数据库 | Word2Vec/BERT、向量数据库选型、ANN 算法(HNSW/IVF) | 🔥🔥 | [Embedding 与向量数据库](./embedding-and-vector-db) |
 | RAG 检索增强生成 | RAG 架构、分块策略、混合检索、Rerank、HyDE/GraphRAG | 🔥🔥🔥 | [RAG](./rag) |
 
@@ -208,17 +214,19 @@ AI 的核心机制都可以用架构图表达：
 |------|---------|---------|---------|
 | AI Agent 基本概念 | 决策循环、ReAct、状态与记忆、Function Calling、协作边界 | 🔥🔥🔥 | [AI Agent 基本概念](./ai-agents) |
 | Agent Skills 编写指南 | 标准目录、渐进加载、指令与触发设计、版本管理、兼容性评测 | 🔥🔥 | [Skills 编写指南](./ai-agent-skills) |
-| MCP 模型上下文协议 | Host/Client/Server、三种原语、调用流程、版本迁移与权限 | 专题 | [MCP](./mcp) |
+| MCP 模型上下文协议 | 原语与契约、Server 开发、宿主接入、Inspector、认证、部署与排查 | 专题 | [MCP](./mcp) |
 | A2A 智能体协作协议 | Agent Card、Message/Task/Artifact、长任务、断线恢复与授权 | 专题 | [A2A](./a2a) |
 | Harness Engineering | 执行循环、上下文与缓存、检查点、幂等、审批、验证与观测 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
 | Computer Use 与多 Agent 编排 | GUI 操作循环、视觉定位、沙箱、安全与编排 | 🔥🔥 | [Computer Use](./agent-computer-use) |
+| 实时语音与 Voice Agent | 级联与实时架构、全双工、VAD、打断、工具执行与音频评估 | 专题 | [Voice Agent](./voice-agents) |
 
 ### AI 工程实践
 
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
 | 模型微调与训练 | SFT、LoRA/QLoRA、RLHF/DPO、分布式训练 | 🔥🔥 | [模型训练](./model-training) |
-| 模型评估、对齐与 AI 安全 | Evals-Driven Development、RLHF/DPO/Constitutional AI、Red Teaming、Guardrails 架构 | 🔥🔥🔥 | [评估、对齐与安全](./evaluation-and-alignment) |
+| AI 评估与可靠性工程 | 评测集隔离、Judge 校准、Agent 轨迹、pass 指标、统计与发布 | 专题 | [AI 评估](./ai-evaluation) |
+| 模型对齐与 AI 安全 | RLHF/DPO/GRPO/RLVR、Constitutional AI、Red Teaming、Guardrails | 🔥🔥🔥 | [对齐与安全](./evaluation-and-alignment) |
 | LLM 推理优化 | KV Cache、MQA/GQA、量化、推测解码、Continuous Batching | 🔥🔥🔥 | [推理优化](./inference-optimization) |
 | AI 应用架构设计 | 架构模式、模型服务、API 设计、成本优化、可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
 | AI 系统设计面试题 | 设计框架、智能客服/代码补全案例、权衡分析 | 🔥🔥 | [系统设计](./ai-system-design) |
@@ -239,17 +247,20 @@ AI 的核心机制都可以用架构图表达：
 
 ```
 第一阶段（基础，必须掌握）：
-  AI 概述 → LLM 原理（重点：Transformer + 自注意力）
+  AI 概述 → LLM 原理 → 推理模型与测试时计算
 
 第二阶段（核心应用，面试重点）：
-  Prompt Engineering → Embedding 与向量数据库 → RAG
+  Prompt Engineering → 上下文工程与记忆 → Embedding 与向量数据库 → RAG
 
 第三阶段（高级应用）：
-  AI Agent → Agent Skills → Harness Engineering → AI 应用架构设计 → AI 系统设计
+  AI Agent → Skills / MCP / A2A → Harness → Computer Use / Voice Agent
+  → AI 应用架构设计 → AI 系统设计
 
 第四阶段（工程深入，按需学习）：
-  模型训练（LoRA）→ 推理优化（KV Cache / 量化）→ 评估与对齐
+  模型训练（LoRA）→ 推理优化（KV Cache / 量化）→ 模型对齐与安全
 ```
+
+**评估贯穿全程**：从第一个 Prompt 或 RAG 原型开始阅读 [AI 评估与可靠性工程](./ai-evaluation)，先建立验收与回归，再增加系统复杂度；不要等所有章节学完才验证效果。
 
 ---
 
@@ -262,9 +273,9 @@ AI 的核心机制都可以用架构图表达：
 | RAG vs 微调怎么选？ | RAG 适合动态知识、成本低；微调适合改变模型行为、固定领域 | [应用架构](./ai-architecture) |
 | Agent 的核心架构？ | 感知→规划→行动→记忆，ReAct 模式交替推理和行动 | [AI Agent](./ai-agents) |
 | LoRA 的原理？ | 冻结原始权重，训练两个低秩矩阵 A·B 作为增量 | [模型训练](./model-training) |
-| KV Cache 是什么？ | 缓存已计算的 K/V，Decode 阶段只算新 token 的 Q 与全部 K/V | [推理优化](./inference-optimization) |
+| KV Cache 是什么？ | 缓存历史 K/V；Decode 计算新 token 的 Q/K/V，追加 K/V，再用 Q 访问允许范围内的缓存 | [推理优化](./inference-optimization) |
 | Prompt Engineering 的核心技巧？ | Few-shot 示例 + CoT 推理链 + 结构化输出 + 角色设定 | [Prompt Engineering](./prompt-engineering) |
-| 如何评估 LLM？ | 自动基准(MMLU/HumanEval) + 人工评估 + LLM-as-Judge | [评估与对齐](./evaluation-and-alignment) |
+| 如何评估 LLM / Agent？ | 独立评测集 + 确定性检查 + 校准 Judge + 过程/结果与成本评估 | [AI 评估](./ai-evaluation) |
 | MCP 会替代 Function Calling 吗？ | 不会；MCP 管连接与发现，Function Calling 管模型生成调用，两者可组合 | [应用架构](./ai-architecture) |
 | 长时间运行 Agent 怎么设计？ | 持久化 Task + Queue/Worker + Checkpoint + 预算/取消/审批 | [Harness Engineering](./harness-engineering) |
 
