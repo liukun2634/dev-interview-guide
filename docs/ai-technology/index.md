@@ -86,14 +86,17 @@ LLM 推理（Transformer → 自注意力 → 解码生成）
 | KV Cache | 缓存已计算的 Key/Value，避免重复计算 | 推理加速的第一手段 |
 | Embedding | 将文本映射到高维向量空间，语义相近的文本距离接近 | RAG 和语义搜索的基础 |
 | RAG | 检索外部知识 + 注入 Prompt，解决 LLM 知识截断和幻觉问题 | 企业级 AI 应用的主流架构 |
-| Agent | LLM + 规划 + 工具调用 + 记忆，从"回答问题"进化到"完成任务" | AI 应用的下一个范式 |
+| [Agent](./ai-agents) | 根据环境反馈选择动作的决策循环，长期记忆与多 Agent 是可选能力 | 判断何时需要动态决策，何时使用固定工作流 |
+| [Agent Skills](./ai-agent-skills) | 以 SKILL.md 为入口、按需加载的过程知识与资源包 | 复用任务方法，不自动授予权限 |
+| [MCP](./mcp) | AI 应用连接外部工具、资源和 Prompt 的协议 | 降低跨应用集成成本 |
+| [A2A](./a2a) | 独立 Agent 系统发现能力、委派任务和交换产物的协议 | 支持跨系统协作，不要求暴露内部实现 |
 | RLHF | 用人类反馈训练奖励模型，再优化 LLM 的输出偏好 | 让 LLM 从"能说话"到"说人话" |
 | LoRA | 冻结原始权重，只训练低秩增量矩阵 | 参数高效微调的主流基线之一 |
 | 量化 | 降低模型权重精度（FP16→INT4），减少显存和计算量 | 让大模型能在消费级硬件运行 |
 | Function Calling | LLM 输出结构化的函数调用指令，由系统执行 | Agent 调用工具的核心机制 |
 | Structured Outputs | 用受支持的 JSON Schema 约束输出结构 | 降低解析失败，但仍需事实与业务校验 |
 | AI Gateway | 统一模型协议、鉴权、路由、容错、成本和 Trace | 多模型生产治理入口 |
-| Harness | Agent 的运行时控制层，管理 Skill、工具、上下文、权限和循环 | 决定 Agent 能否可靠长期运行 |
+| [Harness](./harness-engineering) | Agent 的运行时控制层，管理 Skill、工具、上下文、权限和循环 | 落实可恢复执行、审批与验证 |
 
 ---
 
@@ -199,11 +202,15 @@ AI 的核心机制都可以用架构图表达：
 
 ### AI Agent
 
+按五个问题串起来读：**Agent 如何决定下一步 → Skills 告诉它怎么做 → MCP 连接外部能力 → A2A 委派给独立 Agent → Harness 控制执行与恢复**。这些机制可以组合，但不是每个 Agent 都需要全部采用。Computer Use 作为环境交互的进阶专题单独保留。
+
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
-| AI Agent 智能体 | ReAct、记忆系统、Tool Use、MCP、多 Agent、框架对比 | 🔥🔥🔥 | [AI Agent](./ai-agents) |
-| Agent Skills 编写指南 | Skill 定义形式、指令设计、工具权限、触发路由、测试验证 | 🔥🔥 | [Skills 编写指南](./ai-agent-skills) |
-| Harness Engineering | Prompt 分层架构、执行循环、上下文预算、安全控制、可观测性 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
+| AI Agent 基本概念 | 决策循环、ReAct、状态与记忆、Function Calling、协作边界 | 🔥🔥🔥 | [AI Agent 基本概念](./ai-agents) |
+| Agent Skills 编写指南 | 标准目录、渐进加载、指令与触发设计、版本管理、兼容性评测 | 🔥🔥 | [Skills 编写指南](./ai-agent-skills) |
+| MCP 模型上下文协议 | Host/Client/Server、三种原语、调用流程、版本迁移与权限 | 专题 | [MCP](./mcp) |
+| A2A 智能体协作协议 | Agent Card、Message/Task/Artifact、长任务、断线恢复与授权 | 专题 | [A2A](./a2a) |
+| Harness Engineering | 执行循环、上下文与缓存、检查点、幂等、审批、验证与观测 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
 | Computer Use 与多 Agent 编排 | GUI 操作循环、视觉定位、沙箱、安全与编排 | 🔥🔥 | [Computer Use](./agent-computer-use) |
 
 ### AI 工程实践

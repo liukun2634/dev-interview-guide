@@ -526,13 +526,15 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: 'AI Agent 与工具',
+          text: 'AI Agent 智能体',
           collapsed: false,
           items: [
-            { text: 'AI Agent 智能体', link: '/ai-technology/ai-agents' },
+            { text: 'AI Agent 基本概念', link: '/ai-technology/ai-agents' },
             { text: 'Agent Skills 编写指南', link: '/ai-technology/ai-agent-skills' },
-            { text: '🔥 Computer Use 与多 Agent 编排', link: '/ai-technology/agent-computer-use' },
+            { text: 'MCP 模型上下文协议', link: '/ai-technology/mcp' },
+            { text: 'A2A 智能体协作协议', link: '/ai-technology/a2a' },
             { text: 'Harness Engineering', link: '/ai-technology/harness-engineering' },
+            { text: '🔥 Computer Use 与多 Agent 编排', link: '/ai-technology/agent-computer-use' },
           ],
         },
         {

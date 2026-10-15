@@ -1,8 +1,8 @@
 ---
-title: AI Agent 智能体
+title: AI Agent 基本概念
 ---
 
-# AI Agent 智能体
+# AI Agent 基本概念 {#ai-agent-智能体}
 
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
@@ -10,7 +10,25 @@ title: AI Agent 智能体
 AI Agent（智能体）是以大语言模型为决策核心、在环境反馈下**自主选择步骤并调用工具**的系统。最实用的定义是：**LLM 自主使用工具的循环**。它可以规划、执行和根据结果调整，但不天然具备长期记忆、可靠自纠或无限自主性；这些能力取决于外层 Harness 提供的状态、权限、验证和终止机制。步骤固定时优先使用普通工作流，不要为了“Agent 化”而增加不确定性。
 :::
 
+## 本页与进阶章节的分工
+
+先用本页理解 Agent 如何决定下一步，再分别学习知识加载、外部连接、跨系统协作与运行时控制。它们是可组合的能力，不是搭建 Agent 必须同时安装的五个组件。
+
+| 主题 | 回答的问题 | 阅读入口 |
+|------|------------|----------|
+| **AI Agent 基本概念** | 谁决定下一步？何时调用工具、何时结束？ | 本页：循环、状态、工具调用与协作模式 |
+| **Agent Skills** | 特定任务该怎么做？ | [Skills 编写指南](./ai-agent-skills)：按需加载过程知识 |
+| **MCP** | 应用如何连接外部工具与数据？ | [MCP 模型上下文协议](./mcp) |
+| **A2A** | 如何把任务交给另一个独立 Agent？ | [A2A 智能体协作协议](./a2a) |
+| **Harness Engineering** | 谁执行动作、限制权限、保存状态并验证结果？ | [Harness Engineering](./harness-engineering) |
+
 ## 什么是 AI Agent
+
+### Agent、工作流与聊天助手
+
+判断关键是**执行路径由谁控制**，而不是有没有聊天界面。工作流由代码预先规定步骤和分支，模型可以参与其中；Agent 则让模型在约束内根据反馈选择下一步动作。两者可以嵌套，例如固定的退款流程中，只有“查找订单异常原因”使用 Agent。
+
+一次 Function Calling 不自动构成完整的 Agent 系统，长期记忆、多 Agent 和独立规划器也不是必选项。对于输入输出明确、合规步骤固定的任务，确定性代码通常更容易测试和审计。
 
 ### 与简单 LLM 调用的区别
 
@@ -48,7 +66,7 @@ AI Agent：
 
 ## Agent 核心架构
 
-AI Agent 的运行遵循**感知 → 规划 → 行动 → 记忆**的循环模式：
+AI Agent 可以用**观察 → 决策 → 行动 → 新观察**来理解。规划、记忆和反思是可组合能力，不一定是独立模块；每次循环还要检查是否完成、需要用户介入或已达到预算：
 
 ```mermaid
 graph TD
@@ -58,7 +76,10 @@ graph TD
         B --> C[行动 Action]
         C --> T[工具集 Tools]
         T --> D[反思 Reflection]
-        D -->|自我修正| A
+        D --> E{结果与停止条件}
+        E -->|继续| A
+        E -->|验证通过| Done[完成]
+        E -->|缺输入或预算耗尽| Stop[暂停或停止]
     end
 
     Input["用户输入 / 环境信息"] --> A
@@ -69,7 +90,7 @@ graph TD
 
     subgraph Mem["记忆系统"]
         M1[短期记忆<br/>对话上下文]
-        M2[长期记忆<br/>向量存储]
+        M2[可选长期记忆<br/>数据库或文件]
         M3[工作记忆<br/>当前任务状态]
     end
     M --- Mem
@@ -86,6 +107,8 @@ graph TD
 #### ReAct 模式
 
 ReAct（Reasoning + Acting）是最经典的 Agent 规划模式，交替进行**推理**和**行动**：
+
+下面是经典文本形式的教学伪代码，`llm`、工具和 `parse_action` 需要另行实现。实际系统通常使用结构化 Tool Use，不依赖字符串切分判断完成，也不要求模型输出原始思维链。
 
 ```python
 def react_agent_loop(question: str, tools: dict,
@@ -163,13 +186,15 @@ Plan:
 
 ### 记忆 Memory
 
-记忆系统使 Agent 能够**保持上下文连贯性**并**利用历史经验**，是区别于简单 LLM 调用的关键能力。
+记忆帮助 Agent 保持上下文与复用历史，但并非定义 Agent 的充分或必要条件；普通聊天系统也能使用记忆。下面三类是工程上的常见划分，不是互斥的统一标准。
 
 | 记忆类型 | 实现方式 | 存储内容 | 生命周期 |
 |----------|----------|----------|----------|
 | **短期记忆（Short-term）** | 对话历史（消息列表） | 当前对话的上下文 | 单次会话 |
-| **长期记忆（Long-term）** | 向量数据库（Vector Store） | 历史经验、用户偏好、知识 | 跨会话持久化 |
+| **长期记忆（Long-term）** | 数据库、文件或向量检索 | 经筛选的历史经验、用户偏好、知识 | 跨会话持久化 |
 | **工作记忆（Working）** | 结构化状态变量 | 当前任务进度、中间结果 | 单次任务 |
+
+下面用向量存储演示一种实现，摘要函数仅做截断示意。真实系统不应把所有旧消息自动当成长期事实，应控制写入、来源、过期、删除和用户隔离；工具调用与结果消息也要成对保留，不能按条数随意截断。
 
 ```python
 class AgentMemory:
@@ -289,59 +314,13 @@ tools = [
 
 反思可以让 Agent 再检查一次结果，但**同一个模型的自评不是事实验证**，也不能单独保证可靠性。生产系统更应构造可观测的验证闭环：执行测试、校验 Schema、重新读取环境状态、对照权威来源或由独立 verifier 按明确 rubric 检查；失败后把可操作的证据回注，再限制次数地修复。
 
-```python
-reflection_prompt = """请评估你刚才完成的任务：
-
-任务目标: {original_goal}
-执行步骤: {steps_taken}
-当前结果: {current_output}
-
-请回答以下问题：
-1. 当前结果是否完整地解决了任务目标？(是/否)
-2. 结果中是否存在事实错误或逻辑漏洞？
-3. 是否遗漏了重要信息？
-4. 如果需要改进，具体应该怎么做？
-
-评估结果："""
-
-def reflection_loop(agent, task: str, max_reflections: int = 3) -> str:
-    """
-    带反思的 Agent 执行循环。
-
-    Args:
-        agent: Agent 实例
-        task: 任务描述
-        max_reflections: 最大反思次数
-    Returns:
-        最终输出
-    """
-    result = agent.execute(task)
-
-    for i in range(max_reflections):
-        # 自我评估
-        evaluation = agent.llm.generate(
-            reflection_prompt.format(
-                original_goal=task,
-                steps_taken=agent.get_history(),
-                current_output=result
-            )
-        )
-
-        # 如果评估通过，结束循环
-        if "是" in evaluation.split("\n")[0] and "无" in evaluation:
-            break
-
-        # 根据评估结果改进
-        result = agent.execute(
-            f"根据以下反馈改进之前的结果：\n{evaluation}\n原始结果：\n{result}"
-        )
-
-    return result
-```
+以代码修复为例，“模型说测试通过”不是证据；测试进程的退出码、失败用例和对应 diff 才是。失败后把这些结果反馈给 Agent，允许有限次数修复；仍未通过就报告未完成，而不是反复询问模型“现在是不是正确了”。
 
 ---
 
 ## Agent 框架对比
+
+<div role="region" aria-label="Agent 框架对比表" tabindex="0" style="overflow-x: auto;">
 
 | 框架 | 开发者 | 核心特点 | 适用场景 | 学习曲线 |
 |------|--------|----------|----------|----------|
@@ -354,6 +333,8 @@ def reflection_loop(agent, task: str, max_reflections: int = 3) -> str:
 | **OpenAI Agents SDK** | OpenAI | `Agent` + `Runner`、Agent-as-tool / Handoff、Guardrails、Sessions、HITL 与 Tracing | OpenAI Responses API 生态，也可接其他模型 | 中等 |
 | **Dify** | Dify.AI | 可视化编排、低代码平台 | 快速搭建 AI 应用 | 低 |
 | **Coze** | 字节跳动 | 可视化 Agent 构建、丰富插件生态 | 国内应用场景 | 低 |
+
+</div>
 
 ---
 
@@ -436,380 +417,33 @@ anthropic_tools = [
 
 ## MCP（Model Context Protocol）
 
-MCP 是 Anthropic 于 2024 年发起、现由 **LF Projects** 治理的开放协议，用于标准化 AI 应用与外部工具、数据和可复用 Prompt 之间的连接。截至 2026-10-10，当前规范版本是 [`2026-07-28`](https://modelcontextprotocol.io/specification/2026-07-28)。协议按日期版本协商，不能只写“支持 MCP”而忽略版本与能力协商。
+MCP 标准化 AI 应用与外部能力的连接：Host 管理模型与权限，Client 实现通信，Server 提供 Tools、Resources、Prompts。模型仍通过 Function Calling 表达调用意图，应用负责适配、执行和回传结果。
 
-### 为什么需要 MCP
+例如多个助手都需要查询订单时，可以复用同一个 MCP Server；若只是本地少量函数，不必为了 Agent 化引入协议层。MCP 不替代业务授权，也不保证工具输出可信。
 
-| 问题 | 没有 MCP | 有 MCP |
-|------|---------|--------|
-| **工具集成** | 每个应用维护私有适配 | MCP Server 可被兼容 Client 复用；仍需处理认证、授权和兼容性 |
-| **协议标准** | OpenAI、Claude、Gemini 格式各不同 | 统一的开放协议 |
-| **生态复用** | 工具代码无法跨项目复用 | MCP Server 可直接在不同应用间共享 |
+详见 [MCP 模型上下文协议](./mcp)：架构、完整调用流程、传输、协议版本、扩展与安全检查。
 
-### 架构
+<a id="mcp-migration"></a>
 
-```mermaid
-graph TD
-    subgraph Host["MCP Host (Claude Desktop / IDE / 自定义应用)"]
-        C1[MCP Client]
-        C2[MCP Client]
-        C3[MCP Client]
-    end
-    C1 --> S1["MCP Server<br/>(GitHub)"]
-    C2 --> S2["MCP Server<br/>(Database)"]
-    C3 --> S3["MCP Server<br/>(Slack)"]
-```
-
-- **Host**：LLM 应用（如 Claude Desktop、IDE 扩展）
-- **Client**：Host 内的协议适配器，向本地 subprocess 或远程 endpoint 发送 MCP 请求
-- **Server**：提供工具、资源和 Prompt 的本地进程或远程服务
-
-当前 `2026-07-28` 数据层采用**请求无状态、自包含、逐请求版本/能力声明**；旧版基于 `initialize` 的 connection-scoped session 仍有兼容路径。无状态不等于没有传输连接：Host 通常仍为每个 Server 实例化对应的 MCP Client，stdio 有进程生命周期，Streamable HTTP 也有网络连接；远程 Server 则可以同时服务多个 Client。
-
-### MCP 核心原语
-
-| 原语 | 说明 | 类比 |
-|------|------|------|
-| **Tools** | Agent 可调用的函数（如搜索、查询数据库） | Function Calling |
-| **Resources** | 只读数据源（如文件内容、API 数据） | RESTful GET 端点 |
-| **Prompts** | Server 暴露、通常由用户显式选择的消息模板 | Prompt 库 |
-
-### MCP vs 原生 Function Calling
-
-| 维度 | Function Calling | MCP |
-|------|-----------------|-----|
-| **定义位置** | 在 API 请求中定义工具 | 在独立的 MCP Server 中定义 |
-| **可复用性** | 绑定到特定应用代码 | Server 可跨应用复用 |
-| **标准化** | 各厂商格式不同 | 统一开放协议 |
-| **生态** | 每个应用自己实现 | 社区共享 MCP Server |
-| **传输层** | 由厂商 API 决定 | `stdio` / Streamable HTTP；旧 HTTP+SSE 仅用于兼容 |
-
-### 当前规范与 SDK 记忆法
-
-- **协议层**：JSON-RPC 2.0；当前标准传输是 `stdio` 与 **Streamable HTTP**。
-- **服务端原语**：Resources / Prompts / Tools；客户端还可提供 Elicitation 等能力，扩展能力需显式协商。
-- **官方 SDK**：TypeScript、Python、C#、Go 为 Tier 1；Java、Rust、Ruby 为 Tier 2；Swift、PHP、Kotlin 为 Tier 3。Python 包使用 `mcp`（CLI extra 为 `mcp[cli]`）；当前 TypeScript 服务端/客户端包分别是 `@modelcontextprotocol/server` 与 `@modelcontextprotocol/client`。其他语言的仓库和当前安装名以[官方 SDK 清单](https://modelcontextprotocol.io/docs/sdk)为准，不要把旧教程或第三方包名当成规范名称。
-- **安全边界**：MCP 只规定通信契约，不替你完成信任。Host 仍要做用户同意、最小权限、输入/输出校验、超时、审计；远程 Server 的工具描述和 annotations 默认不可信。
-
-### MCP 2026-07-28 迁移要点 {#mcp-migration}
-
-依据 [官方变更清单](https://modelcontextprotocol.io/specification/2026-07-28/changelog)，这次更新不能只更改版本字符串：
-
-| 旧习惯 | 新版变化 | 工程影响 |
-|--------|----------|----------|
-| 初始化握手建立会话 | 移除 `initialize` / `notifications/initialized`，请求自带版本与能力，Server 实现 `server/discover` | 旧握手仅用于兼容路径，不与新版混配 |
-| `Mcp-Session-Id` / stdio 进程代表任务 | 移除协议级 Session，跨调用状态以业务句柄引用 | 连接复用不等于用户、任务或权限共享 |
-| Server 直接请求补充输入 | MRTR 返回 `resultType: "input_required"`，Client 补充并重试原操作 | 维护待输入状态与幂等，不能当作最终答案 |
-| 核心协议的实验 Tasks | 移入可选扩展，使用 `tasks/get` 与 `tasks/update` | 显式声明扩展兼容性，不能假设所有 Server 都支持 |
-| HTTP GET / 资源订阅与 SSE 重投 | `subscriptions/listen`，移除 SSE 自动恢复与消息重放 | 断流使用新请求，业务恢复依靠状态查询与幂等，不靠 `Last-Event-ID` |
-| 结果没有类型字段 | 新增 `resultType`；兼容旧结果时省略即 `complete` | 区分完成和待输入，避免错误结束任务 |
-
-新版本请求自包含协议元数据，例如：
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/list",
-    "params": {
-        "_meta": {
-            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-            "io.modelcontextprotocol/clientCapabilities": {}
-        }
-    }
-}
-```
-
-这是消息形状示意，实际由兼容 SDK 构造，HTTP 还需满足相应传输头要求。Roots、Sampling、Logging 在新版进入弃用期，不是马上失效；新实现应通过工具参数或资源 URI 传文件范围，直接调用模型 API，使用 stderr / OpenTelemetry 观测。`clientInfo` 与 `serverInfo` 是自报信息，不能充当身份认证。
-
-MCP Apps、Tasks 与 Skills over MCP 不是三个核心原语的替代品，需分别核对扩展状态和宿主支持；“支持 MCP”不等于它们默认可用。完整消息契约见 [Base Protocol](https://modelcontextprotocol.io/specification/2026-07-28/basic)。
-
-::: tip 💡 一句话记忆
-**MCP 连接 Agent 与能力，A2A 连接独立 Agent，Agent Skills 给 Agent 加载过程知识。**三者互补，不互相替代。
-:::
+原迁移说明已移至 [MCP 2026-07-28 迁移要点](./mcp#mcp-migration)。
 
 ---
 
 ## Agent Skills（技能系统）
 
-Agent Skills 是一种轻量开放格式：一个目录至少包含 `SKILL.md`，其中 YAML frontmatter 至少有 `name` 和 `description`，正文提供任务指令；还可按需附带 `scripts/`、`references/`、`assets/`。宿主先只披露元数据，匹配任务后再加载正文与资源，这种**渐进式披露**避免把所有过程知识一次塞进上下文。规范见 [agentskills.io](https://agentskills.io/specification)。
+Agent Skills 用包含 `SKILL.md` 的目录封装过程知识，可以附带脚本、参考资料和模板。宿主先披露名称与描述，匹配任务后再加载正文及所需资源，避免把全部指令一直放在上下文里。
 
-**边界必须分清**：Skill 是当前 Agent 可按需加载的知识/工作流，不是新的执行主体；Subagent/专业 Agent 有自己的上下文、模型和工具边界；Handoff 是把当前会话控制权交给另一个 Agent；Agent-as-tool 则由管理 Agent 保留控制权并接收子 Agent 的结果。
-
-### 为什么需要 Skills
-
-| 问题 | 没有 Skills | 有 Skills |
-|------|-----------|-----------|
-| **能力扩展** | 所有能力塞进一个巨大的 Prompt | 按需加载，保持 Prompt 精简 |
-| **复用性** | 每个 Agent 重复定义相同逻辑 | 一次编写，多个 Agent 共享 |
-| **可维护性** | 修改一个能力要改整个 Prompt | 独立更新单个 Skill 文件 |
-| **上下文窗口** | 容易超出 Token 限制 | 只加载当前需要的 Skill |
-
-### Skill 的核心结构
-
-一个 Skill 通常包含以下要素：
-
-```
-┌─────────────────────────────────────────┐
-│              Skill 定义                  │
-├─────────────────────────────────────────┤
-│  name: "code-review"                    │
-│  description: "审查代码质量与安全性"       │
-│  发现依据: name + description             │
-├─────────────────────────────────────────┤
-│  输入: 需要的上下文信息                    │
-│  指令: 具体的执行步骤和规范                │
-│  输出: 期望的结果格式                     │
-├─────────────────────────────────────────┤
-│  资源: scripts / references / assets      │
-│  权限: 由宿主独立强制，不靠正文自律          │
-└─────────────────────────────────────────┘
-```
-
-### 典型的 Skill 设计模式
-
-```python
-# 方式一：基于 Prompt 模板的 Skill
-class PromptSkill:
-    """最简单的 Skill——一段专业化的 Prompt 模板。"""
-
-    def __init__(self, name: str, instruction: str,
-                 tools: list[str] = None):
-        self.name = name
-        self.instruction = instruction
-        self.tools = tools or []
-
-    def activate(self, context: dict) -> str:
-        """将 Skill 指令注入到当前对话上下文中。"""
-        return self.instruction.format(**context)
-
-
-# 方式二：开放格式的 Agent Skill
-# skills/
-#   code-review/
-#     SKILL.md          ← 必需：name、description、指令
-#     checklist.md      ← 附属资源
-#   debugging/
-#     SKILL.md
-#     flowchart.md
-
-# 方式三：SDK 中的专业 Agent / Agent-as-tool（相邻概念，不是 SKILL.md）
-class CodeReviewSkill:
-    """封装完整的代码审查逻辑。"""
-
-    name = "code-review"
-    description = "审查代码的质量、安全性和最佳实践"
-
-    async def execute(self, agent, code: str, language: str):
-        # 1. 静态分析
-        lint_result = await agent.call_tool("run_linter",
-                                            code=code, lang=language)
-        # 2. LLM 审查
-        review = await agent.think(
-            f"审查以下代码:\n{code}\n\nLint 结果:\n{lint_result}"
-        )
-        # 3. 生成报告
-        return {"lint": lint_result, "review": review}
-```
-
-### Skill 路由：Agent 如何选择 Skill
-
-Agent 需要一个**路由机制**来决定何时激活哪个 Skill：
-
-```
-用户输入
-  ↓
-Skill 路由器（Router）
-  ├── 关键词匹配: "审查代码" → code-review Skill
-  ├── 意图分类: LLM 判断意图 → 对应 Skill
-  ├── 用户显式指定: "/review" → code-review Skill
-  └── 无匹配 → 通用对话能力
-  ↓
-加载 Skill 指令 + 工具集
-  ↓
-Agent 执行
-```
-
-| 路由方式 | 优点 | 缺点 | 适用场景 |
-|---------|------|------|---------|
-| 关键词/正则匹配 | 快速、确定性高 | 不够灵活 | 命令式触发（如 `/commit`） |
-| LLM 意图分类 | 理解自然语言 | 有误判风险、消耗 Token | 自然对话中自动匹配 |
-| 用户显式选择 | 零误判 | 需要用户了解可用 Skill | 专业工具型 Agent |
-| 混合路由 | 兼顾准确和灵活 | 实现复杂 | 生产级 Agent |
-
-### Skills 与其他概念的关系
-
-| 概念 | 定位 | 与 Skills 的关系 |
-|------|------|-----------------|
-| **Tools** | 可执行操作；可以原子化，也可封装聚合流程 | Skill 指导 Agent 何时、如何使用 Tools |
-| **Prompt 模板** | 一段消息模板 | `SKILL.md` 是可发现的过程知识包，不只是字符串模板 |
-| **Workflow / Chain** | 由代码或运行时控制的执行流程 | Skill 可描述流程，但是否刚性执行由 Harness 决定 |
-| **Subagent / Agent-as-tool** | 有独立上下文的执行者 | 可预加载或调用 Skill；不能与 Skill 等同 |
-| **Handoff** | 当前 Agent 把会话控制权转交给目标 Agent | 是运行时编排行为，不是 Skill 发现机制 |
-| **Plugin** | 可打包 Skills、Agents、Hooks、MCP 等的扩展 | Skill 可以是 Plugin 的一个组件 |
-| **MCP Server** | 标准化的工具服务 | Skill 可以调用 MCP Server 提供的工具 |
-| **A2A `AgentSkill`** | Agent Card 中对远程能力的描述 | 不是可下载的 `SKILL.md`，也不定义内部实现 |
-
-### 实际案例：Claude Code 的 Skills 系统
-
-Claude Code 实现了一个基于文件的 Skills 机制，是 Skill 设计模式的典型应用：
-
-```
-用户: "请根据暂存区生成提交说明"
-  ↓
-宿主根据 name/description 发现并激活 Skill（也可由用户显式调用）
-  ↓
-加载 skills/commit/SKILL.md
-    ├── 指令: 分析变更、生成 commit message
-    ├── 按需读取 reference 或运行 script
-    └── 宿主权限: 是否允许执行 git commit / push
-  ↓
-Agent 按 Skill 指令执行
-  ↓
-输出: 生成并执行 commit
-```
-
-**Skill 的指令自由度**：
-- **低自由度**（如迁移、发布前检查）：给出明确步骤、前置条件、停止条件和 validator；真正的强制性仍由 Harness 实现
-- **高自由度**（如代码风格、架构建议）：提供原则、边界和质量标准，允许模型选择路径
-
-### Skill 的生命周期管理
-
-在生产级 Agent 系统中，Skills 会持续增加和演化，需要系统化的管理策略：
-
-#### 1. Skill 注册与发现
-
-```python
-class SkillRegistry:
-    """集中管理所有可用 Skills。"""
-
-    def __init__(self):
-        self._skills: dict[str, Skill] = {}
-
-    def register(self, skill: Skill):
-        """注册新 Skill，检查命名冲突。"""
-        if skill.name in self._skills:
-            raise ValueError(f"Skill '{skill.name}' already registered")
-        self._skills[skill.name] = skill
-
-    def unregister(self, name: str):
-        """移除 Skill（热更新场景）。"""
-        self._skills.pop(name, None)
-
-    def discover(self, query: str) -> list[Skill]:
-        """根据用户意图，返回匹配的 Skills。"""
-        return [s for s in self._skills.values()
-                if s.matches(query)]
-
-    def list_all(self) -> list[dict]:
-        """返回所有 Skill 的摘要（供 LLM 路由决策）。"""
-        return [{"name": s.name, "description": s.description}
-                for s in self._skills.values()]
-```
-
-#### 2. 新增 Skill 的标准流程
-
-```
-1. 定义 Skill
-   ├── 明确触发条件（什么场景激活）
-   ├── 编写指令（具体执行步骤）
-   ├── 声明依赖的 Tools
-   └── 设定约束和边界
-
-2. 注册到路由器
-   ├── 添加关键词/意图映射
-   ├── 设定优先级（避免与现有 Skill 冲突）
-   └── 更新 Skill 列表摘要（供 LLM 路由参考）
-
-3. 测试验证
-   ├── 单元测试：Skill 指令是否正确执行
-   ├── 路由测试：是否在正确场景被激活
-   ├── 冲突测试：是否误触发其他 Skill
-   └── 集成测试：与现有 Skills 的协作
-
-4. 上线与监控
-   ├── 灰度发布（先对部分用户开放）
-   ├── 监控激活率和成功率
-   └── 收集反馈迭代优化
-```
-
-#### 3. 修改 Skill 的注意事项
-
-| 修改类型 | 风险 | 建议做法 |
-|---------|------|---------|
-| **指令调整**（改 Prompt 措辞） | 低 — 不影响接口 | 直接修改，回归测试 |
-| **工具集变更**（增删依赖的 Tools） | 中 — 可能影响执行能力 | 版本管理 + 兼容性测试 |
-| **触发条件变更** | 高 — 可能影响路由 | 同时检查其他 Skill 的触发条件是否冲突 |
-| **重命名** | 高 — 影响所有引用方 | 保留旧名称作为别名过渡 |
-
-#### 4. Skill 版本管理
-
-```
-skills/
-  code-review/
-        SKILL.md              ← 当前版本
-    CHANGELOG.md           ← 变更记录
-  commit/
-        SKILL.md
-    CHANGELOG.md
-
-# 若宿主支持，可由包/插件版本管理；开放标准本身不定义 active_version
-skills/
-    code-review-v2/
-        SKILL.md
-```
-
-**关键原则**：
-- **向后兼容**：修改 Skill 时不破坏已有的触发方式和输出格式
-- **变更日志**：记录每次修改的原因和内容，便于回溯
-- **渐进式发布**：重大修改先在小范围验证，再全量推广
-
-#### 5. 多 Skill 冲突处理
-
-当 Skill 数量增多时，最常见的问题是**路由冲突**——多个 Skill 都匹配同一输入：
-
-```python
-class SkillRouter:
-    """带优先级和冲突检测的 Skill 路由器。"""
-
-    def route(self, query: str) -> Skill | None:
-        matches = []
-        for skill in self.registry.list_all():
-            score = skill.match_score(query)
-            if score > self.threshold:
-                matches.append((skill, score))
-
-        if not matches:
-            return None
-
-        if len(matches) > 1:
-            # 策略一：按优先级排序
-            matches.sort(key=lambda x: (-x[0].priority, -x[1]))
-            # 策略二：让 LLM 从候选中选择
-            # return self.llm_disambiguate(query, matches)
-
-        return matches[0][0]
-```
-
-| 冲突场景 | 解决策略 |
-|---------|---------|
-| 两个 Skill 关键词重叠 | 用优先级（priority）区分，或合并为一个 Skill |
-| 新 Skill 抢占了旧 Skill 的流量 | 细化触发条件，缩小各自的匹配范围 |
-| 用户意图模糊，无法确定 Skill | LLM 二次分类，或反问用户确认 |
-
-### 面试怎么答
-
-**Q: Agent 的 Skill 机制是什么？**
-
-Agent Skill 是包含 `SKILL.md` 的可移植目录，把特定领域的过程知识、脚本、参考资料和资产按需提供给 Agent。宿主通常先加载 name/description，激活后才加载正文。它不会创建新的 Agent，也不会自动获得工具权限；权限必须由宿主强制。专业 Agent、Agent-as-tool 和 Handoff 是执行与编排概念，不能统称为 Skill。
-
-**Q: Skill 数量增多后怎么管理？**
-
-三个关键机制：一是**集中注册**，用 SkillRegistry 统一管理，避免散落各处；二是**路由优先级**，每个 Skill 声明优先级和匹配条件，路由器按优先级排序并处理冲突；三是**版本管理**，修改 Skill 时保持向后兼容，记录变更日志，重大修改灰度发布。核心原则是新增 Skill 不破坏现有 Skill 的触发和行为。
+例如“代码审查 Skill”告诉 Agent 如何读取 diff、检查风险和组织报告，但它本身不会创建新的执行主体，也不会授予写文件或推送权限。标准格式、触发设计、测试与版本管理统一在 [Agent Skills 编写指南](./ai-agent-skills) 展开。
 
 ::: tip 💡 再记一遍边界
 **Skill 加知识，Tool 做动作，Subagent 开新上下文，Agent-as-tool 回结果，Handoff 交会话，A2A 跨系统。**
 :::
+
+## Harness Engineering：谁控制执行
+
+模型建议下一步，不代表系统必须照做。Harness 负责组装上下文、加载 Skill、检查工具调用权限、执行动作、保存状态，再把真实结果回传给模型。
+
+例如模型建议“退款并通知用户”时，Harness 应检查是否允许退款、是否需要审批、相同请求是否已执行，以及账务系统是否真的成功；模型自评“已完成”不能代替这些证据。执行循环、上下文预算、持久化恢复与安全验证详见 [Harness Engineering](./harness-engineering)。
 
 ---
 
@@ -847,16 +481,9 @@ Pattern 3: Pipeline
 
 ### A2A 1.0：跨系统的 Agent 协作
 
-[Agent2Agent（A2A）1.0](https://a2a-protocol.org/latest/specification/) 是截至 2026-08-09 的稳定协议版本。它由 Google 于 2025 年 4 月发起，同年 6 月贡献给 Linux Foundation，现由技术指导委员会进行厂商中立治理。A2A 面向**独立、可能不透明的远程 Agent**：通过 Agent Card 发现能力，用 Message 发起交互，以 Task 跟踪长任务，并用 Artifact 交付结果；支持 JSON-RPC、gRPC、HTTP+JSON 绑定以及轮询、流式和 Webhook。
+A2A 用 Agent Card 描述远程 Agent 的能力，用 Message 交换信息，以 Task 跟踪任务并用 Artifact 交付产物。它面向独立系统的协作；同一个 SDK 内的 Subagent、Agent-as-tool 或 Handoff 不必使用 A2A。
 
-| 概念 | 作用 | 不负责什么 |
-|------|------|------------|
-| **Agent Card** | 声明接口、协议版本、认证、输入/输出媒体类型和 `AgentSkill` | 不暴露内部 Prompt、Tools 或 `SKILL.md` |
-| **Message / Part** | 交换请求、澄清和状态信息 | 复杂任务的最终产物优先放 Artifact |
-| **Task / Artifact** | 管理生命周期并承载结果 | 不等同于本地函数调用 |
-| **`AgentSkill`** | 描述远程 Agent 擅长的能力 | 不是 Agent Skills 开放格式 |
-
-**安全要点**：生产接口使用 TLS；逐请求认证与授权；客户端按 `A2A-Version: 1.0` 协商版本；Webhook 防 SSRF、验签/鉴权且幂等处理。`TASK_STATE_AUTH_REQUIRED` 只表示需要授权，状态变化本身不构成授权。
+完整示例、任务状态、流式与 Webhook、安全和协议边界见 [A2A 智能体协作协议](./a2a)。下面的示意代码仅描述本地编排，不是 A2A 实现。
 
 ### 多 Agent 示例
 
@@ -943,8 +570,8 @@ class MultiAgentSystem:
 |------|----------------------|-------------------------------|
 | **控制流** | 预定义的固定顺序 | 模型动态决策下一步 |
 | **分支** | 无或简单 if-else | 基于中间结果的复杂分支 |
-| **循环** | 不支持 | 支持迭代和重试 |
-| **错误恢复** | 整体失败 | 局部重试和回退 |
+| **循环** | 简单线性链不包含循环；一般工作流可以用代码实现 | 模型可决定继续迭代，运行时限制次数 |
+| **错误恢复** | 可由代码配置重试、回退与检查点 | 可结合模型调整策略，仍由运行时保证恢复边界 |
 | **适用场景** | 步骤固定的流水线任务 | 需要判断和决策的复杂任务 |
 
 ```python
@@ -968,41 +595,18 @@ def agentic_workflow(task: str) -> str:
 
 两层 API 不要混淆：Anthropic **Client SDK** 直接调用 Messages API，你自行实现工具循环；**Claude Agent SDK**（Python 包 `claude-agent-sdk`、TypeScript 包 `@anthropic-ai/claude-agent-sdk`）把 Claude Code 的 Agent Loop、内置文件/终端工具、上下文管理、权限、Hooks、Skills、MCP 和 Subagents 作为库使用。
 
-```python
-import asyncio
-from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
-
-async def main():
-    options = ClaudeAgentOptions(
-        # allowed_tools 是“预批准”，不是唯一可见工具的 allowlist；
-        # 真正禁止应使用 disallowed_tools / hooks / sandbox。
-        allowed_tools=["Read", "Grep", "Glob"],
-        permission_mode="dontAsk",
-        max_turns=12,
-        setting_sources=["project"],
-    )
-    async for message in query(
-        prompt="审查当前项目的认证实现，只报告问题，不修改文件",
-        options=options,
-    ):
-        if isinstance(message, ResultMessage):
-            print(message.result)
-
-asyncio.run(main())
-```
-
-需要完全自定义工具协议或模型输入时用 Client SDK；需要现成编码 Agent Harness 时用 Agent SDK。无论哪一层，都要显式配置权限、沙箱、回合/预算上限和验证。
+需要完全自定义工具循环或模型输入时可用 Client SDK；需要现成编码 Agent Harness 时可用 Agent SDK。SDK 接入与权限示例集中在 [Harness Engineering](./harness-engineering) 和 [Skills 编写指南](./ai-agent-skills)。
 
 ### OpenAI Agents SDK 的当前边界
 
-OpenAI Agents SDK（Python 包 `openai-agents`）默认用 Responses API，核心是 `Agent` + `Runner`。它提供 function/hosted/MCP tools、Sessions、Tracing、HITL、Sandbox Agents，以及两种多 Agent 关系：
+OpenAI Agents SDK（Python 包 `openai-agents`）的核心是 `Agent` + `Runner`。入门时先区分两种多 Agent 关系，具体运行时实现见 [Harness 中的 SDK 对比](./harness-engineering#主流-sdk-中的-harness-实现)：
 
 | 模式 | 谁继续面对用户 | 上下文如何流动 | 适合场景 |
 |------|---------------|---------------|---------|
 | **Agent-as-tool** | Manager 保留控制 | 专业 Agent 的结果作为工具结果返回 Manager | 集中编排、统一口径 |
 | **Handoff** | 目标 Agent 接管 | 默认携带既有会话历史，可用 input filter 调整 | 分诊后由专家直接服务 |
 
-输入 Guardrail 默认可与主 Agent 并行运行，若需要在任何工具副作用前阻断，应使用 blocking 模式；Agent 级 input/output Guardrail 只覆盖链首/最终 Agent，自定义 function tool 要用 tool guardrail。需要人工审批的工具可通过 `needs_approval` 产生 interruption，把 `RunState` 持久化后批准/拒绝并续跑。
+两种模式都只是编排关系，不会自动形成 A2A 连接或授予新权限。
 
 ---
 
@@ -1011,6 +615,8 @@ OpenAI Agents SDK（Python 包 `openai-agents`）默认用 Responses API，核�
 Agent 已从聊天助手扩展到桌面操作、代码工程和浏览器自动化等产品形态。面试中应重点说明它们的**环境接口、验证信号与权限边界**，而不是只背产品名。
 
 ### 三种形态对比
+
+<div role="region" aria-label="Agent 产品形态对比表" tabindex="0" style="overflow-x: auto;">
 
 | 维度 | Computer Use | Code Agent | Browser Agent |
 |------|-------------|-----------|---------------|
@@ -1021,70 +627,9 @@ Agent 已从聊天助手扩展到桌面操作、代码工程和浏览器自动�
 | **典型任务** | 跨应用流程自动化、RPA 替代 | 修 bug、实现 feature、写测试、做重构 | 表单填写、数据抓取、电商比价 |
 | **关键风险** | 误操作系统、隐私泄露 | 删错文件、推坏代码、消耗云资源 | 触发反爬、错过验证码 |
 
-### Computer Use：让模型像人一样用电脑
+</div>
 
-Anthropic 在 2024 年 10 月发布的 Computer Use 是分水岭——模型直接看截屏、输出 `(x, y, "click")` 这样的操作指令。它的关键技术挑战是**视觉-动作对齐**：模型必须从像素坐标精确推断"哪里能点"。
-
-```
-Loop:
-  1. screenshot() → 当前屏幕图像
-  2. model.think(image, history) → 推理下一步
-  3. action: click(x,y) | type("...") | key("Cmd+S") | scroll(...)
-  4. wait_for_ui_settle()  ← 关键：等待动画/加载完成
-  5. goto 1
-```
-
-**生产化要点**：
-- 每个动作批次后都要获取新的环境证据：视觉路线通常返回截图，DOM 路线也可读取 URL、可访问性树或元素状态；不能只靠模型假设上一步成功
-- 操作前要有**沙箱/虚拟机隔离**，避免误操作真实环境
-- 截图会快速占用上下文；要保留少量近期帧、批量清理旧截图，并监控真实 token 使用。Prompt Caching 只能降低重复前缀的计算/价格，**不会扩大上下文窗口**
-
-### Code Agent：从补全到自主完成 PR
-
-Code Agent 是较容易形成验证闭环的 Agent 形态之一，因为编译、测试、静态检查和 diff 都能提供环境证据。代表产品的演进路径很有代表性：
-
-```
-代码补全 → 行内 AI（Copilot Chat）→ 工作区智能体（Cursor Composer）
-  → 完全自主（Claude Code / Devin / GitHub Copilot Agent）
-```
-
-| 工具 | 自主程度 | 核心特征 |
-|------|---------|---------|
-| **GitHub Copilot（早期）** | 低 | 按 tab 接受单行/单块补全 |
-| **Cursor / Windsurf** | 中 | 多文件编辑，但需要用户确认 |
-| **Claude Code** | 高 | 终端/IDE Agent，可使用 Skills、Subagents、Hooks、MCP 和权限模式 |
-| **Devin / Copilot Agent** | 极高 | 异步后台跑、自己开 PR、跑 CI、自我修正 |
-
-**与普通 Agent 的核心差异**——Code Agent 必须解决：
-- **大代码库的上下文管理**：不应把整个仓库塞进 context；可用文件路径、Glob/Grep、语义检索或索引做按需检索，并非必须使用 AST + 向量库
-- **验证驱动的修复**：每次改动后运行相关测试/静态检查，失败 → 读证据 → 最小修复 → 重跑
-- **安全边界**：读取也可能暴露密钥、个人数据或恶意仓库指令；读、写、删除、联网、安装、推送都应按任务最小授权
-
-### Browser Agent：网页操作自动化
-
-Browser Agent 是 Web 时代的 RPA。技术上有两条路线：
-
-| 路线 | 代表 | 优劣 |
-|------|------|------|
-| **DOM 路线** | Browser Use、Playwright + LLM | 速度快、Token 省，但对动态/Canvas 页面失效 |
-| **视觉路线** | Skyvern、Multion | 通用性强，能处理任何渲染方式，但成本高、易错 |
-
-**生产化坑**：
-- 遵守网站条款、robots/速率限制，不要用“指纹伪装”绕过站点控制
-- 登录、验证码、双因素和敏感数据输入需要明确的接管/确认流程
-- 页面改版会使选择器失效，可用 DOM/可访问性树与视觉路线互相回退，但每条路线都要验证状态
-- 网页、邮件、PDF、聊天和工具输出都是**不可信第三方内容**，不能当成用户授权
-
-### 共同的工程挑战
-
-无论哪种形态，Agent 产品化都要面对四个共性问题：
-
-| 挑战 | 表现 | 应对 |
-|------|------|------|
-| **Token 成本** | 每步都要传截屏/DOM/代码上下文 | Prompt Caching、增量上下文、压缩历史 |
-| **延迟** | 多步串行执行慢 | 推测性并行、流式中间结果反馈 |
-| **可观测性** | 失败时不知道哪一步出错 | Trace 每一次工具调用（OpenTelemetry + LangSmith / Langfuse）|
-| **安全** | 误操作、间接 Prompt 注入、数据外泄 | 隔离环境、域名/动作白名单、最小权限、风险点即时确认 |
+三者共同遵循“获取环境证据、选择动作、执行、再验证”的循环。自主程度取决于宿主配置和任务授权，不能仅凭产品名判断。视觉定位、DOM 与截图的取舍、沙箱和多 Agent 编排详见 [Computer Use 与多 Agent 编排](./agent-computer-use)。
 
 ---
 
@@ -1094,46 +639,7 @@ Browser Agent 是 Web 时代的 RPA。技术上有两条路线：
 
 Context Engineering 不只是“写好 System Prompt”，而是每一轮都选择**最小且高信号的 token 集合**：系统指令、工具定义、Skill、记忆、检索数据、消息历史和工具结果都占同一注意力预算。上下文越长不等于效果越好，长任务要组合按需检索、压缩、外部状态和 Subagents。
 
-### 为什么 Agent 比普通对话受益更大
-
-| 场景 | 不变前缀长度 | 调用频次 | 缓存收益 |
-|------|------------|---------|---------|
-| **普通聊天** | 几百 Token System Prompt | 几次/会话 | 一般 |
-| **RAG 问答** | System + 检索片段（每次变） | 几次 | 较小（片段在变）|
-| **Agent 循环** | System + 工具定义 + 历史步骤 | **每一步都调用** | 稳定前缀占比高时通常更有价值 |
-| **Computer Use** | System + 工具定义 + 操作历史 + 近期截图 | 多步循环 | 缓存稳定前缀，并批量清理旧截图 |
-
-### 命中率最大化的 Prompt 结构
-
-::: tip 💡 黄金顺序
-
-把**最稳定**的内容放在前面，**变化最频繁**的放在最后：
-
-```
-1. System Prompt（几乎不变）
-2. 工具定义 schema（不变）
-3. Few-shot 示例（不变）
-4. 用户长期记忆 / 项目背景（按用户级缓存）
-5. ──── 缓存断点 ────
-6. 当前轮历史（变化）
-7. 本次用户输入（每次都新）
-```
-
-只要前缀的任何一个 Token 改变，后面的缓存全部失效——所以**永远不要**在 System Prompt 里塞动态时间戳、用户名等会变的值。
-
-:::
-
-### 三个扩展手段
-
-| 手段 | 解决什么 | 关键边界 |
-|------|---------|---------|
-| **Tool Search / deferred loading** | 工具很多时只把命中的定义加载到模型上下文 | 搜索本身也可能漏召回；常用工具应常驻，工具描述仍需清晰 |
-| **Compaction** | 将接近窗口上限的历史压缩后继续 | 有损；优先保留目标、约束、决策、未完成项和验证证据，不能只保留“故事摘要” |
-| **Subagents** | 用独立上下文隔离高输出探索，并行后只回传摘要/Artifact | 有启动与协调成本；适合独立子任务，不适合强共享状态的每一步 |
-
-Anthropic 的 Tool Search 通过 `defer_loading` 与 regex/BM25 搜索按需加载工具；也可自建 embedding 检索。缓存、Tool Search、Compaction 解决的问题不同：**缓存省重复计算，Search 减少进入上下文的定义，Compaction 回收历史空间**。
-
-不要在教材中固化厂商价格、TTL 或“整体节省百分比”：这些随模型、服务层级、请求形状和时间变化。工程上应读取 API `usage`，按真实 trace 计算缓存命中、输入/输出 token、工具费用和端到端成本。
+先记住三点：**缓存减少重复计算，Tool Search 减少常驻定义，Compaction 回收历史空间**。Prompt Cache 不会扩大窗口，Compaction 也不能代替检查点。完整的上下文策略与缓存边界已移至 [Harness Engineering](./harness-engineering#prompt-caching)。
 
 ---
 
@@ -1161,38 +667,7 @@ Agent 可能在两个状态间反复跳转，或不断重复相同行为。
 
 Agent 的循环特性可能导致**大量 API 调用**，Token 消耗远超预期。
 
-```python
-class CostAwareAgent:
-    """带成本控制的 Agent。"""
-
-    def __init__(self, llm, max_tokens: int = 50000,
-                 max_steps: int = 15):
-        self.llm = llm
-        self.max_tokens = max_tokens
-        self.max_steps = max_steps
-        self.total_tokens = 0
-        self.step_count = 0
-
-    def execute(self, task: str) -> str:
-        while self.step_count < self.max_steps:
-            if self.total_tokens >= self.max_tokens:
-                return self._force_conclude("Token 预算耗尽")
-
-            response = self.llm.generate(self._build_prompt(task))
-            self.total_tokens += response.usage.total_tokens
-            self.step_count += 1
-
-            if self._is_final_answer(response):
-                return response.text
-
-        return self._force_conclude("达到最大步数限制")
-
-    def _force_conclude(self, reason: str) -> str:
-        """强制生成结论。"""
-        return self.llm.generate(
-            f"由于{reason}，请基于目前收集的信息给出最佳答案。"
-        )
-```
+调用前检查剩余预算并限制本次输出，调用后按真实 `usage` 记账。回合数、总时长、并发工具和外部服务费用也应纳入约束。预算耗尽后停止新调用，返回已有进度与未完成项；不要额外调用模型“强行生成成功结论”。具体机制见 [Harness 的暂停与恢复](./harness-engineering#durable-execution)。
 
 ---
 
@@ -1225,7 +700,7 @@ class CostAwareAgent:
 
 1. **Agent 过度设计**：简单任务不需要 Agent。如果任务可以通过一次 LLM 调用或固定链式调用完成，引入 Agent 反而增加复杂度、延迟和成本。应根据任务复杂度选择合适的架构层级。
 
-2. **工具描述不清晰**：Agent 选择工具完全依赖工具的文本描述。描述模糊或缺少示例会导致模型频繁选错工具或传入错误参数。每个工具的 description 应包含功能说明、参数约束和使用场景。
+2. **工具描述不清晰**：工具名称、描述、Schema、上下文和调用策略都会影响选择。描述模糊或缺少示例会导致模型选错工具或传入错误参数；描述应说明用途和边界，参数约束还要由执行层校验。
 
 3. **缺少终止条件**：未设置最大步数、Token 上限或超时限制，可能导致 Agent 陷入无限循环或产生巨额费用。生产环境必须配置多层次的终止保护。
 
@@ -1266,12 +741,12 @@ class CostAwareAgent:
 
 **要点**：
 
-AI Agent 是以 LLM 为核心推理引擎的自主决策系统，其架构包含四个核心模块：
+AI Agent 是以 LLM 为决策核心、在授权范围内根据反馈选择动作的系统，可以从四类职责理解，但不必实现为四个独立模块：
 
 1. **感知（Perception）**：接收用户输入和外部环境信息（包括工具返回的结果），是循环的起点
 2. **规划（Planning）**：利用 LLM 的推理能力，将复杂任务分解为子步骤，并决定下一步行动。典型模式包括 ReAct（边推理边行动）和 Plan-and-Solve（先规划后执行）
 3. **行动（Action）**：调用外部工具执行具体操作——搜索信息、执行代码、调用 API 等
-4. **记忆（Memory）**：维护短期记忆（当前对话上下文）、长期记忆（向量数据库中的历史经验）和工作记忆（当前任务状态）
+4. **状态与记忆（Memory）**：维护当前上下文和任务状态；按需要增加数据库、文件或向量存储中的长期记忆
 
 **与简单 LLM 调用的关键区别**在于 Agent 拥有**自主决策循环**——它不是一次性地生成回答，而是持续运行"推理→行动→观察→再推理"的循环，直到任务完成。这赋予了 Agent 处理多步骤、需要外部信息和工具协助的复杂任务的能力。
 
@@ -1298,7 +773,7 @@ Agent 的记忆系统分为三个层次：
 - 实现方式：结构化变量（如字典、JSON），在任务执行过程中动态更新
 - 作用：让 Agent 知道"做到了哪一步"、"哪些子任务已完成"、"中间数据是什么"
 
-**关键设计**：当短期记忆超出窗口限制时，应将旧消息通过 LLM 生成摘要，存入长期记忆，实现"遗忘但可回忆"的机制。
+**关键设计**：上下文压缩与长期记忆写入分开。压缩时保留目标、约束、近期证据和未完成项；长期记忆仅保存经过筛选、允许持久化的信息，并支持来源追踪、更新和删除。
 
 ---
 

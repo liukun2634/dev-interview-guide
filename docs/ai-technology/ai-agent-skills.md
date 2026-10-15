@@ -63,55 +63,9 @@ Agent Skills 是一种开放的、基于文件系统的能力封装格式：用 
 
 ### A2A 中的 `AgentSkill` 定义
 
-A2A 最初由 Google 于 2025 年 4 月发布，随后贡献给 Linux Foundation；当前项目由社区治理。A2A 1.0 的 Agent Card 可发布在 `/.well-known/agent-card.json`，其中 `skills` 仅描述远程 Agent 擅长什么：
+A2A 的 `AgentSkill` 位于 Agent Card 的 `skills` 数组，描述远程 Agent 的能力、标签、例子及输入输出媒体类型。调用方据此评估是否委派任务，不会下载它的内部指令。
 
-```json
-{
-  "name": "CodeReviewAgent",
-  "description": "自动化代码审查 Agent",
-  "version": "1.0.0",
-  "supportedInterfaces": [
-    {
-      "url": "https://review-agent.example.com/a2a/v1",
-      "protocolBinding": "HTTP+JSON",
-      "protocolVersion": "1.0"
-    }
-  ],
-  "capabilities": {
-    "streaming": true,
-    "pushNotifications": false
-  },
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain", "application/json"],
-  "skills": [
-    {
-      "id": "code-review",
-      "name": "Code Review",
-      "description": "审查代码变更的质量、安全性和最佳实践合规性",
-      "tags": ["code", "security", "review"],
-      "examples": [
-        "审查这个 PR 的代码质量",
-        "检查最近的提交有没有安全漏洞"
-      ]
-    },
-    {
-      "id": "generate-tests",
-      "name": "Test Generation",
-      "description": "根据源代码自动生成单元测试",
-      "tags": ["code", "testing"],
-      "examples": [
-        "给 UserService 生成单元测试"
-      ]
-    }
-  ]
-}
-```
-
-**A2A 的关键设计**：
-- Skill 声明是**对外广告**——告诉其他 Agent"我能做什么"，但不暴露内部实现
-- 客户端可根据 `description`、`tags`、`examples` 评估是否委派任务；每个 Skill 还可覆盖输入/输出媒体类型及安全要求
-- 任务执行是**不透明的**——调用方不需要知道远程 Agent 内部用了哪些 Tools、Prompt 或 Agent Skills
-- A2A `AgentSkill` 不是可下载的 `SKILL.md`，不能替代 Agent Skills 开放标准
+因此，一个代码审查 Agent 可以在 Card 中声明 `code-review`，内部却使用普通代码、多个 Agent 或本地 Skill。名称相同不意味着两种 Skill 是同一个对象。完整 Card、任务状态与协作流程已放到 [A2A 专题](./a2a#agent-card)；工具连接见 [MCP 专题](./mcp)。
 
 ### 当前格局对比
 
@@ -634,6 +588,59 @@ Skill 编写完成后，应分别验证**能否正确触发**和**触发后能�
 
 ---
 
+## 从单个 Skill 到可维护的技能库 {#skill-lifecycle}
+
+写出一个能用的 Skill 只是起点。真正困难的是：增加十个相邻 Skill 后，它还会不会被正确选择？升级正文或脚本后，旧任务能否继续？同一份目录交给另一个宿主时，会不会丢失权限限制？
+
+### 发现、激活与执行要分开记录
+
+```text
+扫描受信任目录 -> 校验 frontmatter 与资源路径 -> 形成 catalog
+  -> 选择 Skill -> 加载固定版本正文 -> 按需使用资源
+  -> 宿主检查权限 -> 执行工具 -> 验证产物
+```
+
+“目录存在”“模型选中”“正文已读”“任务成功”是四种不同事件。排查漏触发时先确认宿主是否扫描到了该目录；排查任务失败时再检查读取了哪些 reference、依赖是否存在、工具是否被拒绝。
+
+标准不规定统一的 `priority`、`active_version` 或依赖求解器。`metadata.version` 可以记录作者定义的版本，但不会自动带来版本选择、安装依赖或回滚。项目级与用户级同名覆盖规则也由宿主决定，团队应明确约定并测试。
+
+### 更新不是只替换一段文字
+
+| 变更 | 可能影响什么 | 最小回归范围 |
+|------|--------------|--------------|
+| `description` 或名称 | 触发、误触发、与邻近 Skill 的竞争 | 正反触发集，加上相邻 Skill 的请求 |
+| 步骤或参考资料 | 决策路径、停止条件、报告质量 | 代表性任务、失败恢复与只读边界 |
+| 脚本、依赖、MCP 工具 | 参数、输出 Schema、环境与副作用 | 脚本测试、缺依赖、工具拒绝与集成测试 |
+| 客户端扩展字段 | 自动调用、可见性、预批准权限 | 每个支持宿主的实际行为 |
+
+Prompt 措辞变化也可能让行为显著变化，不能一概视为低风险。对于已有任务，固定其使用的 Skill 发布版本或目录内容哈希，避免恢复后混入新规则；升级新任务时再灰度比较通过率与成本。
+
+### 三种冲突，三种处理
+
+- **名称冲突**：两个来源提供同名 Skill。配置确定的来源优先级，并让日志显示实际加载路径；不要依赖文件遍历顺序。
+- **语义冲突**：`code-review` 和 `security-review` 都匹配“看看这段代码”。细化对象与排除边界，必要时合并流程或请用户明确范围。
+- **约束冲突**：一个 Skill 要求自动提交，另一个要求只读。由宿主和当前授权决定可执行范围，不能按“最后加载的获胜”放宽权限。
+
+### 可移植的是格式，不是全部运行环境
+
+同一目录被两个宿主识别，不代表行为一致。应验证发现路径、显式调用语法、自动激活方式、工具名称、Shell、依赖与客户端扩展字段。`compatibility` 用于描述要求，不会帮宿主安装软件；实验性 `allowed-tools` 的语义和支持程度也要单独核对。
+
+团队发布时至少保留：源码与资源版本、依赖清单、支持的宿主/模型组合、评测结果、权限需求和回滚目标。脚本或外部资源更新后重新审查；内容哈希只能帮助识别变更，不能证明内容安全。
+
+### 用失败样例验证发布质量
+
+| 场景 | 应看到的结果 |
+|------|--------------|
+| 用户只要求解释代码 | 不误触发修改或提交流程 |
+| 缺少必需工具或 reference | 明确报告缺失条件，不编造执行结果 |
+| 宿主拒绝写操作 | 停止该动作或提供只读结果，不换工具绕过 |
+| 同一任务中断后恢复 | 使用固定版本和已有产物，不重复不可逆动作 |
+| 引用资料夹带新指令 | 作为不可信内容处理，不扩大用户授权 |
+
+这些是行为测试，不是检查 `SKILL.md` 能否解析。格式校验与任务评测都通过，才能说明这次发布可用。恢复、幂等和审批的运行时实现见 [Harness Engineering](./harness-engineering#durable-execution)。
+
+---
+
 ## 实战案例：从零编写一个 Commit Message Skill
 
 以下是一个完整的 Skill 编写过程，展示从需求分析到最终实现。
@@ -1080,7 +1087,9 @@ Skill 安全性的核心原则是**最小权限 + 不信任外部内容**。Skil
 
 ## 延伸阅读
 
-- [AI Agent 智能体 - Skills 概念详解](./ai-agents#agent-skills-技能系统)
+- [AI Agent 基本概念](./ai-agents)
+- [MCP 模型上下文协议](./mcp)
+- [A2A 智能体协作协议](./a2a)
 - [Prompt Engineering 提示工程](./prompt-engineering) — Skill 指令的编写基础
 - [Anthropic Tool Use Documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) — Claude Client / Server Tools 与 Tool Use 循环
 - [Agent Skills Specification](https://agentskills.io/specification) — 跨平台 `SKILL.md` 规范及校验规则
