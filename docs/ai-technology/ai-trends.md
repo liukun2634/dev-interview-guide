@@ -6,24 +6,27 @@ title: AI 前沿趋势与新范式
 
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
-::: tip 💡 核心要点（截至 2026-10-10）
+::: tip 💡 核心要点（快照更新至 2026-10-15）
 AI 工程正从"单模型调用"走向**可评估的复合系统**：AI Gateway 与 Model Routing 管理模型，Batch/Cache 控制成本，Structured Outputs 固化边界，Observability + Evals 形成质量闭环；Agent 侧则由 Harness 管理长时间执行，MCP、A2A、Agent Skills 分别解决工具连接、跨 Agent 协作和过程知识封装。以下“趋势”是基于已发布产品和规范的工程判断，不等于所有团队都已采用，更不把预测写成事实。
 :::
 
 ---
 
-## 最新进展快照：2026-10-10 {#latest-updates}
+## 最新进展快照：2026-10-15 {#latest-updates}
 
-本次更新以官方公告、规范和模型卡为依据，区分公开可用、分阶段访问和 SDK beta。模型榜单反映特定 Harness、环境与预算，不代表通用生产成功率。
+本次增量复核 OpenAI、Claude 的当前模型目录及 Gemini 4 Argon 的 API 状态；其余条目保留原公告日期和来源，不把核验日写成发布日期。区分公开目录、分阶段访问和 SDK beta，也不把单一榜单成绩当作通用生产成功率。
 
-| 日期 | 已核实进展 | 可用范围与工程边界 |
+| 公告或核验日期 | 已核实进展 | 可用范围与工程边界 |
 |------|------------|--------------------|
+| 2026-10-15（核验） | [OpenAI 当前模型目录](https://developers.openai.com/api/docs/models) | 通用旗舰目录列 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Luna；支持文本/图像输入、文本输出，专用语音与图像生成型号另列。API 型号不等于 ChatGPT 各产品入口的默认配置 |
+| 2026-10-15（核验） | [Claude 当前模型目录](https://platform.claude.com/docs/en/about-claude/models/overview) | 列 Claude Fable 5.1、Opus/Sonnet/Haiku 5.5；Fable 5、Opus 5 等仍在 Legacy 列表，不代表立即关闭。模型 ID、推理设置、平台和退役时间需一起核对 |
+| 2026-10-15（核验） | [Gemini 4 Argon API 模型卡](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon) | 已列为 Stable；输入输出共享 1,048,576 Token 窗口，默认同步最大输出 65,536，long decode 可提高输出上限但不额外增加共享窗口。Stable 不代表全部账号/地区可用，也不代表支持 Live API、音频或图像生成 |
 | 2026-10-07 | [GPT-6 与 Intelligent UI](https://openai.com/index/gpt-6-for-everyone/) | ChatGPT Chat 分批开放，付费档使用 Sol、Free/Go 使用 Luna；本次公告不改变 Work/Codex 模型，不等于全部 API 与 IDE 同步换模 |
 | 2026-10-02 | [GPT-6 工程指南](https://openai.com/index/practical-guide-building-gpt-6/) | 覆盖 Astra、6.1 Sol、Luna，Responses 多 Agent 仍为 beta；模型、effort、速度档、缓存与压缩要分别评估 |
 | 2026-10-07 | [Claude Haiku 5.5](https://www.anthropic.com/claude-haiku-5-5) | 已公开提供，适合分类、抽取、压缩和有边界的子任务；小模型也支持可调推理，SDK 浏览器/桌面驱动仍 beta |
 | 2026-09-28 | [Claude Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5) | 已公开提供；高 effort 可能因超时或超范围修改反而降低验收成绩，不是越高越好 |
 | 2026-09-22 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5) | 已公开提供，部分高风险领域有安全回退；迁移需核对 thinking、历史保留和工具版本 |
-| 2026-09-30 | [Gemini 4 Argon](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-argon/) | Fairwind 可信防御者与早期测试者分阶段访问，并非普遍公开 API；1M Token 是公告中的输出上限，不是输入窗口或免费预算 |
+| 2026-09-30（历史公告） | [Gemini 4 Argon 初始公告](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-argon/) | 当时为 Fairwind 可信防御者与早期测试者分阶段访问；不能继续用此公告描述当前 API 状态，现状见上方 Stable 模型卡。公告能力不等于免费预算 |
 | 2026-09-02 | [Gemini 3.8 Flash / Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/) | Flash 可通过 Gemini API 使用，Cyber 面向可信防御者；长程任务可能增加工具步骤与 Token 总量 |
 | 2026-10-06 | [EmbeddingGemma 2](https://blog.google/innovation-and-ai/technology/developers-tools/embeddinggemma-2/) | 740M 模块化多模态 Embedding，Apache 2.0 权重，支持端侧跨模态检索；部分托管平台支持仍待上线 |
 | 2026-09-17（论文） | [DeepSeek-V4.1-Flash](https://arxiv.org/abs/2609.19969)与[模型卡](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | MIT 权重，多模态 MoE；CED、CSA2、FP4 KV 和局部状态重放改善缓存压力，激活参数少不等于总权重小 |

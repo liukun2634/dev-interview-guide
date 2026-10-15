@@ -31,7 +31,7 @@ Prompt 工程（System Prompt + 上下文组装）
   │           └── 按需加载 Skill、连接 MCP、持久化检查点
   └── 否 → 直接调用 LLM
   ↓
-LLM 推理（Transformer → 自注意力 → 解码生成）
+LLM 推理（以因果 Transformer 自回归生成作示例）
   ├── KV Cache 加速
   ├── 量化 / 推测解码优化
   ├── Structured Outputs / 业务校验
@@ -81,8 +81,8 @@ LLM 推理（Transformer → 自注意力 → 解码生成）
 
 | 概念 | 一句话解释 | 为什么重要 |
 |------|-----------|-----------|
-| Transformer | 基于自注意力机制的序列模型，抛弃了 RNN 的顺序限制 | 所有现代 LLM 的基础架构 |
-| Self-Attention | 让每个 token 关注序列中所有其他 token，捕捉长距离依赖 | 理解 LLM 能力的核心 |
+| [Transformer](./llm-fundamentals#transformer-架构) | 基于注意力的序列架构，训练可并行处理多个位置 | LLM 的主流骨干，但不是唯一架构，自回归生成仍有序列依赖 |
+| Self-Attention | 按内容聚合允许访问的位置；因果解码器不能访问未来 Token | 理解掩码、历史访问与计算成本 |
 | KV Cache | 缓存已计算的 Key/Value，避免重复计算 | 推理加速的第一手段 |
 | Embedding | 将文本映射到高维向量空间，语义相近的文本距离接近 | RAG 和语义搜索的基础 |
 | RAG | 检索外部知识 + 注入 Prompt，解决 LLM 知识截断和幻觉问题 | 企业级 AI 应用的主流架构 |
