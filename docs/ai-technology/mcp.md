@@ -12,7 +12,15 @@ MCP（Model Context Protocol）标准化的是 **AI 应用如何连接外部工�
 
 > 核对日期：2026-10-15。本文按 [MCP 2026-07-28 规范](https://modelcontextprotocol.io/specification/2026-07-28) 讲解；接入时还要核对 SDK、Host、Server 实际支持的版本。旧版初始化握手不能与新版请求格式混用。
 
-按需求阅读：理解协议从头开始；动手开发从 [Server 示例](#build-server) 开始；接入现成服务看 [宿主配置](#host-configuration) 与 [Server 选型](#server-ecosystem)；上线前看 [测试](#server-testing)、[长任务](#long-running-tools) 和 [部署运维](#server-operations)，出问题按 [排查表](#troubleshooting) 定位。
+按需求阅读：先看 [MCP Protocal](#mcp-protocol)；动手开发从 [Server 示例](#build-server) 开始；接入现成服务看 [宿主配置](#host-configuration) 与 [Server 选型](#server-ecosystem)；上线前看 [测试](#server-testing)、[长任务](#long-running-tools) 和 [部署运维](#server-operations)，出问题按 [排查表](#troubleshooting) 定位。
+
+## MCP Protocal {#mcp-protocol}
+
+**MCP 的全称是 Model Context Protocol，即模型上下文协议。** 它规定 AI 应用与外部能力提供方之间如何描述能力、交换消息、调用工具和读取数据，是通信契约，不是某个 SDK、插件或 Server 产品。
+
+理解协议要分清三个层面：**消息与交互规则**使用 JSON-RPC 2.0，约定方法、参数、请求关联、结果和错误，以及版本/能力机制；**能力模型**包括 Tools、Resources、Prompts；**传输方式**规定这些消息如何通过 stdio 或 Streamable HTTP 交换。
+
+MCP Server 是这份协议的实现方之一，MCP Client 是 Host 内与之通信的组件，Host 则管理模型、上下文与执行权限。因此，“接入一个 MCP Server”是使用协议连接具体能力，不等于 MCP 协议本身只是启动服务的配置文件。
 
 ## 为什么需要 MCP
 

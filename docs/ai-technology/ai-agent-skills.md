@@ -1,8 +1,8 @@
 ---
-title: Agent Skills 编写指南
+title: Agent Skills
 ---
 
-# Agent Skills 编写指南
+# Agent Skills {#agent-skills-编写指南}
 
 <span class="dig-tag dig-tag--category">AI 技术</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 高级</span> <span class="dig-tag dig-tag--hot">🔥🔥 中频</span>
 
