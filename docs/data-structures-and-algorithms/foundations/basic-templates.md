@@ -7,7 +7,7 @@ title: 基础算法模板
 <span class="dig-tag dig-tag--category">基础知识</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-本页收录 **面试和刷题最高频的 14 个基础模板**：二分查找、双指针、滑动窗口、前缀和/差分、单调栈、BFS、DFS、回溯、并查集、拓扑排序，以及 **DP 四套核心模板**（0/1 背包 / 完全背包 / LIS / 编辑距离）。**记不住没关系，但要做到“看到题目特征 → 30 秒内联想到模板”**。所有代码都用 Java，可直接复制使用。需要 KMP / 线段树 / 树状数组 等更高阶模板请看 [高阶算法模板](./advanced-templates)。
+本页收录 **14 个基础模板**：二分查找、双指针、滑动窗口、前缀和/差分、单调栈、BFS、DFS、回溯、并查集、拓扑排序，以及 **DP 四套核心模板**（0/1 背包 / 完全背包 / LIS / 编辑距离）。先确认适用前提，再推导状态与边界。Java 完整示例与带占位条件的框架需要区分，框架不能未经补全直接提交。高阶内容见 [高阶算法模板](./advanced-templates)。
 :::
 
 ## 一图速查：什么时候用哪个模板
@@ -15,10 +15,10 @@ title: 基础算法模板
 ```
 有序数组 / 答案有单调性             → 二分查找（O(log n)）
 头尾或快慢指针扫描                  → 双指针（O(n)）
-连续子数组/子串的极值                → 滑动窗口（O(n)）
+连续区间 + 可证明单向收缩不漏解       → 可变滑窗（常见 O(n)）
 区间和反复查询                      → 前缀和 / 差分（O(1) 查询）
 找"下一个更大/更小"                 → 单调栈（O(n)）
-最短路径 / 最少步数 / 层序遍历       → BFS（O(V+E)）
+等权图最短路径 / 最少步数 / 层序遍历  → BFS（O(V+E)）
 连通性 / 遍历整个图 / 拓扑           → DFS（O(V+E)）
 "所有方案 / 全排列 / 组合"           → 回溯（O(指数)）
 集合合并查询是否同组                 → 并查集（α(n) 近 O(1)）
@@ -49,7 +49,7 @@ title: 基础算法模板
 ### 识别信号
 
 - 数组 / 答案 **有序** 或 **答案区间有单调性**
-- 数据规模 ≥ 10⁵，O(n) 还不够，要 O(log n)
+- 大量有序查询或题目明确要求 O(log n)；规模大并不意味着 O(n) 一定不可行
 - 出现"找第一个 / 最后一个满足条件的位置"
 
 ### 模板代码（Java）—— 闭区间写法
@@ -96,7 +96,7 @@ return lo;
 
 - `(left + right) / 2` 在 left/right 都很大时溢出，必用 `left + (right - left) / 2`
 - 闭/开区间写法**不能混用**，确定一种用熟
-- 死循环：`while (left < right)` 配 `left = mid` 时必然死循环
+- 当 mid 向下取整时，`left = mid` 可能在只剩两个候选时不前进；需要结合区间不变量选择更新方式，而不是把任何 `left = mid` 都判为错误
 
 ---
 
@@ -130,6 +130,7 @@ public int[] twoSum(int[] nums, int target) {
 ```java
 // 去除重复元素，返回新长度
 public int removeDuplicates(int[] nums) {
+    if (nums.length == 0) return 0;
     int slow = 0;
     for (int fast = 1; fast < nums.length; fast++) {
         if (nums[fast] != nums[slow]) {
@@ -237,7 +238,7 @@ int sum = prefix[r + 1] - prefix[l];
 ```java
 // 原数组 a，构造差分数组 d：d[i] = a[i] - a[i-1]
 int[] d = new int[n + 1];
-for (int i = 0; i < n; i++) d[i + 1] = nums[i] - (i == 0 ? 0 : nums[i - 1]);
+for (int i = 0; i < n; i++) d[i] = nums[i] - (i == 0 ? 0 : nums[i - 1]);
 
 // 区间 [l, r] 每个元素 +v —— O(1)
 d[l] += v;
@@ -245,9 +246,18 @@ d[r + 1] -= v;
 
 // 还原：a[i] = d[0] + d[1] + ... + d[i]
 int[] result = new int[n];
-result[0] = d[0];
-for (int i = 1; i < n; i++) result[i] = result[i - 1] + d[i];
+int runningSum = 0;
+for (int i = 0; i < n; i++) {
+    runningSum += d[i];
+    result[i] = runningSum;
+}
 ```
+
+**下标约定**：`nums`、`d` 与闭区间 `[l,r]` 都从 0 开始，更新要求 `0 <= l <= r < n`。多开的 `d[n]` 只承接右边界抵消，不属于还原结果。
+
+**为什么只改两点？** 差分求前缀和时中间项相消：`d[0] + ... + d[i] = nums[i]`。在 `l` 加 `v` 会影响所有 `i >= l` 的前缀；在 `r+1` 减 `v` 会撤销所有 `i > r` 的影响，最终只留下 `[l,r]`。
+
+例如 `[1,2,3]` 的初始差分是 `[1,1,1,0]`，对 `[0,1]` 加 10 后变为 `[11,1,-9,0]`，还原为 `[11,12,3]`。先做一个“零次更新仍还原原数组”的检查，最容易发现构造错位。数值或累计更新可能超过 `int` 时，差分与结果都改用 `long`，并在减法前提升类型。
 
 ### 二维前缀和（矩阵子区域和）
 
@@ -660,6 +670,7 @@ public int change(int amount, int[] coins) {
 ```java
 public int lengthOfLIS_DP(int[] nums) {
     int n = nums.length;
+    if (n == 0) return 0;
     int[] dp = new int[n];                          // dp[i] = 以 nums[i] 结尾的最长递增子序列长度
     Arrays.fill(dp, 1);
     int ans = 1;
@@ -695,7 +706,7 @@ public int lengthOfLIS(int[] nums) {
 ::: tip 💡 变体提示
 - “非严格递增”：二分改 `lowerBound` 为 `upperBound`（判断从 `<` 改为 `≤`）。
 - “最长递减”：翻转数组后跑 LIS。
-- “俄罗斯套娃”：二维按第一维升序、第二维限制同均 → 第一维升序 + 第二维 LIS。
+- “俄罗斯套娃”：第一维升序，相等时第二维降序，再求第二维的严格 LIS，避免相同第一维的对象互相嵌套。
 :::
 
 ---

@@ -10,7 +10,7 @@ title: MCP 模型上下文协议
 MCP（Model Context Protocol）标准化的是 **AI 应用如何连接外部工具、数据与消息模板**。模型提出工具调用意图，Host 决定是否执行，MCP Client 负责协议通信，Server 访问实际业务系统。MCP 不是 Agent 框架，也不会自动提供业务权限或保证结果正确。
 :::
 
-> 核对日期：2026-10-15。本文按 [MCP 2026-07-28 规范](https://modelcontextprotocol.io/specification/2026-07-28) 讲解；接入时还要核对 SDK、Host、Server 实际支持的版本。旧版初始化握手不能与新版请求格式混用。
+本文按 [MCP 2026-07-28 规范](https://modelcontextprotocol.io/specification/2026-07-28) 讲解；接入时需核对 SDK、Host、Server 实际支持的版本，旧版初始化握手不能与新版请求格式混用。
 
 按需求阅读：先看 [MCP Protocal](#mcp-protocol)；动手开发从 [Server 示例](#build-server) 开始；接入现成服务看 [宿主配置](#host-configuration) 与 [Server 选型](#server-ecosystem)；上线前看 [测试](#server-testing)、[长任务](#long-running-tools) 和 [部署运维](#server-operations)，出问题按 [排查表](#troubleshooting) 定位。
 
@@ -421,7 +421,7 @@ stdio 入口是 `node build/stdio.js`，HTTP 入口是 `node build/http.js`。�
 
 ### 可移植配置与 VS Code 专用配置
 
-截至核对日期，VS Code 文档区分工作区根目录 `.mcp.json` 的 `mcpServers` 格式，与 `.vscode/mcp.json` 的 `servers` 格式。前者面向可移植/Copilot harness 配置，后者承载 VS Code 专用输入变量、开发模式等能力；支持情况取决于版本与会话类型，不能机械地交换顶层字段。
+VS Code 文档区分工作区根目录 `.mcp.json` 的 `mcpServers` 格式，与 `.vscode/mcp.json` 的 `servers` 格式。前者面向可移植/Copilot harness 配置，后者承载 VS Code 专用输入变量、开发模式等能力；支持情况取决于版本与会话类型，不能机械地交换顶层字段。
 
 根目录 `.mcp.json` 的本地示例，路径要替换为示例项目编译后的绝对路径：
 

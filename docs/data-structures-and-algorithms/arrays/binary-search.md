@@ -43,7 +43,7 @@ title: 二分查找
 - 答案空间单调（check(x) 为真则 check(x+1) 也为真）→ 二分答案
 - 局部单调（峰值问题）→ 比较 mid 和邻居来决定方向
 
-**如果找不到单调性，就不能用二分。** 强行用会导致漏解或死循环。
+本质要求是**每次判断都能证明某一半不需要继续搜索**。边界查找通常依赖单调谓词；峰值问题依赖“上坡方向必有峰”的存在性证明，并不要求整个数组单调。没有排除依据时，强行二分会漏解。
 
 ---
 
@@ -110,7 +110,27 @@ public int lowerBound(int[] nums, int target) {
 }
 ```
 
-**为什么 `right = mid` 而不是 `right = mid - 1`？** 因为 `nums[mid] >= target`，mid 本身可能是答案，不能排除，只能把右边界收到 mid。
+**为什么 `right = mid` 而不是 `right = mid - 1`？** 这里 `[left,right)` 是尚待比较的元素区间，答案作为一个分界位置仍可能等于 `right`，二者不是同一概念。`mid` 已确认为满足条件，移到右侧已确认区域即可，不需要再次比较。
+
+### 用不变量推导 lower_bound
+
+设数组长度为 `n`，把不存在的答案记为 `n`。每轮开始时保持：
+
+- `[0,left)` 中所有元素都 `< target`；
+- `[right,n)` 中所有元素都 `>= target`；
+- 分界位置在闭区间 `[left,right]` 内，包括哨兵位置 `n`。
+
+若 `nums[mid] < target`，有序性说明 `mid` 及左侧都不可能是分界，令 `left=mid+1`。否则 `mid` 及右侧都满足，令 `right=mid`。每次 `right-left` 严格缩小；终止时 `left==right`，两个已确认区域恰好接合，唯一的分界就是答案。
+
+对 `[1,2,2,4]` 找第一个 `>=2`：
+
+| left | right | mid | 比较 | 更新 |
+|------|-------|-----|------|------|
+| 0 | 4 | 2 | `2 >= 2` | `right=2` |
+| 0 | 2 | 1 | `2 >= 2` | `right=1` |
+| 0 | 1 | 0 | `1 < 2` | `left=1` |
+
+空数组返回 0；全部小于目标返回 `n`；全部大于等于目标返回 0。返回值是插入位置，若还要判断目标是否存在，必须先确认返回值 `< n`，再比较元素。
 
 ---
 
@@ -136,7 +156,9 @@ public int upperBound(int[] nums, int target) {
 - 找"第一个满足条件" → lower_bound（左闭右开，`right=mid`）
 - 找"最后一个满足条件" → upper_bound（左闭右开，`left=mid+1`，返回 `left-1`）
 
-**三个模板边界一览（背下这张表，写代码不用想）：**
+标准库通常把 `upper_bound` 定义为“第一个 > target 的位置”；本页 `upperBound` 方法为了返回最后一个 `<= target` 的位置，已经做了减一，调用方不要再减一次。
+
+**三个模板边界一览：**
 
 | 维度 | 标准二分 | lower_bound | upper_bound |
 |------|------|------|------|
@@ -145,8 +167,8 @@ public int upperBound(int[] nums, int target) {
 | 循环条件 | `left <= right` | `left < right` | `left < right` |
 | 命中分支 | `return mid` | — | — |
 | 太小（`< target`） | `left = mid + 1` | `left = mid + 1` | `left = mid + 1` |
-| 太大（`>= target`） | `right = mid - 1` | `right = mid` | — |
-| 命中或太大（`> target`） | — | — | `right = mid` |
+| 相等（`== target`） | `return mid` | `right = mid` | `left = mid + 1` |
+| 太大（`> target`） | `right = mid - 1` | `right = mid` | `right = mid` |
 | 返回 | `-1`（未找到） | `left` | `left - 1` |
 
 ---
@@ -155,7 +177,7 @@ public int upperBound(int[] nums, int target) {
 
 **情况一：旋转数组**
 
-旋转后不是全局有序，但二分后 `[left, mid]` 和 `[mid+1, right]` 中**必有一段是有序的**。先判断哪段有序，再判断 target 是否落在有序段内，据此决定往哪边走。
+对 LC33 的**互不相同元素**，旋转后不是全局有序，但二分后至少一半有序。先判断哪段有序，再判断 target 是否落在有序段内。允许重复值时，`nums[left]==nums[mid]==nums[right]` 可能无法判断旋转点在哪侧，需要收缩重复边界，最坏退化到 O(n)。
 
 ```
 if (nums[left] <= nums[mid])  →  左段 [left, mid] 有序
@@ -178,6 +200,8 @@ while (lo < hi) {
 }
 return lo;
 ```
+
+这个闭区间答案模板要求 `check` 从假变真，且初始 `hi` 确实可行；若可能无解，先检查上界。闭区间也可以用 `while(lo < hi)` 保留唯一候选，所以循环条件不能只按“开区间/闭区间”死记。总复杂度是 O(log(答案范围) × check 的代价)，不是自动等于 O(log n)。
 
 **完整例题：爱吃香蕉的珂珂（[LeetCode 875](https://leetcode.cn/problems/koko-eating-bananas/)）**
 
@@ -223,7 +247,14 @@ private boolean canFinish(int[] piles, int k, int h) {
 
 **情况三：二维矩阵**
 
-对于行列均有序的矩阵（LeetCode 74），将下标 `k` 映射到二维：`row = k / cols`，`col = k % cols`。把 `m×n` 矩阵展开成长度 `m*n` 的一维数组做标准二分。
+先区分两种条件，不能只看到“行列有序”就展平：
+
+| 条件 | 为什么成立 | 方法 |
+|------|------------|------|
+| 每行有序，且下一行首元素大于上一行末元素（LC74） | 按行拼接后全局有序 | 把 `k` 映射到 `row=k/cols, col=k%cols`，O(log(mn)) 二分 |
+| 每行、每列各自有序（LC240） | 不保证跨行拼接有序 | 从右上角走：当前值大则去掉当前列，小则去掉当前行，O(m+n) |
+
+反例 `[[1,4],[2,5]]` 的每行每列均有序，但展平为 `[1,4,2,5]`。二分查找 2 会因中间值 4 而错误丢弃右半区。右上角搜索则先从 4 左移到 1，再下移到 2；每一步都排除一整行或一整列。
 
 ---
 

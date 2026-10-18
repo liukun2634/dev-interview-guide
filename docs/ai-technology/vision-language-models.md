@@ -6,7 +6,7 @@ title: VLM 视觉语言模型
 
 <span class="dig-tag dig-tag--category">多模态 AI</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 中等</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
-::: tip 💡 核心要点（截至 2026-08）
+::: tip 💡 核心要点
 VLM（Vision-Language Model）至少联合处理视觉与语言。最常见的开放权重生成式 VLM 可用三层理解：**视觉编码器 + 连接器 + LLM**；但它不是所有多模态模型的唯一架构。Llama 4 等模型采用视觉/文本 Token 的早期融合，闭源模型未披露内部结构时，只能确认产品支持的输入/输出，不能因为能处理音视频就断言“所有模态都在同一模型里”。
 :::
 

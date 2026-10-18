@@ -10,7 +10,7 @@ title: 实时语音与 Voice Agent
 Voice Agent 不只是把聊天框换成麦克风。它要同时处理**音频传输、轮次判断、打断、工具执行与业务状态**。用户听到“已经完成”时，后端操作必须真的完成；用户打断说话时，也不能误以为已执行的操作被撤销。
 :::
 
-> 内容核对：2026-10-15。实时语音接口、模型和会话事件变化较快，示意流程使用应用级事件，不冒充某个供应商的完整协议。
+实时语音接口、模型和会话事件变化较快，本文示意流程使用应用级事件，具体协议以供应商接口文档为准。
 
 ## 三种语音架构 {#voice-architectures}
 
@@ -22,7 +22,7 @@ Voice Agent 不只是把聊天框换成麦克风。它要同时处理**音频传
 
 这里的“单个会话”不意味着内部一定只有一个神经网络。产品级能力与模型内部架构不同，未披露时不应推断。
 
-截至核对日期，[OpenAI Voice Agents](https://developers.openai.com/api/docs/guides/voice-agents)区分 GPT-Live 全双工前端、Realtime API 和级联方案；[Gemini Live](https://ai.google.dev/gemini-api/docs/live)也提供实时音视频交互。选型应比较实际模态、会话限制、部署地域和任务效果，不按产品名称推断全部能力。
+[OpenAI Voice Agents](https://developers.openai.com/api/docs/guides/voice-agents) 区分 GPT-Live 全双工前端、Realtime API 和级联方案；[Gemini Live](https://ai.google.dev/gemini-api/docs/live) 也提供实时音视频交互。选型应比较实际模态、会话限制、部署地域和任务效果，不按产品名称推断全部能力。
 
 ### 级联不是落后方案
 

@@ -52,8 +52,6 @@ graph LR
 | 2025 | 推理模型与 Agent 爆发 | Claude 4、GPT-4.1、o3/o4-mini、Gemini 2.5、DeepSeek R1、LLaMA 4；AI Agent 进入生产 |
 | 2026 | 推理、多模态与 Agent 融合 | 前沿模型把可调推理、长上下文、视觉/计算机使用和大规模工具调用逐步整合；评估重心从单轮问答扩展到长程任务的成功率、可靠性与成本 |
 
-**本章核验：2026-10-15。** 当前通用模型目录已列 GPT-6 Astra / GPT-6.1 Sol / GPT-6 Luna、Claude Fable 5.1 与 5.5 系列，以及 Stable 状态的 Gemini 4 Argon。以下表格区分当前目录与公开架构例子；公告日期、核验日期和生命周期见 [最新进展快照](./ai-trends#latest-updates)。Stable 表示版本状态，不保证所有账号、地区和功能均可使用。
-
 ---
 
 ## AI 模型分类
@@ -139,13 +137,15 @@ $$
 
 ### 当前托管模型目录
 
-以下为 2026-10-15 的通用型号快照，不是排名或完整产品目录。三家均未在所引目录中给出完整骨干与参数规模，不用传闻补齐。
+以下列举通用型号，不是排名或完整产品目录。三家均未在所引目录中给出完整骨干与参数规模，不用传闻补齐。Stable 表示版本状态，不保证所有账号、地区和功能均可使用。
 
 | 官方目录 | 当前代表型号 | 能力与选型边界 |
 |----------|--------------|----------------|
 | [OpenAI](https://developers.openai.com/api/docs/models) | GPT-6 Astra、GPT-6.1 Sol、GPT-6 Luna | 文本/图像输入、文本输出；按复杂任务、成本与吞吐选择，工具和专用语音/图像模型另行核对 |
 | [Anthropic](https://platform.claude.com/docs/en/about-claude/models/overview) | Claude Fable 5.1、Opus 5.5、Sonnet 5.5、Haiku 5.5 | 文本/图像输入、文本输出；推理设置、服务平台和生命周期按具体 ID 判断 |
 | [Google](https://ai.google.dev/gemini-api/docs/models) | Gemini 4 Argon、Gemini 3.8 Flash | Argon 已标 Stable，支持文本、图像、视频、音频和 PDF 输入，输出文本；不等于支持 Live API 或音频/图像生成 |
+
+<small>注：目录快照为 2026-10-15；型号与可用范围以官方文档为准，版本变化见 [最新进展快照](./ai-trends#latest-updates)。</small>
 
 ### 开放权重与公开架构例子
 

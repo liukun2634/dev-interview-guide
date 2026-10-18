@@ -324,7 +324,7 @@ GPU 3:     KV[750K:1M]
 
 ---
 
-## 推理引擎选型对比（截至 2026-08）
+## 推理引擎选型对比
 
 引擎版本、模型支持和 Kernel 演进很快，不能长期固定为“吞吐第一/延迟第一”。可靠选型应在同一模型、硬件、精度、上下文分布、并发和 SLA 下复测。
 
@@ -338,6 +338,8 @@ GPU 3:     KV[750K:1M]
 | **llama.cpp** | **GGUF 量化 + CPU/GPU 混合 + Metal/Vulkan/CUDA** | 跨平台、本地与边缘生态成熟 | 大规模多租户吞吐通常不是其首要目标 | 桌面、Mac、本地与边缘设备 |
 | **TGI**（HF Text Generation Inference）| HuggingFace 官方 + 速度优化 | 与 HuggingFace 生态无缝、易上手 | 性能逐渐落后 vLLM/SGLang | HF 用户快速原型 |
 | **Ollama** | llama.cpp 封装 + 极简体验 | **零配置**本地体验 | 服务化弱、性能受限 llama.cpp | 个人 / 小团队本地实验 |
+
+<small>注：对比快照为 2026-08；模型支持与性能随版本变化，选型前需复测。</small>
 
 ### PagedAttention vs RadixAttention 本质对比
 

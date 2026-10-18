@@ -32,7 +32,7 @@ Computer Use: LLM ──截图── 屏幕 ──动作── 鼠标/键盘
 
 ### Anthropic Computer Use 实现细节
 
-截至 2026-08-09，Anthropic Computer Use 仍是 **Beta**。当前较新的接口使用 beta header `computer-use-2025-11-24` 和工具类型 `computer_20251124`，支持 Claude Opus 5、Sonnet 5、Opus 4.8/4.7/4.6、Sonnet 4.6、Opus 4.5；较旧模型使用 `computer-use-2025-01-24` / `computer_20250124`。模型名、beta header 和工具 schema 是三个独立版本点，升级时必须一起核对。
+Anthropic Computer Use 提供 **Beta** 接口。本文示例使用 beta header `computer-use-2025-11-24` 和工具类型 `computer_20251124`，支持 Claude Opus 5、Sonnet 5、Opus 4.8/4.7/4.6、Sonnet 4.6、Opus 4.5；较旧模型使用 `computer-use-2025-01-24` / `computer_20250124`。模型名、beta header 和工具 schema 是三个独立版本点，升级时必须一起核对。
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -55,6 +55,8 @@ Anthropic quickstart 常把以下三个**客户端工具**组合使用，但只�
 | **`computer_20251124`** | screenshot / left_click / type / key / mouse_move / scroll / drag / zoom 等 | 屏幕通用操作；`zoom` 需显式开启 |
 | **`bash`** | command | Shell 命令（兜底）|
 | **`text_editor_20250728`** | view / create / str_replace / insert | 文件编辑；当前版本不含 `undo_edit` |
+
+<small>注：本节接口与工具支持快照为 2026-08-09；接入前核对官方兼容列表。</small>
 
 ### 关键设计抉择（必背）
 

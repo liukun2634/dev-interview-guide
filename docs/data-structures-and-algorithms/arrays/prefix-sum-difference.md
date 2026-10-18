@@ -114,19 +114,26 @@ int area = prefix[r2+1][c2+1]
 
 ```java
 // 构建差分数组（多申请一位，防止 r+1 越界）
-int[] diff = new int[n + 1];
+int size = nums.length;
+long[] diff = new long[size + 1];
+for (int index = 0; index < size; index++) {
+    diff[index] = (long) nums[index] - (index == 0 ? 0 : nums[index - 1]);
+}
 
 // 对区间 [l, r] 整体加 val（O(1)）
 diff[l] += val;
 diff[r + 1] -= val;  // r+1 可能等于 n，多申请的那一位正好承接这个操作
 
 // 还原数组：对 diff 求前缀和
-int[] result = new int[n];
-result[0] = diff[0];
-for (int i = 1; i < n; i++) {
-    result[i] = result[i - 1] + diff[i];
+long[] result = new long[size];
+long runningSum = 0;
+for (int index = 0; index < size; index++) {
+    runningSum += diff[index];
+    result[index] = runningSum;
 }
 ```
+
+这里是在已有 `nums` 上更新，要求 `0 <= l <= r < size`。只有原数组全为 0、或者最后还会把累计增量加回原数组时，才能省掉差分构造循环。二维差分示例则默认从全零矩阵开始。
 
 **为什么这样有效？** 当你对 diff 求前缀和时，`diff[l] += val` 的效果会从位置 `l` 一路"传播"到数组末尾；而 `diff[r+1] -= val` 则从位置 `r+1` 开始"抵消"这个传播。两者叠加，恰好只有区间 `[l, r]` 被加上了 val。
 
@@ -191,7 +198,7 @@ for (int i = 0; i < m; i++) {
 
 ### 第二步：设计
 
-设 `prefixSum[i]` 为前 i 个元素之和。子数组 `[j, i]` 的和为：
+设 `prefixSum[i]` 为前 i 个元素之和。半开子数组 `[j, i)` 的和为：
 
 $$\text{prefixSum}[i] - \text{prefixSum}[j] = k$$
 
@@ -226,6 +233,63 @@ public int subarraySum(int[] nums, int k) {
 
 - **时间**：O(n)，遍历一次数组，每次 HashMap 操作 O(1)
 - **空间**：O(n)，HashMap 最多存 n 个不同的前缀和
+
+---
+
+## 含负数的最短子数组：前缀和 + 单调队列
+
+问题对应 [LC862](https://leetcode.cn/problems/shortest-subarray-with-sum-at-least-k/)：允许负数，求和至少为 `target` 的最短非空子数组，以下约定 `target > 0`，无解返回 -1。
+
+### 从暴力到可删除的候选
+
+定义 `prefix[right]` 为前 `right` 个数之和。暴力枚举所有 `left < right`，检查 `prefix[right]-prefix[left] >= target`，时间 O(n²)。优化的关键不是机械维护一个区间，而是删除未来也不可能更好的左端点。
+
+队列存前缀下标，保持**下标递增、对应前缀和严格递增**：
+
+1. **队首满足条件就结算并删除**：当前 `right` 已经为这个左端点找到最早的可行结束位置；未来结束位置更大，只会更长，因此它的使命已经完成。
+2. **队尾前缀和 >= 当前前缀和就删除**：设旧候选为 `old < right`，且 `prefix[old] >= prefix[right]`。对未来任意终点 `end`，选 `right` 得到的和不小、长度更短，因此 `old` 被完全替代。
+3. 最后把当前前缀下标入队，它只能作为后续非空区间的左端点。
+
+### 完整代码
+
+```java
+public int shortestSubarray(int[] nums, int target) {
+    if (target <= 0) throw new IllegalArgumentException("target must be positive");
+    long[] prefix = new long[nums.length + 1];
+    for (int index = 0; index < nums.length; index++) {
+        prefix[index + 1] = prefix[index] + nums[index];
+    }
+    Deque<Integer> candidates = new ArrayDeque<>();
+    int best = nums.length + 1;
+    for (int right = 0; right < prefix.length; right++) {
+        while (!candidates.isEmpty()
+                && prefix[right] - prefix[candidates.peekFirst()] >= target) {
+            best = Math.min(best, right - candidates.removeFirst());
+        }
+        while (!candidates.isEmpty()
+                && prefix[candidates.peekLast()] >= prefix[right]) {
+            candidates.removeLast();
+        }
+        candidates.addLast(right);
+    }
+    return best == nums.length + 1 ? -1 : best;
+}
+```
+
+### 手推 `[1,-1,5]`，target = 5
+
+前缀和为 `[0,1,0,5]`，队列中的数字是前缀下标：
+
+| right | prefix[right] | 动作 | 操作后队列 | 最短长度 |
+|-------|---------------|------|------------|----------|
+| 0 | 0 | 初始前缀入队 | `[0]` | 未找到 |
+| 1 | 1 | 尚不满足，入队 | `[0,1]` | 未找到 |
+| 2 | 0 | 从尾部删 1 和 0，当前候选更晚且前缀不大 | `[2]` | 未找到 |
+| 3 | 5 | 队首 2 满足，记录 `3-2` 并弹出，再入队 3 | `[3]` | 1 |
+
+每个下标最多入队、出队一次，所以两个 `while` 不会造成 O(n²)：总时间 O(n)，空间 O(n)。前缀和使用 `long`，即使单个元素装得下 `int`，累计值也未必装得下。
+
+**不要混用两个问题**：求“和恰好为 k 的个数”时用哈希表保存所有历史频次，不能按最短长度规则丢弃旧下标；求“和至少为 k 的最短长度”才使用上述候选淘汰。
 
 ---
 

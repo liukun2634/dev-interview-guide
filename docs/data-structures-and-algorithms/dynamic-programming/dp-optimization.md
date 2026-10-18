@@ -105,7 +105,7 @@ class Solution {
 
 ### 核心思想
 
-维护一个**单调递增（求右边第一个更大）或单调递减（求右边第一个更小）的栈**，栈中存储下标。
+按**从左到右扫描、为弹出元素结算右边界**的写法：找右侧第一个严格更大值，用从栈底到栈顶非递增的栈；找右侧第一个严格更小值，用非递减的栈。相等元素是否弹出，由所求边界的严格性决定，不能只背“递增/递减”而不说明方向。
 
 - 遍历每个元素，若当前元素破坏单调性，则不断弹栈——被弹出的元素以当前元素为"右边界最值"；
 - 每个元素至多入栈、出栈各一次，总复杂度 $O(n)$。
@@ -116,14 +116,27 @@ class Solution {
 
 **核心思路**：对于每个元素 `arr[i]`，计算它作为最小值的子数组数量。
 
-设 `left[i]` = 左侧第一个**严格小于** `arr[i]` 的下标（不存在则为 -1），
-`right[i]` = 右侧第一个**小于等于** `arr[i]` 的下标（不存在则为 n）。
+设 `leftBoundary[i]` = 左侧第一个**严格小于** `arr[i]` 的下标（不存在则为 -1），
+`rightBoundary[i]` = 右侧第一个**小于等于** `arr[i]` 的下标（不存在则为 n）。
 
 则以 `arr[i]` 为最小值的子数组数量为：
 
-$$\text{count}(i) = (i - \text{left}[i]) \times (\text{right}[i] - i)$$
+$$\operatorname{count}(i) = (i - \operatorname{leftBoundary}[i]) \times (\operatorname{rightBoundary}[i] - i)$$
 
 **注意**：左侧用严格小于、右侧用小于等于，是为了避免重复计算相等元素的情况。
+
+下面代码的 `left[i]`、`right[i]` 已经存储两侧**距离**，不是边界下标，因此最后直接相乘。左端点有 `i-leftBoundary[i]` 种选择，右端点有 `rightBoundary[i]-i` 种选择，乘法来自两侧可以独立选择。
+
+### 用 `[2,2]` 验证相等元素的归属
+
+三个子数组分别是下标区间 `[0,0]`、`[1,1]`、`[0,1]`，答案应为 6。采用“左严格小于、右小于等于”时，把包含多个相同最小值的区间交给**最右边**那个最小值：
+
+| 下标 | 左边界 | 右边界 | 左距离 × 右距离 | 负责的子数组 |
+|------|--------|--------|-----------------|--------------|
+| 0 | -1 | 1 | `1 × 1` | `[0,0]` |
+| 1 | -1 | 2 | `2 × 1` | `[1,1]`、`[0,1]` |
+
+若两侧都找严格小于，`[0,1]` 会被两者各算一次，结果 8；若两侧都找小于等于，它又不会被任何一方认领，结果 4。也可以反过来“左小于等于、右严格小于”，让最左边元素负责，但必须成对调整。
 
 ```java
 class Solution {
@@ -181,7 +194,7 @@ class Solution {
 
 维护一个 `tails` 数组，其中 `tails[len-1]` 表示**长度为 `len` 的递增子序列中末尾元素的最小值**。
 
-- **`tails` 数组始终保持严格递增**：若 `tails[j] < tails[j+1]` 不成立，则存在一个长度 `j+1` 的子序列末尾 $\ge$ 长度 `j+2` 的子序列末尾，矛盾（长的子序列末尾必然更难小）。
+- **`tails` 数组始终保持严格递增**：取长度为 `len+1`、结尾最小的递增子序列，删去末元素后得到长度 `len` 的递增子序列。`tails[len-1]` 不大于这个前缀的末元素，而该末元素严格小于 `tails[len]`，所以 `tails[len-1] < tails[len]`。
 - 遍历每个新元素 `x`：
   - 若 `x > tails[len-1]`，直接追加，LIS 长度 +1；
   - 否则，在 `tails` 中二分查找第一个 $\ge x$ 的位置 `pos`，用 `x` 替换 `tails[pos]`（贪心：相同长度的子序列，末尾越小越有利于后续扩展）。
@@ -225,7 +238,7 @@ class Solution {
 
 每次操作只有两种结果：
 1. 在末尾追加一个比 `tails[len-1]` 更大的值，有序性显然保持；
-2. 替换某位置的值：找到的 `pos` 满足 `tails[pos-1] < x <= tails[pos]`，替换后 `tails[pos] = x`，仍满足 `tails[pos-1] < tails[pos] <= tails[pos+1]`，有序性保持。
+2. 替换某位置的值：存在左邻时有 `tails[pos-1] < x`；存在右邻时有 `x <= 旧 tails[pos] < tails[pos+1]`，所以替换后仍严格递增。首尾位置没有的邻居不参与比较。
 
 **复杂度**：时间 $O(n \log n)$，空间 $O(n)$。
 
@@ -250,6 +263,42 @@ class Solution {
 
 ---
 
+### 从长度到实际 LIS：记录前驱
+
+`tails` 只保存每个长度的最佳结尾，不保证这些结尾来自同一条子序列。例如依次处理 `[3,5,7,1,2]`，最终 `tails=[1,2,7]`，但 7 在原数组中位于 1、2 之前，不能把它当作答案输出；合法 LIS 是 `[3,5,7]`。
+
+增加两个数组：`tailIndex[length-1]` 保存该长度最佳结尾的原下标；`previous[index]` 固定记录当前元素加入时的前驱下标。后续可以替换 `tailIndex`，但不会改写已经建立的前驱链。
+
+```java
+public int[] longestIncreasingSubsequence(int[] nums) {
+    if (nums.length == 0) return new int[0];
+    int[] tailIndex = new int[nums.length];
+    int[] previous = new int[nums.length];
+    Arrays.fill(previous, -1);
+    int length = 0;
+    for (int index = 0; index < nums.length; index++) {
+        int left = 0, right = length;
+        while (left < right) {
+            int middle = left + (right - left) / 2;
+            if (nums[tailIndex[middle]] < nums[index]) left = middle + 1;
+            else right = middle;
+        }
+        if (left > 0) previous[index] = tailIndex[left - 1];
+        tailIndex[left] = index;
+        if (left == length) length++;
+    }
+    int[] result = new int[length];
+    int current = tailIndex[length - 1];
+    for (int position = length - 1; position >= 0; position--) {
+        result[position] = nums[current];
+        current = previous[current];
+    }
+    return result;
+}
+```
+
+每条前驱边都指向更早的下标、更小的值，恢复出的序列因此既保持原顺序又严格递增。二分阶段 O(n log n)，恢复 O(n)，额外空间 O(n)。多个最优解存在时返回其中一个，不保证字典序最小。
+
 ## 优化技巧四：前缀和优化
 
 ### 适用场景
@@ -270,37 +319,37 @@ $$\text{prefSum}[i] = \sum_{j=0}^{i-1} dp[j]$$
 
 $$\sum_{j=l}^{r-1} dp[j] = \text{prefSum}[r] - \text{prefSum}[l]$$
 
-### 典型例题：统计子数组中前 k 个最大元素的和
+### 典型例题：正整数的有序拆分计数
 
-以下给出一个经典模板，展示前缀和优化 DP 的通用写法：
+**问题模型**：给定非负整数 `n`，把它写成若干正整数之和，顺序不同算不同方案，答案对 `1_000_000_007` 取模。`n=0` 的空序列算一种；`n=3` 有 `[3]`、`[1,2]`、`[2,1]`、`[1,1,1]` 四种。
 
-**问题模型**：给定 `n`，求满足某条件的路径数量，转移方程为 `dp[i] = dp[0] + dp[1] + ... + dp[i-1] + 1`。
+设 `dp[total]` 为和恰好为 `total` 的有序序列数。按**最后一个数**分类：若此前的和为 `previous`，最后一个数唯一确定为 `total-previous`，所以不同分类互斥且覆盖所有答案：
+
+$$dp[0]=1,\qquad dp[total]=\sum_{previous=0}^{total-1}dp[previous]\quad(total\ge1)$$
+
+不需要额外 `+1`，单个数 `[total]` 已经由 `dp[0]` 计入。朴素实现枚举所有此前的和是 O(n²)；维护 `prefSum[total]=sum(dp[0..total-1])`，转移只需 O(1)。
 
 ```java
 class PrefixSumDPExample {
-    /**
-     * 示例：将整数 n 分成若干正整数之和的方案数（每步可选 1..n-1）
-     * dp[i] = dp[0] + dp[1] + ... + dp[i-1]   (i >= 2)
-     * dp[0] = dp[1] = 1
-     * 利用前缀和 prefSum[i] = dp[0] + ... + dp[i-1] 将每次 O(i) 求和降为 O(1)
-     */
     public long countWays(int n) {
+        if (n < 0) throw new IllegalArgumentException("n must be nonnegative");
+        final long MOD = 1_000_000_007L;
         long[] dp = new long[n + 1];
-        long[] prefSum = new long[n + 2]; // prefSum[i] = sum(dp[0..i-1])
+        long[] prefSum = new long[n + 2];
         dp[0] = 1;
-        dp[1] = 1;
-        prefSum[1] = dp[0];
-        prefSum[2] = dp[0] + dp[1];
-
-        for (int i = 2; i <= n; i++) {
-            // dp[i] = sum(dp[0..i-1]) = prefSum[i]
-            dp[i] = prefSum[i];
-            prefSum[i + 1] = prefSum[i] + dp[i];
+        prefSum[1] = 1;
+        for (int total = 1; total <= n; total++) {
+            dp[total] = prefSum[total];
+            prefSum[total + 1] = (prefSum[total] + dp[total]) % MOD;
         }
         return dp[n];
     }
 }
 ```
+
+`dp[0..4] = [1,1,2,4,8]`，`prefSum[1..5] = [1,2,4,8,16]`，注意两个数组错开一位。总时间 O(n)、空间 O(n)；此模型只查整个前缀，可进一步只保留累计和，压到 O(1) 空间。若转移查询的是任意历史区间，则通常仍需保留前缀数组。
+
+**独立校验**：对 `n>=1`，把 n 个 1 排开，n-1 个间隙各选“切开/合并”，方案数应为 `2^(n-1)`，取模后与 DP 对照。这是验证递推的另一条推导，不是再抄一遍同样的循环。
 
 **实战提示**：在 [LeetCode 1871 跳跃游戏 VII](https://leetcode.cn/problems/jump-game-vii/) 中，前缀和将区间可达性查询从 $O(n \cdot \text{maxJump})$ 降到 $O(n)$。
 

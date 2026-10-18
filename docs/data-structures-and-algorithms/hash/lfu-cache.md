@@ -7,7 +7,7 @@ title: LFU 缓存
 <span class="dig-tag dig-tag--category">哈希</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 进阶</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-**LFU = Least Frequently Used，按访问频率淘汰**。比 LRU 更精准，但**实现复杂度高一档**。面试常作为 LRU 的进阶追问出现——LRU 是"一个哈希表 + 一条双向链表"，**LFU 必须用"两个哈希表 + 一组双向链表"**，否则无法做到 O(1)。
+**LFU = Least Frequently Used，按访问频率淘汰**。本页采用“key 到节点、频次到链表”两个映射，同频时按 LRU 淘汰，实现期望 O(1) 的 get / put。性能与空间保证依赖三个不变量：每个节点只属于一个频次桶、minFreq 指向最小非空桶、空桶及时删除。
 :::
 
 ## 为什么单独讲它
@@ -19,11 +19,11 @@ title: LFU 缓存
 | 淘汰依据 | 最久未访问 | **访问次数最少** |
 | 数据结构 | 1 个 HashMap + 1 条双向链表 | **2 个 HashMap + N 条双向链表** |
 | 复杂度 | O(1) get / put | O(1) get / put |
-| 命中率 | 中 | **高**（典型 +10-20%） |
+| 命中率 | 适合近期访问能预测未来的负载 | 适合频次能预测未来的负载，不能保证固定提升比例 |
 | 代码量 | 60 行 | **130 行** |
 | 适用场景 | 通用、缓存层、Redis | **Redis 4.0+ `allkeys-lfu`、热点感知 CDN** |
 
-**面试常问"为什么 LRU 不够"**：考虑一个场景——电商商品详情缓存，某商品突然被爬虫疯狂访问 1 万次，但只在那一秒。LRU 会把它捧上去、把其他正常热销商品挤掉。LFU 会因为它"频率"虚高被记一下，但热销商品也有累积频率不会被踢。**Redis 4.0 之所以新增 `allkeys-lfu`，就是因为线上经常被爬虫和异常流量打穿 LRU**。
+**面试常问“为什么 LRU 不够”**：大量只访问一次的新 key 可能逐步挤出旧热点，LFU 可在这类扫描负载中保护累计频次较高的数据。但某 key 短时间被访问 1 万次后再也不用，纯累计 LFU 也可能长期保留它。因此是否加衰减、是否在准入阶段过滤，比笼统宣称“LFU 抗所有异常流量”更重要。
 
 ## 数据结构设计
 
@@ -100,6 +100,7 @@ class LFUCache {
     private final Map<Integer, DLinkedList> freqToList;
 
     public LFUCache(int capacity) {
+        if (capacity < 0) throw new IllegalArgumentException("capacity must be nonnegative");
         this.capacity = capacity;
         this.minFreq = 0;
         this.keyToNode = new HashMap<>();
@@ -128,6 +129,7 @@ class LFUCache {
             DLinkedList minList = freqToList.get(minFreq);
             Node evicted = minList.removeLast();         // ★ 淘汰 minFreq 链表尾部
             keyToNode.remove(evicted.key);
+            if (minList.isEmpty()) freqToList.remove(minFreq);
         }
 
         // 插入新节点：freq=1
@@ -142,9 +144,9 @@ class LFUCache {
         DLinkedList oldList = freqToList.get(oldFreq);
         oldList.remove(node);
 
-        // ★ 如果老链表空了，且这就是 minFreq → minFreq 必须 +1
-        if (oldList.isEmpty() && oldFreq == minFreq) {
-            minFreq++;
+        if (oldList.isEmpty()) {
+            freqToList.remove(oldFreq);
+            if (oldFreq == minFreq) minFreq++;
         }
 
         node.freq++;
@@ -153,11 +155,32 @@ class LFUCache {
 }
 ```
 
+## 用不变量解释三个关键动作
+
+**为什么 minFreq 只加一，不需要搜索下一个桶？** 正在访问的节点一定从 `oldFreq` 移到 `oldFreq+1`。如果它清空了最小桶，其他节点的频次都至少为 `oldFreq+1`，而被移动节点马上证明这个新频次确实存在。此论证依赖“只增加一次频次”，不能直接推广到任意减频、删除最小桶或批量衰减。
+
+**为什么新插入后直接设 minFreq=1？** 新 key 的频次规定为 1，其他节点都至少为 1。容量满时淘汰与新插入属于同一次 put；中间不需要单独扫描新最小频次。
+
+**为什么必须删除空桶？** 非空桶数量不超过驻留 key 数，但历史频次的数量没有这个限制。容量为 1 时，重复 get 同一个 key 1000 次，如果不删除空桶，就有 1001 条链表和 2002 个哨兵节点。修复后只保留当前频次的一个桶，频次的数值很大不代表需要存储中间所有桶。
+
+容量为 2 的操作序列：
+
+| 操作 | 频次桶（同频从新到旧） | minFreq | 说明 |
+|------|----------------------|---------|------|
+| `put(1,10); put(2,20)` | `1:[2,1]` | 1 | 新 key 放桶头 |
+| `get(1)` | `1:[2], 2:[1]` | 1 | 最小桶仍非空 |
+| `put(3,30)` | `1:[3], 2:[1]` | 1 | 淘汰频次最低的 2 |
+| `get(3)` | `2:[3,1]` | 2 | 删除空桶 1，最小频次加一 |
+| `put(4,40)` | `1:[4], 2:[3]` | 1 | 同频时淘汰更旧的 1 |
+
+实现按 LC460 的有限操作次数使用 int 频次，不是线程安全缓存。长期运行时还需解决计数溢出或采用明确的衰减策略；不能让 int 回绕后悄悄改变淘汰顺序。
+
 ## 关键细节与陷阱
 
 | 陷阱 | 后果 | 正确做法 |
 |------|------|---------|
 | 不维护 `minFreq` 变量 | 淘汰时要 O(n) 扫所有 freq 找最小 | 实时维护 minFreq |
+| 保留历史空桶 | 容量不变但内存随访问次数增长 | 升频和淘汰后，空链表立刻从映射删除 |
 | 老链表空了不更新 `minFreq` | 下次淘汰扫空链表，逻辑死循环 | `if (oldList.isEmpty() && oldFreq == minFreq) minFreq++` |
 | 插入新节点忘记重置 minFreq | 新 key 频率=1 但 minFreq 是 5，淘汰错对象 | 插入新节点固定 `minFreq = 1` |
 | 同频率不维护内部顺序 | 同 freq 的 key 淘汰顺序乱 | 每个 freq 一条双向链表，头插尾淘 |
@@ -167,25 +190,27 @@ class LFUCache {
 
 - **`get`**：O(1) — HashMap 查找 + 链表节点移动
 - **`put`**：O(1) — 同上
-- **空间**：O(capacity) — keyToNode + 所有链表节点之和 ≤ capacity
+- **空间**：O(capacity) — 实际节点不超过容量，非空桶不超过实际节点数，每桶只有两个哨兵；不保留历史空桶。HashMap 操作按期望/摊销 O(1) 分析。
 
 ## 业界应用
 
 | 系统 | 用 LFU 的方式 |
 |------|------|
 | **Redis 4.0+** | `maxmemory-policy allkeys-lfu` / `volatile-lfu` —— 用**对数概率计数**模拟 LFU，省内存 |
-| **Caffeine** | **W-TinyLFU**（混合 LRU + LFU），用 **Count-Min Sketch** 估算频率，吞吐量比 ConcurrentHashMap+锁 高一个量级 |
+| **Caffeine** | **W-TinyLFU** 使用频率估计做准入，结合窗口 LRU 与分段 LRU；不等同于本页精确 LFU |
 | **CDN 边缘缓存** | Cloudflare / Fastly 内部使用变种 LFU 跟踪热点资源 |
-| **数据库 Buffer Pool** | PostgreSQL 9.0+ 用 ARC（Adaptive Replacement Cache），LRU + LFU 混合 |
+| **数据库 Buffer Pool** | 不应由缓存用途反推算法；PostgreSQL 使用 CLOCK-sweep 类机制，不是此处的精确 LFU 或 ARC |
 
 ## Redis 的"近似 LFU"：为什么不用标准 LFU
 
-标准 LFU 要给每个 key 维护 freq 计数器，64 位 Redis 每 key 多 8 字节 → 1 亿 key 多 800MB。Redis 实际做法：
+以 [Redis 7.2 的 evict.c](https://github.com/redis/redis/blob/7.2/src/evict.c) 中 `LFULogIncr`、`LFUDecrAndReturn` 的实际代码为准，而不是只看历史注释：
 
-- **8 位计数器**（最多到 255）+ **对数概率递增**：访问越多次，递增越慢，自然抗"瞬时爆发"
-- **后台衰减**：定期把所有计数器除以 2，给老热点让位
+- 复用对象的 24 位 LRU 字段：16 位记录分钟时间，8 位记录频次估计；不是给每个 key 固定新增 8 字节。
+- 访问时以随当前计数递减的概率增加计数，最大为 255；它是热度估计，不是实际命中次数。
+- 按 `lfu-decay-time` 计算经过了多少个衰减周期，计数减去周期数，最低为 0。访问更新或淘汰候选评估时惰性计算，不是后台遍历全部 key 除以二。
+- 淘汰通过采样候选近似选择低频 key，不维护本页的全量精确频次桶。
 
-**面试问"为什么 Redis 不用我们刚才写的 LFU"**：内存代价 + 锁竞争 + 衰减需求。线上系统不需要"精确淘汰最少频率"，而是"大概淘汰冷数据，且抗异常流量"。
+例如计数为 10，衰减周期为 1 分钟，经过 3 个完整周期后估计为 7，而不是 `10/2/2/2`。如果衰减周期配置为 0，该实现不进行这项时间衰减。LFU 与 LRU 是可配置策略，并非 Redis 4.0 后统一以 LFU 替代 LRU。
 
 ## 面试常问 & 怎么答
 
@@ -200,15 +225,15 @@ class LFUCache {
 - **keyToNode**：让 `get(key)` 是 O(1)（不用扫链表）
 - **freqToList**：让"淘汰最小频率"是 O(1)（不用扫所有 key 比较 freq）
 
-只用一个 HashMap 会让某个操作退化到 O(n)。
+这是本页实现满足常数时间操作的一种结构，不是映射数量的下界证明；也可以用有序链接的频次桶和节点到桶的引用组织数据。关键是能直接定位节点、同频顺序以及最小非空桶。
 
 ### 标准 LFU 有什么问题，工业上怎么改
 
 - **冷启动突刺**：新 key 频率=1，立刻被淘汰；老 key 即使早就不热，频率高仍然占着位置
 - **改进方案**：
-  - **LFU + 时间衰减**：周期性把所有 freq 除以 2（Redis 做法）
-  - **W-TinyLFU**：Window 段用 LRU（应对突刺）+ Main 段用 LFU + Count-Min Sketch（省内存）（Caffeine 做法）
-  - **ARC**：自适应在 LRU 和 LFU 之间动态切换权重（PostgreSQL 做法）
+    - **LFU + 时间衰减**：可用不同老化规则；Redis 7.2 按经过的周期惰性扣减，不能与全量除二混同
+    - **W-TinyLFU**：窗口 LRU 配合频率估计准入，主缓存使用分段 LRU，不是直接换成精确 LFU
+    - **ARC**：通过近期/频繁访问列表及历史列表自适应调整，不应将它归为 PostgreSQL 当前的 Buffer Pool 实现
 
 ## 看到什么就先想到这类
 

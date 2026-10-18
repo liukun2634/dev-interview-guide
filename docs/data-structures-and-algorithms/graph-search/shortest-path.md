@@ -7,7 +7,7 @@ title: 最短路
 <span class="dig-tag dig-tag--category">图与搜索</span> <span class="dig-tag dig-tag--hard">⭐⭐⭐ 进阶</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-最短路算法的选择取决于边权：**无权图用 BFS**，**非负权图用 Dijkstra**，有负权边才考虑 Bellman-Ford。面试中 90% 考的是 Dijkstra（优先队列版）。
+先判断图结构、边权和额外约束：等权图用 BFS，0/1 权图可用 0-1 BFS，一般非负权图用 Dijkstra；含负权时考虑 Bellman-Ford，DAG 则可按拓扑序递推。不要只记算法名，要能解释为什么当前取出的状态可以确定。
 :::
 
 ## 识别信号
@@ -19,13 +19,13 @@ title: 最短路
 - "网格中从左上到右下的最小代价"（边权 = 两格差值/格子权重）
 - "图中两点之间的最少中转次数"
 
-**反例——这些不需要最短路算法：**
+**容易混淆的变体：**
 
-| 场景 | 为什么不用最短路 | 用什么 |
+| 场景 | 特点 | 用什么 |
 |------|------|------|
 | 无权图，求最少步数 | 边权均为 1，BFS 天然按层扩展更简单 | BFS |
 | 无环图（DAG）求最短路 | 有拓扑序，可 DP，O(V+E) 优于 Dijkstra | 拓扑排序 + DP |
-| 求最短路径条数 | 不是权重最优问题，而是计数问题 | BFS/DFS + 计数 |
+| 求最短路径条数 | 仍需先识别哪些转移保持最短距离，不能枚举任意可达路径计数 | 等权图 BFS + 计数；严格正权图 Dijkstra + 计数 |
 
 ---
 
@@ -38,11 +38,12 @@ title: 最短路
 | 边权情况 | 算法 | 时间复杂度 | 选择理由 |
 |------|------|------|------|
 | 无权（或全为 1） | BFS | O(V + E) | 队列天然保证"按层扩展"，最先到达即最短 |
+| 边权仅为 0 或 1 | 0-1 BFS | O(V + E) | 0 权边进队首，1 权边进队尾 |
 | 非负权 | Dijkstra（优先队列） | O((V + E) log V) | 贪心：每次取当前最近节点，非负权保证不会被后续边"变短" |
-| 含负权边 | Bellman-Ford | O(V × E) | 无贪心假设，暴力松弛 V-1 轮，保证全局收敛 |
+| 含负权边 | Bellman-Ford | O(V × E) | 无源点可达负环时 V-1 轮可收敛，额外一轮检测可达负环 |
 | 全源最短路 | Floyd | O(V³) | 动态规划枚举中间节点，适合节点少（V ≤ 200）的场景 |
 
-**选 Dijkstra 而非 BFS 的判断标准**：只要边权不全相同，就需要 Dijkstra。边权全为 1 时 BFS 和 Dijkstra 等价，但 BFS 代码更简单。
+边权不全相同不代表必须 Dijkstra：0/1 权图、DAG、含负权图都有各自更合适的处理方式。等权且权值为正时，最少边数与最小代价等价；BFS 即可。
 
 ### 第二步：确认是否有额外约束
 
@@ -62,7 +63,7 @@ title: 最短路
 
 **约束 3：负权环**
 
-- 含负权环时最短路无意义（可以无限绕圈变短）。
+- 只有源点能到达负环、且负环还能到达目标时，该目标的最短路才会无下界。与查询无关的负环不影响它。
 - **Bellman-Ford 能检测**：如果第 V 轮（本应收敛）仍有边被松弛，说明存在负权环。
 - **Dijkstra 无法处理负权边**，更不能检测负权环。
 
@@ -71,7 +72,7 @@ title: 最短路
 Dijkstra 是面试最高频的最短路算法，必须能默写并解释每一行。
 
 **核心数据结构：**
-- `dist[]`：记录源点到每个节点的当前最短距离，初始化为 `Integer.MAX_VALUE`。
+- `dist[]`：记录源点到每个节点的当前最短距离，通用模板用 `long`，`Long.MAX_VALUE` 表示不可达。
 - 优先队列（小根堆）：存储 `{距离, 节点}`，每次取出距离最小的节点处理。
 
 **关键实现细节：**
@@ -88,39 +89,99 @@ Dijkstra 是面试最高频的最短路算法，必须能默写并解释每一�
 **Dijkstra 模板（优先队列版）：**
 
 ```java
-public int[] dijkstra(List<List<int[]>> graph, int src, int n) {
-    int[] dist = new int[n];
-    Arrays.fill(dist, Integer.MAX_VALUE);
-    dist[src] = 0;
+public long[] dijkstra(List<List<int[]>> graph, int source, int size) {
+    return dijkstra(graph, source, new int[size]);
+}
 
-    // 小根堆，{距离, 节点}
-    PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
-    pq.offer(new int[]{0, src});
-
-    while (!pq.isEmpty()) {
-        int[] curr = pq.poll();
-        int d = curr[0], u = curr[1];
-
-        // 跳过过时条目：此条目入队后已找到更短路径
-        if (d > dist[u]) continue;
-
-        for (int[] edge : graph.get(u)) {
-            int v = edge[0], w = edge[1];
-            if (dist[u] + w < dist[v]) {
-                dist[v] = dist[u] + w;
-                pq.offer(new int[]{dist[v], v});
+public long[] dijkstra(List<List<int[]>> graph, int source, int[] parent) {
+    if (parent.length != graph.size()) throw new IllegalArgumentException("size mismatch");
+    long[] distance = new long[graph.size()];
+    Arrays.fill(distance, Long.MAX_VALUE);
+    Arrays.fill(parent, -1);
+    distance[source] = 0;
+    PriorityQueue<long[]> queue = new PriorityQueue<>(Comparator.comparingLong(state -> state[0]));
+    queue.offer(new long[]{0, source});
+    while (!queue.isEmpty()) {
+        long[] state = queue.poll();
+        int vertex = (int) state[1];
+        if (state[0] != distance[vertex]) continue;
+        for (int[] edge : graph.get(vertex)) {
+            int next = edge[0], weight = edge[1];
+            if (weight < 0) throw new IllegalArgumentException("negative edge");
+            long candidate = distance[vertex] + weight;
+            if (candidate < distance[next]) {
+                distance[next] = candidate;
+                parent[next] = vertex;
+                queue.offer(new long[]{candidate, next});
             }
         }
     }
-    return dist;
+    return distance;
 }
 ```
+
+邻接表的边为 `{目标节点, 非负 int 权重}`，节点编号在 `[0,graph.size())`。使用 `long` 是因为有限路径长度相加也可能溢出 `int`，与是否从 INF 出发无关。
+
+**贪心证明**：设刚取出的非过时节点为 u，若还存在一条更短路径，沿该路径找到第一个未确定的节点 x。它的前驱已确定并松弛过 x；非负后缀保证 `dist[x]` 不大于那条更短路径的总长，于是堆本应先取 x 而不是 u，矛盾。负边会破坏这一步不等式。
+
+### 恢复一条最短路径
+
+调用带 `parent` 参数的重载。每次距离严格变小时记录前驱；从目标倒着走到 `-1`，再反转即可：
+
+```java
+public List<Integer> restorePath(int[] parent, long[] distance, int target) {
+    List<Integer> path = new ArrayList<>();
+    if (distance[target] == Long.MAX_VALUE) return path;
+    for (int current = target; current != -1; current = parent[current]) {
+        path.add(current);
+    }
+    Collections.reverse(path);
+    return path;
+}
+```
+
+参数必须来自同一次 Dijkstra，目标编号合法。源点到自己的路径是 `[source]`，不可达返回空列表。相等距离不改前驱，尤其不要在零权环上互相改写前驱；若要计数所有最短路径，应单独设计 `ways` 状态。含零权环时还必须先明确计数的是可重复节点的 walk 还是简单路径，前者可能有无穷多条。
+
+### 0-1 BFS：用双端队列代替堆
+
+当前最小距离为 d 时，0 权边产生距离 d 的候选，放队首；1 权边产生 d+1 的候选，放队尾。这样保持按距离处理的次序，不需要通用堆排序。首次入队并不代表最终最短，仍然按松弛更新距离。
+
+```java
+public int[] zeroOneBfs(List<List<int[]>> graph, int source) {
+    int[] distance = new int[graph.size()];
+    Arrays.fill(distance, Integer.MAX_VALUE);
+    distance[source] = 0;
+    Deque<int[]> queue = new ArrayDeque<>();
+    queue.addFirst(new int[]{0, source});
+    while (!queue.isEmpty()) {
+        int[] state = queue.removeFirst();
+        int vertex = state[1];
+        if (state[0] != distance[vertex]) continue;
+        for (int[] edge : graph.get(vertex)) {
+            int next = edge[0], weight = edge[1];
+            if (weight != 0 && weight != 1) throw new IllegalArgumentException("expected 0/1 weight");
+            int candidate = distance[vertex] + weight;
+            if (candidate < distance[next]) {
+                distance[next] = candidate;
+                int[] entry = {candidate, next};
+                if (weight == 0) queue.addFirst(entry);
+                else queue.addLast(entry);
+            }
+        }
+    }
+    return distance;
+}
+```
+
+对 `S->A(1), S->B(0), B->A(0)`：普通按边数 BFS 会先发现 S->A，但最小代价是 S->B->A 的 0。0-1 BFS 处理 S 后队列为 `[(0,B),(1,A)]`，处理 B 后变为 `[(0,A),(1,A)]`，最后跳过 A 的旧条目。Dijkstra 也能得到 0，只是使用堆安排相同的距离优先级。
+
+非过时节点按最短距离处理，每条出边只需扫描一次，产生的条目总数 O(E)，因此时间 O(V+E)，上述保留旧条目的实现额外空间 O(V+E)。可用它与 Dijkstra 在随机 0/1 图上对拍。
 
 ### 第四步：Bellman-Ford 的实现要点
 
 Bellman-Ford 不依赖贪心，通过反复松弛所有边来求最短路。
 
-**核心原理：** 最短路最多经过 V-1 条边（无环），因此松弛 V-1 轮必然收敛。每轮对所有边做一次"如果通过这条边能让终点距离变短，就更新"。
+**核心原理：** 没有相关负环时，总能选一条至多 V-1 条边的最短简单路径，因此 V-1 轮足够。每轮对所有边尝试松弛；步数有限制时则必须明确每一轮只多允许一条边。
 
 **带步数限制（K 次中转 = K+1 条边）的关键：使用 temp 数组**
 
@@ -141,7 +202,7 @@ for (int i = 0; i <= k; i++) {
 **为什么必须用 `temp` 而不是直接更新 `dist`？**
 如果直接更新 `dist`，一轮松弛中可能用到"本轮刚更新的距离"继续松弛，相当于一轮走了多步，违反了"每轮最多多走一条边"的约束，会导致答案错误（步数超限）。
 
-**检测负权环：** 完成 V-1 轮后，再做第 V 轮。若仍有边被松弛，说明存在负权环。
+**检测负权环：** 从单源出发完成 V-1 轮后，第 V 轮仍可松弛说明存在源点可达的负环。若要检测整张图，可以加一个到所有节点均有零权边的超级源点。
 
 ---
 
@@ -182,7 +243,7 @@ public int networkDelayTime(int[][] times, int n, int k) {
     Arrays.fill(dist, Integer.MAX_VALUE);
     dist[k] = 0;
 
-    PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
+    PriorityQueue<int[]> pq = new PriorityQueue<>(Comparator.comparingInt(state -> state[0]));
     pq.offer(new int[]{0, k});
 
     while (!pq.isEmpty()) {
@@ -209,6 +270,8 @@ public int networkDelayTime(int[][] times, int n, int k) {
 ```
 
 ### 5. 复杂度分析
+
+LC743 的节点与权重上界使路径长度能放入 `int`；通用题目不应直接照搬这个数值假设，应使用前面的 `long` 模板。
 
 - **时间**：O((V + E) log V)，V = n，E = times.length
 - **空间**：O(V + E)，邻接表 + 优先队列
@@ -241,15 +304,15 @@ if (dist[u] + w < dist[v]) { ... }
 if (dist[u] != Integer.MAX_VALUE && dist[u] + w < dist[v]) { ... }
 ```
 
-Dijkstra 中由于只从已松弛的节点（`dist[u] < INF`）出发，通常不会触发此问题，但 Bellman-Ford 中必须加这个判断。
+Dijkstra 只从有限距离出发，避免的是“INF 加法”；两个有限的 int 相加仍可能溢出，例如 `2_000_000_000 + 2_000_000_000`。通用实现使用 long 距离，Bellman-Ford 还必须跳过不可达状态。仅判断不等于 INF 不能解决有限值溢出。
 
 **陷阱 2：忘写 `if (d > dist[u]) continue`**
 
-不写不影响正确性，但每个过时条目都会被完整处理，时间复杂度从 O((V+E)logV) 退化至 O(E logE)，稠密图下超时。
+在非负权、严格松弛的前提下，不跳过旧条目仍能得到正确距离，但会反复扫描出边。冗余成本取决于每个节点的旧条目数与出度，不能只写成 O(E log E)。即使跳过旧条目，懒删除堆也可能有 O(E) 条记录；简单图常写 O((V+E)log V)，允许大量平行边时用 O(V+E log(E+1)) 更精确。
 
 **陷阱 3：对含负权边的图使用 Dijkstra**
 
-Dijkstra 会给出错误答案，不会报错，很难排查。碰到负权边一定要改用 Bellman-Ford。
+负权边使 Dijkstra 的一次确定证明失效。某些允许反复入队的实现可能在无负环时仍算对，但不再有原来的复杂度保证，也不能安全提前结束。不要以少量样例通过为依据继续套用，改用适合负权的算法。
 
 **陷阱 4：Bellman-Ford 不使用 temp 数组（有步数限制时）**
 
@@ -276,6 +339,7 @@ BFS 是 Dijkstra 在所有边权为 1（或无权图）时的特例。BFS 用普
 ## 看到什么就先想到这类
 
 - "无权图最短路 / 最少步数" → BFS
+- "边权只有 0 和 1" → 0-1 BFS
 - "有权图最短路（非负）" → Dijkstra
 - "限制步数 / 中转次数的最短路" → Bellman-Ford / BFS 按层
 - "所有点对最短路" → Floyd

@@ -289,7 +289,7 @@ response = router.completion(model="smart", messages=[...])
 
 ### 成本估算参考
 
-> **核验日期：2026-10-10。** 下表来自 [OpenAI Pricing](https://developers.openai.com/api/docs/pricing)、[Claude Pricing](https://platform.claude.com/docs/en/about-claude/pricing) 和 [Gemini Pricing](https://ai.google.dev/gemini-api/docs/pricing)，单位为美元 / 1M Token，采用标准文本调用，不含缓存写入、工具、运行时、Batch/Flex/Fast、区域处理和企业折扣。API ID 不等于客户端产品的显示名，调用前还需核对账户资格、快照和 SDK 支持。
+下表来自 [OpenAI Pricing](https://developers.openai.com/api/docs/pricing)、[Claude Pricing](https://platform.claude.com/docs/en/about-claude/pricing) 和 [Gemini Pricing](https://ai.google.dev/gemini-api/docs/pricing)，单位为美元 / 1M Token，采用标准文本调用，不含缓存写入、工具、运行时、Batch/Flex/Fast、区域处理和企业折扣。API ID 不等于客户端产品的显示名，调用前还需核对账户资格、快照和 SDK 支持。
 
 | 模型 / API ID | 价格适用条件 | 输入 | 缓存命中输入 | 输出 |
 |---------------|--------------|------|--------------|------|
@@ -301,6 +301,8 @@ response = router.completion(model="smart", messages=[...])
 | Claude Haiku 5.5 / `claude-haiku-5-5` | 单次输入不超过 100K Token | $0.10 | $0.01 | $0.50 |
 | Claude Haiku 5.5 / `claude-haiku-5-5` | 单次输入超过 100K Token，含缓存输入 | $0.50 | $0.05 | $2.50 |
 | Gemini 3.8 Flash / `gemini-3.8-flash` | 优惠价至 2026-12-31，缓存另收存储费 | $0.75 | $0.075 | $3.75 |
+
+<small>注：价格快照为 2026-10-10，实际费用以供应商最新价目表为准。</small>
 
 Claude Sonnet 5 原计划在 2026-09-01 调整至 $3/$15 的涨价已取消，$2/$10 已成为标准价，旧预测不再适用。Gemini 3.8 Flash 官方公告的 2027-01-01 起 $1.50/$7.50 是未来计划，不是当前价格。OpenAI 的长上下文价格与表中不同，不能拿短上下文价格估算百万 Token 请求。
 

@@ -22,7 +22,7 @@ GPT-2、Llama 3 等公开架构采用**仅解码器（Decoder-Only）** Transfor
 
 阅读模型资料时，要分开看**骨干结构**（注意力、状态空间或混合）、**参数激活方式**（Dense/MoE）、**生成方式**（自回归/扩散）和**训练与能力定位**（Base/Instruct/Reasoning）。这些维度并不互斥，不能排成一列当作同一种分类。
 
-**概念核验：2026-10-15。** 本文区分成熟主线与替代路线，不以单个榜单判断架构优劣；当前型号与访问状态见 [AI 概述](./ai-overview) 和 [最新进展快照](./ai-trends#latest-updates)。
+当前模型与访问状态见 [AI 概述](./ai-overview) 和 [最新进展快照](./ai-trends#latest-updates)。
 
 ---
 
