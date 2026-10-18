@@ -226,6 +226,19 @@ AI 的核心机制都可以用架构图表达：
 | Computer Use 与多 Agent 编排 | GUI 操作循环、视觉定位、沙箱、安全与编排 | 🔥🔥 | [Computer Use](./agent-computer-use) |
 | 实时语音与 Voice Agent | 级联与实时架构、全双工、VAD、打断、工具执行与音频评估 | 专题 | [Voice Agent](./voice-agents) |
 
+### Claude Code
+
+以具体编程 Agent 为主线，连接产品使用、运行机制与工程实现。先理解与 Codex 等工具的异同，再追踪一次任务如何被执行、验证与恢复。
+
+| 章节 | 核心内容 | 阅读入口 |
+|------|----------|----------|
+| 概念与对比 | 产品定位、Coding Agent、Codex / Cursor / Copilot 对比与选型 | [概念与对比](./claude-code/) |
+| 使用实践 | 官方安装配置、项目约定、任务验证、权限与自动化 | [使用实践](./claude-code/practice) |
+| 运行机制 | 启动与输入、主循环状态、模型流、工具轮、恢复与终止 | [运行机制](./claude-code/runtime) |
+| 工具与权限 | 工具契约、并发调度、编辑一致性、审批、Hooks 与沙箱 | [工具与权限](./claude-code/tools) |
+| 上下文与会话 | Prompt 组装、缓存预算、压缩记忆、持久化与恢复 | [上下文与会话](./claude-code/context) |
+| 协作与扩展 | 子 Agent、任务状态、MCP、Skills、插件与 SDK 接口 | [协作与扩展](./claude-code/extensions) |
+
 ### AI 工程实践
 
 | 主题 | 核心内容 | 面试频率 | 详细页面 |

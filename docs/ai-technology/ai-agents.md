@@ -22,6 +22,8 @@ AI Agent（智能体）是以大语言模型为决策核心、在环境反馈下
 | **A2A** | 如何把任务交给另一个独立 Agent？ | [A2A 智能体协作协议](./a2a) |
 | **Harness Engineering** | 谁执行动作、限制权限、保存状态并验证结果？ | [Harness Engineering](./harness-engineering) |
 
+具体产品的工作流与实现见独立的 [Claude Code 专题](./claude-code/)，从概念与工具对比逐步进入运行机制。
+
 ## 什么是 AI Agent
 
 ### Agent、工作流与聊天助手

@@ -543,6 +543,18 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: 'Claude Code',
+          collapsed: false,
+          items: [
+            { text: '概念与对比', link: '/ai-technology/claude-code/' },
+            { text: '使用实践', link: '/ai-technology/claude-code/practice' },
+            { text: '运行机制', link: '/ai-technology/claude-code/runtime' },
+            { text: '工具与权限', link: '/ai-technology/claude-code/tools' },
+            { text: '上下文与会话', link: '/ai-technology/claude-code/context' },
+            { text: '协作与扩展', link: '/ai-technology/claude-code/extensions' },
+          ],
+        },
+        {
           text: 'AI 工程实践',
           collapsed: false,
           items: [
