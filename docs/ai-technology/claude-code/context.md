@@ -112,6 +112,49 @@ CLI 2.1.84 中的部分 microcompact 路径会选择较旧工具结果，将大�
 }
 ```
 
+### 代码：清理正文而不破坏关联
+
+下面把工具结果清理写成一个纯函数。`selectedIds` 是上游根据时间、体积、工具类型和保留策略选出的调用 ID；本函数只负责替换，不自行决定哪些信息已经无用。这是教学重构，不包含真实 microcompact 的全部选择策略。
+
+```typescript
+type ContextBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | {
+      type: "tool_result";
+      tool_use_id: string;
+      content: unknown;
+      is_error?: boolean;
+    };
+
+type ContextMessage = {
+  uuid: string;
+  type: "user" | "assistant";
+  content: readonly ContextBlock[];
+};
+
+function clearToolResults(
+  messages: readonly ContextMessage[],
+  selectedIds: ReadonlySet<string>,
+): ContextMessage[] {
+  return messages.map(message => ({
+    ...message,
+    content: message.content.map(block => {
+      if (block.type !== "tool_result") return block;
+      if (!selectedIds.has(block.tool_use_id)) return block;
+      return {
+        ...block,
+        content: "Earlier output cleared; retrieve fresh evidence if needed.",
+      };
+    }),
+  }));
+}
+```
+
+`...block` 保留 `tool_use_id` 与 `is_error`，只更换正文；assistant 中的 `tool_use` 和普通文字不变。这样不会因清理内容而把一个失败结果伪装成成功，也不会把一条结果接到另一项调用。
+
+函数返回新的消息和内容数组，不覆盖原始历史；未修改的 block 仍共享引用，因此调用方应把消息视为不可变数据。它也不修复输入中原本就未配对的工具调用，协议一致性应由独立检查保证。
+
 ### 第三层：总结历史并重建输入
 
 自动压缩会判断输入是否逼近适用阈值，必要时请求摘要，再构建较小的后续上下文。摘要不是简单保留最后几条消息：还需要携带任务目标、已确认约束、关键发现、当前改动与待完成工作。
@@ -159,6 +202,55 @@ Claude Code 的自动记忆通常组织为一个简短索引与多个主题文�
 Resume 继续目标会话，让新消息接在对应历史之后；Fork 从一个历史位置建立新的会话分支。两者都需要选择有效消息链与压缩边界，而不是简单按时间排序全部记录。
 
 **对话 Fork 与 Git worktree 是两个操作**。前者分离对话，后者分离文件 checkout。两个会话即使 ID 不同，若仍修改同一目录，文件冲突并不会自动消失。
+
+### 代码：为选中的历史建立新分支
+
+下面只演示**已经选好、按顺序排列的线性历史**如何映射到新会话。读取 JSONL、选择主链、处理压缩边界与内容替换记录发生在调用之前；持久化与文件检查点发生在其他层，不能用此函数代替完整 Resume/Fork。
+
+```typescript
+type TranscriptRecord = {
+  uuid: string;
+  sessionId: string;
+  parentUuid: string | null;
+  type: "user" | "assistant" | "progress";
+  content: unknown;
+  isSidechain?: boolean;
+  forkedFrom?: { sessionId: string; messageUuid: string };
+};
+
+function forkTranscript(
+  selected: readonly TranscriptRecord[],
+  newSessionId: string,
+): TranscriptRecord[] {
+  const sourceSessionId = selected[0]?.sessionId;
+  if (!sourceSessionId) throw new Error("No history to fork");
+  if (!newSessionId || newSessionId === sourceSessionId) {
+    throw new Error("Fork needs a different session ID");
+  }
+
+  let parentUuid: string | null = null;
+  const seen = new Set<string>();
+  return selected.map(record => {
+    if (record.sessionId !== sourceSessionId || seen.has(record.uuid)) {
+      throw new Error("Mixed sessions or duplicate message IDs");
+    }
+    seen.add(record.uuid);
+    const forked: TranscriptRecord = {
+      ...record,
+      sessionId: newSessionId,
+      parentUuid,
+      isSidechain: false,
+      forkedFrom: { sessionId: record.sessionId, messageUuid: record.uuid },
+    };
+    if (record.type !== "progress") parentUuid = record.uuid;
+    return forked;
+  });
+}
+```
+
+该片段保留消息 UUID，把新会话身份和原始来源分开记录；因此身份应结合 session 理解，而不是假设一个 UUID 永远只出现在一个历史文件里。`progress` 记录没有推进父消息指针：它可以附着在历史中，但不把下一条真正的对话消息改接到一条进度通知上。
+
+例如输入顺序为 `user-1 → progress-1 → assistant-1`，三个输出记录的 `parentUuid` 依次为 `null`、`user-1`、`user-1`。原记录的 `sessionId` 不被修改，分支也不自动改变任何项目文件。
 
 ### 恢复是重新建立执行环境
 

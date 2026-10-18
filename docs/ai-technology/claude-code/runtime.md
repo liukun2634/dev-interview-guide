@@ -143,6 +143,108 @@ flowchart TD
 
 如果一个检查永远要求继续，它会制造无限任务。Hook 本身需要有明确通过条件、递归保护与执行预算；模型愿意说“已完成”，不应绕过必要检查，检查也不应无条件延长工作。
 
+### 用代码对照四种状态转移
+
+下面是依据上述分支编写的 **TypeScript 教学重构**，不是原始函数的复制。它只保留消息、轮数和恢复标志，省略模型请求、权限、附件生产与持久化，方便独立运行和断言。`Message` 的正文用 `unknown` 表示，不在状态更新函数中解释工具参数。
+
+```typescript
+type Message = {
+  type: "user" | "assistant" | "attachment";
+  content: unknown;
+};
+
+type LoopState = {
+  messages: readonly Message[];
+  turnCount: number;
+  maxOutputTokensRecoveryCount: number;
+  hasAttemptedReactiveCompact: boolean;
+  stopHookActive: boolean;
+};
+
+type LoopEvent =
+  | { type: "tools_completed"; additions: readonly Message[] }
+  | { type: "compact_succeeded"; replacement: readonly Message[] }
+  | { type: "output_truncated"; additions: readonly Message[] }
+  | { type: "stop_blocked"; additions: readonly Message[] };
+
+function advanceLoop(state: LoopState, event: LoopEvent): LoopState {
+  switch (event.type) {
+    case "tools_completed":
+      return {
+        ...state,
+        messages: [...state.messages, ...event.additions],
+        turnCount: state.turnCount + 1,
+        maxOutputTokensRecoveryCount: 0,
+        hasAttemptedReactiveCompact: false,
+      };
+    case "compact_succeeded":
+      if (state.hasAttemptedReactiveCompact) {
+        throw new Error("Reactive compaction already attempted");
+      }
+      return {
+        ...state,
+        messages: [...event.replacement],
+        hasAttemptedReactiveCompact: true,
+        stopHookActive: false,
+      };
+    case "output_truncated":
+      if (state.maxOutputTokensRecoveryCount >= 3) {
+        throw new Error("Output recovery limit reached");
+      }
+      return {
+        ...state,
+        messages: [...state.messages, ...event.additions],
+        maxOutputTokensRecoveryCount:
+          state.maxOutputTokensRecoveryCount + 1,
+        stopHookActive: false,
+      };
+    case "stop_blocked":
+      return {
+        ...state,
+        messages: [...state.messages, ...event.additions],
+        maxOutputTokensRecoveryCount: 0,
+        stopHookActive: true,
+      };
+  }
+}
+```
+
+这里的 `additions` 已经由调用方准备好：正常工具轮包含本轮 assistant 与工具结果，续写包含已有输出和恢复提示，停止反馈包含本轮输出与阻塞原因。真正主循环还要先得到规范化的消息视图，不能把收到的所有流式增量不加区分地传给这个函数。
+
+这段代码最值得检查的不是 switch 语法，而是三处差异：
+
+1. 正常工具轮才增加 `turnCount`；压缩重试和输出续写不在此处增加它。
+2. 压缩使用新的消息集合替换输入视图；其他三种情况在已有视图上追加。
+3. 正常进展重置恢复计数；续写累计自己的计数，Stop 反馈单独记录活动状态。
+
+上面的 `3` 对应所讲解历史实现的续写恢复限制，不是建议应用永远硬编码该值。教学函数把拒绝继续表现为抛错，实际引擎还会产生错误消息与终止结果。
+
+下面的调用片段与上一个代码块放在同一 TypeScript 文件中即可运行，无需模型或网络：
+
+```typescript
+const initialState: LoopState = {
+  messages: [{ type: "user", content: "Fix pagination" }],
+  turnCount: 1,
+  maxOutputTokensRecoveryCount: 0,
+  hasAttemptedReactiveCompact: false,
+  stopHookActive: false,
+};
+
+const resumedState = advanceLoop(initialState, {
+  type: "output_truncated",
+  additions: [{ type: "user", content: "Continue the unfinished response" }],
+});
+const nextState = advanceLoop(resumedState, {
+  type: "tools_completed",
+  additions: [{ type: "user", content: "Pagination test passed" }],
+});
+
+console.log(resumedState.turnCount, resumedState.maxOutputTokensRecoveryCount);
+console.log(nextState.turnCount, nextState.maxOutputTokensRecoveryCount);
+```
+
+输出依次为 `1 1` 和 `2 0`：续写没有伪装成一次正常工具轮，真正进入下一轮时恢复计数归零。`initialState.messages` 也没有被原地修改，这让失败分支的对照测试更容易。
+
 ## 6. 事件、错误与中断
 
 ### 异步生成器为什么合适

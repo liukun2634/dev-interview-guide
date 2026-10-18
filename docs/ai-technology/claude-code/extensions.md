@@ -178,11 +178,132 @@ sequenceDiagram
 
 `hook_callback` 通过 callback ID 找到宿主函数，`mcp_message` 把 JSON-RPC 交给相应 Server，`can_use_tool` 处理需要应用确认的权限请求。初始化时传递的是可序列化描述和回调标识，而不是把 Python 函数直接塞进 JSON。
 
+### 代码：请求必须先登记，再发送
+
+下面用 TypeScript 写一个独立的控制通道教学模型，展示 SDK 中 pending 请求表的作用。它只演示**宿主发请求、CLI 回响应**的方向；完整 SDK 还要处理反向控制请求、Hook 与 MCP 调用、取消消息及普通对话流。
+
+```typescript
+type ControlResponse = {
+    type: "control_response";
+    response: {
+        request_id: string;
+        subtype: "success" | "error";
+        response?: unknown;
+        error?: string;
+    };
+};
+
+class ControlChannel {
+    private sequence = 0;
+    private closed = false;
+    private pending = new Map<
+        string, (error: Error | null, value?: unknown) => void
+    >();
+    private write: (line: string) => Promise<void>;
+
+    constructor(write: (line: string) => Promise<void>) {
+        this.write = write;
+    }
+
+    request(request: Record<string, unknown>, timeoutMs = 5000): Promise<unknown> {
+        if (this.closed) return Promise.reject(new Error("Channel closed"));
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+            return Promise.reject(new Error("Invalid timeout"));
+        }
+        const requestId = `request_${++this.sequence}`;
+        return new Promise((resolve, reject) => {
+            const finish = (error: Error | null, value?: unknown) => {
+                if (!this.pending.delete(requestId)) return;
+                clearTimeout(timer);
+                if (error) reject(error);
+                else resolve(value);
+            };
+            const timer = setTimeout(() => finish(new Error("Request timed out")), timeoutMs);
+            this.pending.set(requestId, finish);
+
+            try {
+                const line = JSON.stringify({
+                    type: "control_request", request_id: requestId, request,
+                }) + "\n";
+                this.write(line).catch(() => finish(new Error("Transport write failed")));
+            } catch {
+                finish(new Error("Request encoding or write failed"));
+            }
+        });
+    }
+
+    receive(message: ControlResponse): boolean {
+        const response = message.response;
+        const finish = this.pending.get(response.request_id);
+        if (!finish) return false;
+        if (response.subtype === "error") {
+            finish(new Error(response.error ?? "Control request failed"));
+        } else {
+            finish(null, response.response);
+        }
+        return true;
+    }
+
+    close(): void {
+        this.closed = true;
+        for (const finish of [...this.pending.values()]) {
+            finish(new Error("Channel closed"));
+        }
+    }
+}
+```
+
+这里最关键的一行是 `pending.set` 位于 `write` 之前：即使测试传输立即返回响应，接收端也能找到等待者。多个响应乱序到达时按 `request_id` 定位，不依赖发送顺序；超时、写入失败、成功响应和 close 都通过同一个 `finish` 清理等待记录与定时器。
+
+迟到或重复的响应找不到 pending 项时返回 false，不能重新唤醒已经结束的请求。超时只结束本地等待，不代表远端动作已撤销；生产实现还需要符合协议的取消处理。`receive` 假设上游已经完成消息 Schema 校验，TypeScript 类型本身不验证外部 JSON。
+
+示例 ID 只在单个通道实例内递增，不能用作跨连接的业务幂等键或授权凭证。实际传输还应对并发写入、关闭和缓冲施加约束，不能把这个小类当作完整 SDK。
+
 ### 管道数据必须正确分帧
 
 stdin/stdout 的 `stream-json` 通常按换行分隔消息，但操作系统读取的是任意大小的数据块。一条消息可能跨越多次读取，一个块也可能含多条消息。
 
 传输层需要重组完整行、处理 EOF 与坏 JSON、限制缓冲并协调并发写入。不能对半截块先做 strip，也不能在其他任务仍写入时直接关闭 stdin。
+
+### 代码：跨块拼接完整 JSON 行
+
+下面接收**已经由流式字符解码器正确解码**的字符串块，不自行处理 UTF-8 字节边界。片段先累积为完整行，然后才解析 JSON；字符上限是示例的字符串长度限制，不是精确的字节数或 Token 预算。
+
+```typescript
+async function* jsonLines(
+    chunks: AsyncIterable<string>,
+    maxLineChars = 1024 * 1024,
+): AsyncGenerator<unknown> {
+    if (!Number.isInteger(maxLineChars) || maxLineChars < 1) {
+        throw new Error("Invalid line size limit");
+    }
+    let fragments: string[] = [];
+    let size = 0;
+
+    for await (const chunk of chunks) {
+        const parts = chunk.split("\n");
+        for (let index = 0; index < parts.length; index++) {
+            const part = parts[index];
+            size += part.length;
+            if (size > maxLineChars) throw new Error("JSON line too large");
+            if (part.length > 0) fragments.push(part);
+            if (index === parts.length - 1) continue;
+
+            const line = fragments.join("").trim();
+            fragments = [];
+            size = 0;
+            if (line.length > 0) yield JSON.parse(line);
+        }
+    }
+
+    const tail = fragments.join("").trim();
+    if (tail.length > 0) yield JSON.parse(tail);
+}
+```
+
+例如两块数据分别为 `{"text":"hello ` 与 `world"}\n`，必须保留中间空格，解析结果才是 `hello world`。反过来，一次读取包含两行 JSON 时，生成器应产生两条消息，而不是把整块交给一次 `JSON.parse`。
+
+示例允许最后一条合法 JSON 没有换行，遇到损坏的完整行或截断尾部则抛错；这是便于验证的严格策略，不等同于 SDK 对日志行和 EOF 尾部的全部兼容处理。生产代码还需要调用方按消息类型做 Schema 校验，并在解析失败时关闭传输或进入明确的恢复流程。
 
 ### 一个最小宿主示例
 

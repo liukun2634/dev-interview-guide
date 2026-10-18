@@ -3,16 +3,23 @@ import mathjax3 from 'markdown-it-mathjax3'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import { sections } from './sections'
 
+const siteBase = '/dev-interview-guide/'
+
 export default withMermaid(defineConfig({
   title: '程序员面试手册',
   description: '系统化的程序员面试知识体系，涵盖算法、系统设计、数据库、AI 等 9 大领域，含代码示例与高频真题',
   lang: 'zh-CN',
-  base: '/dev-interview-guide/',
+  base: siteBase,
   ignoreDeadLinks: false,
   srcExclude: ['**/superpowers/**', '**/devops/**'],
 
   sitemap: {
-    hostname: 'https://liukun2634.github.io/dev-interview-guide',
+    hostname: 'https://liukun2634.github.io',
+    transformItems: items => items.map(item => ({
+      ...item,
+      url: `${siteBase}${item.url}`,
+      links: item.links?.map(link => ({ ...link, url: `${siteBase}${link.url}` })),
+    })),
   },
 
   head: [
@@ -297,7 +304,7 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: '大厂实战面试题',
+          text: '系统设计实战题',
           collapsed: false,
           items: [
             { text: '题目总览', link: '/system-design/interview-cases/' },

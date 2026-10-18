@@ -62,8 +62,42 @@ if (sourceMode) {
   }
 }
 const failures = []
+const linkSources = [...pages]
 
-for (const [source, page] of pages) {
+if (!sourceMode) {
+  const sitemapPath = path.join(root, 'sitemap.xml')
+  if (!fs.existsSync(sitemapPath)) {
+    failures.push('sitemap.xml: missing sitemap')
+  } else {
+    const locations = []
+    const visit = node => {
+      if (node.type === 1 && node.tag === 'loc') {
+        locations.push(node.children.filter(child => child.type === 2).map(child => child.content).join('').trim())
+      }
+      for (const child of node.children ?? []) visit(child)
+    }
+    visit(parse(fs.readFileSync(sitemapPath, 'utf8'), { onError: () => {} }))
+    if (locations.length === 0) failures.push('sitemap.xml: no page locations')
+    const links = new Set()
+    for (const location of locations) {
+      let url
+      try {
+        url = new URL(location)
+      } catch {
+        failures.push(`sitemap.xml: invalid URL ${location}`)
+        continue
+      }
+      if (url.origin !== 'https://liukun2634.github.io') {
+        failures.push(`sitemap.xml: unexpected origin ${location}`)
+        continue
+      }
+      links.add(`${url.pathname}${url.search}${url.hash}`)
+    }
+    linkSources.push(['sitemap.xml', { ids: new Set(), links }])
+  }
+}
+
+for (const [source, page] of linkSources) {
   for (const href of page.links) {
     let url
     try {
@@ -104,5 +138,5 @@ if (failures.length) {
   console.error(`FAIL: ${failures.length} broken links across ${pages.size} pages.`)
   process.exitCode = 1
 } else {
-  console.log(`PASS: internal pages, assets and anchors checked across ${pages.size} pages.`)
+  console.log(`PASS: internal pages, assets and anchors checked across ${pages.size} pages${sourceMode ? '' : ', including sitemap URLs'}.`)
 }

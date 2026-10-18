@@ -71,6 +71,66 @@ title: Claude Code 工具与权限
 
 这解释了为什么工具调用通常需要 context 参数：它提供本次动作的身份、权限、取消与状态访问能力，而不是让每个工具自行创建无约束的全局状态。
 
+### 代码：把调用转换成关联结果
+
+下面以教学接口保留 `inputSchema`、`isConcurrencySafe`、`call` 的职责，不复刻完整工具对象。Schema 解析器由外部注入，实际项目应使用已有 Schema 库；`authorize` 代表 **Hook、规则和审批处理之后的最终决策**，不是只调用工具自身的 `checkPermissions` 就跳过其他规则。
+
+```typescript
+type Parsed<Input> =
+  | { success: true; data: Input }
+  | { success: false; error: string };
+
+type ToolSpec<Input> = {
+  name: string;
+  inputSchema: { safeParse(value: unknown): Parsed<Input> };
+  isConcurrencySafe(input: Input): boolean;
+  call(input: Input, signal: AbortSignal): Promise<string>;
+};
+
+type ToolDecision<Input> =
+  | { behavior: "allow"; input: Input }
+  | { behavior: "deny"; reason: string };
+
+type ToolResult = {
+  type: "tool_result";
+  tool_use_id: string;
+  content: string;
+  is_error: boolean;
+};
+
+async function executeCall<Input>(
+  callId: string,
+  rawInput: unknown,
+  tool: ToolSpec<Input>,
+  authorize: (input: Input) => Promise<ToolDecision<Input>>,
+  signal: AbortSignal,
+): Promise<ToolResult> {
+  const result = (content: string, is_error: boolean): ToolResult => ({
+    type: "tool_result", tool_use_id: callId, content, is_error,
+  });
+
+  try {
+    signal.throwIfAborted();
+    const parsed = tool.inputSchema.safeParse(rawInput);
+    if (!parsed.success) return result(parsed.error, true);
+
+    const decision = await authorize(parsed.data);
+    signal.throwIfAborted();
+    if (decision.behavior === "deny") return result(decision.reason, true);
+
+    const approved = tool.inputSchema.safeParse(decision.input);
+    if (!approved.success) return result(approved.error, true);
+    return result(await tool.call(approved.data, signal), false);
+  } catch {
+    return result("Tool execution failed or was interrupted", true);
+  }
+}
+```
+
+这段代码说明了四件事：不合法参数和拒绝决策不会进入 `call`；审批可以修改输入；真正执行的是获准后的输入；成功、拒绝与失败都保留同一个 `tool_use_id`。异常文本在示例中被概括，实际系统应将详细错误放入经过脱敏的内部诊断，不直接泄露给模型或最终用户。
+
+审批后的再次 Schema 解析只检查结构，不重新证明授权正确。如果 Hook 或用户改了路径等参数，完整授权逻辑仍需验证修改后的对象。工具也必须响应传入的取消信号；包装函数无法强行让一个忽略 signal 的远程写操作回滚。
+
 ## 3. 并发调度怎样避免冲突
 
 ### 为什么不能全部 Promise.all
@@ -86,6 +146,46 @@ CLI 2.1.84 的流式工具队列在接收调用时，先用 `inputSchema.safePar
 队列会跟踪 queued 与 executing 等状态：没有正在执行的工具时可以启动一个调用；若已有调用在执行，只有新调用与当前执行集合都满足并发安全条件，才允许重叠运行。遇到需要串行执行的边界，后续队列不能无限越过它。
 
 这相当于把不确定能力视为串行屏障。它降低误并发风险，但也意味着某个过于保守的能力声明可能降低吞吐，因此声明本身需要测试。
+
+### 代码：选择下一批可启动调用
+
+下面继续使用上面的 `ToolSpec`，先计算并发属性，再从待执行队列选出可以启动的前缀。它是队列决策的纯函数示例，不是完整的异步执行器。
+
+```typescript
+function concurrencyFlag<Input>(tool: ToolSpec<Input>, input: unknown): boolean {
+  try {
+    const parsed = tool.inputSchema.safeParse(input);
+    return parsed.success ? Boolean(tool.isConcurrencySafe(parsed.data)) : false;
+  } catch {
+    return false;
+  }
+}
+
+type ScheduledCall = { id: string; concurrencySafe: boolean };
+
+function runnablePrefix(
+  queued: readonly ScheduledCall[],
+  running: readonly ScheduledCall[],
+): ScheduledCall[] {
+  if (running.some(call => !call.concurrencySafe)) return [];
+  const first = queued[0];
+  if (!first) return [];
+  if (!first.concurrencySafe) {
+    return running.length === 0 ? [first] : [];
+  }
+
+  const selected: ScheduledCall[] = [];
+  for (const call of queued) {
+    if (!call.concurrencySafe) break;
+    selected.push(call);
+  }
+  return selected;
+}
+```
+
+例如队列是 `Read A → Read B → Edit A → Read C`，且两个 Read 已被判定可安全并发：空闲时先启动前两个；它们未完成时不启动 Edit，也不越过 Edit 启动最后的 Read。所有读取完成后，Edit 单独运行，再继续后续队列。
+
+真实执行器必须在启动前登记 executing 状态，完成或异常后释放状态，并在每次决策时取得新的队列视图。不能让两个调度任务基于同一份旧快照同时启动同一个调用。若审批修改了会影响并发安全的参数，还应重新评估能力或保守串行执行。
 
 ### 只读不等于可并发
 
@@ -123,6 +223,34 @@ CLI 2.1.84 的文件编辑校验包含以下判断：尚未读取文件时要求
 局部替换适合小范围、可确定的改动，可以减少意外覆盖；全文件写入适合新建文件或明确的整体生成，但更容易覆盖无关内容。工具选择应由任务需要决定，不应为绕开替换失败而直接重写整份文件。
 
 如果匹配多处，应扩充上下文或者明确确实需要全部替换，而不是盲目打开 replace_all。错误反馈本身是在保护修改范围。
+
+### 代码：只在明确的基线上替换一次
+
+下面把“已读取、基线没有变化、匹配唯一”提炼成一个只处理字符串的函数。它使用完整内容一致性检查，比仅凭时间戳判断更容易演示；不包含真实工具的部分读取、路径规范化、编码、符号链接与文件写入逻辑，也不提供文件系统事务保证。
+
+```typescript
+function replaceFromSnapshot(
+  snapshot: string | undefined,
+  current: string,
+  oldText: string,
+  newText: string,
+): string {
+  if (snapshot === undefined) throw new Error("Read the file first");
+  if (snapshot !== current) throw new Error("File changed; read it again");
+  if (oldText.length === 0) throw new Error("Replacement target is empty");
+
+  const start = current.indexOf(oldText);
+  if (start < 0) throw new Error("Replacement target not found");
+  if (current.indexOf(oldText, start + 1) >= 0) {
+    throw new Error("Replacement target is ambiguous");
+  }
+  return current.slice(0, start) + newText + current.slice(start + oldText.length);
+}
+```
+
+这里通过字符串拼接插入 `newText`，不会把其中的 `$&`、`$1` 等字符解释成正则替换模板。检查第二个匹配时从 `start + 1` 开始，还会拒绝重叠匹配，例如在 `aaa` 中把 `aa` 当作唯一目标。
+
+写回文件仍是另一个步骤：需要在实际写入前重新检查基线，并采用适合平台的写入策略。该函数返回了新内容，并不意味着期间没有其他进程修改文件。
 
 ### Shell 为什么需要单独处理
 
