@@ -92,7 +92,10 @@ flowchart TD
     subgraph Query["🔍 Query Pipeline（在线/实时）"]
         direction LR
         USER["用户自然语言提问\n'年假如何申请？'"]
-        CACHE_CHK{"Query\n语义缓存\nRedis\n相似度>0.95?"}
+        AUTH["SSO 鉴权\n服务端租户与用户身份\n验证会话归属"]
+        CACHE_CHK{"隔离的缓存候选\n身份与请求变体匹配?"}
+        CACHE_VERIFY{"权威权限与证据版本复核\n未删除且仍可访问?"}
+        DENY["拒绝返回受保护内容\n不绕过权限校验"]
         REWRITE["Query Rewrite\n意图识别 + 关键词抽取\n多语言检测\n查询扩展 HyDE"]
         QEMB["Query Embedding\ntext-embedding-3-small\n~50ms"]
         
@@ -103,24 +106,34 @@ flowchart TD
         end
 
         RERANKER["Cross-encoder Reranker\nbge-reranker-large\nQuery×Doc 交叉注意力\nTop-5精选\n100-200ms"]
+        EVIDENCE_CHECK["生成前复核\n全部证据及历史来源的当前权限\n文档版本与删除状态"]
         CTX["Context Assembly\n拼接 Top-5 chunks\n注入权限/引用元数据\n构建 Prompt\n~4000 tokens context"]
         LLM["LLM 生成\n内网 Qwen2.5-72B\n/ OpenAI GPT-4o\nStreaming 输出\n强制输出 [doc_id:chunk_id] 引用"]
+        OUTPUT_CHECK["输出时复核权限与引用\n拒绝失效证据\n高敏感答案先缓冲校验"]
         ANS["返回给用户\n答案文本\n可点击引用来源\n流式渲染"]
-        CACHE_WRITE["写 Query 缓存\nTTL 1h"]
+        CACHE_WRITE["仅完整成功答案可缓存\n保存全部来源依赖与版本\n按身份隔离并设置 TTL"]
 
-        USER --> CACHE_CHK
+        USER --> AUTH
+        AUTH --> CACHE_CHK
         CACHE_CHK -->|"Cache Miss"| REWRITE
-        CACHE_CHK -->|"Cache Hit\n直接返回"| ANS
+        CACHE_CHK -->|"候选命中"| CACHE_VERIFY
+        CACHE_VERIFY -->|"全部通过"| OUTPUT_CHECK
+        CACHE_VERIFY -->|"已失效，重新检索"| REWRITE
+        CACHE_VERIFY -->|"无法验证"| DENY
         REWRITE --> QEMB
         QEMB --> VEC_SEARCH
         REWRITE --> KW_SEARCH
         VEC_SEARCH --> RRF
         KW_SEARCH --> RRF
         RRF --> RERANKER
-        RERANKER --> CTX
+        RERANKER --> EVIDENCE_CHECK
+        EVIDENCE_CHECK -->|"复核通过的证据"| CTX
+        EVIDENCE_CHECK -->|"无法验证"| DENY
         CTX --> LLM
-        LLM --> ANS
-        LLM --> CACHE_WRITE
+        LLM --> OUTPUT_CHECK
+        OUTPUT_CHECK -->|"通过"| ANS
+        OUTPUT_CHECK -->|"失败"| DENY
+        OUTPUT_CHECK -->|"完整生成且校验通过"| CACHE_WRITE
     end
 
     style Ingestion fill:#f0f7ff,stroke:#4a90e2
@@ -132,7 +145,8 @@ flowchart TD
 
 - Ingestion 完全异步，通过 Kafka 解耦，文档上传不阻塞用户
 - Query Pipeline 的向量检索和关键词检索并行执行，取较慢的那条作为等待时间
-- 权限过滤（`access_control_list`）在向量数据库查询层做，不是检索后过滤，避免召回不足
+- 向量与关键词查询都携带服务端构造的权限过滤，避免无权候选挤占召回；索引 ACL 可能滞后，因此生成前还要复核权威权限
+- 缓存命中只代表找到候选，不能跳过输出授权；身份、证据依赖、版本或删除状态无法验证时，不返回受保护答案
 - LLM 响应使用 Streaming 流式输出，用户首 token 延迟 < 1s，体验流畅
 
 ---
@@ -266,31 +280,81 @@ LLM Context Assembly（Top-5 chunks，~4000 tokens）
 
 **三层缓存架构：**
 
-**Layer 1：Query 语义缓存（最重要）**
-- 不做精确字符串匹配，而是做**向量相似度匹配**
-- 存储：`Redis` 中保存 `(query_embedding → {answer, citations, ttl})` 的映射
-- 命中条件：新 Query 的 embedding 与缓存中某个 embedding 的余弦相似度 > **0.95**
-- 效果：热点问题缓存命中率 **40-60%**（减少 LLM 调用，节省成本 50%+）
-- 实现：用 Redis 的向量搜索模块（RedisVL）或维护一个小型内存向量索引
+**Layer 1：隔离的 Query 答案缓存**
+- **MVP 使用精确请求匹配，默认按租户和用户隔离**。只有证明内容公开且无个性化依赖时才另建公共缓存，不因“同部门”或“问法相似”就跨用户共享。
+- 缓存变体至少绑定租户、用户、保留实体/日期/否定词的规范化问题哈希、对话上下文哈希、模型版本、Prompt 版本和生成参数哈希。上下文哈希应覆盖历史与全部来源版本，不能只对模型摘要做哈希。
+- 存储完整答案、全部来源依赖、文档版本、权限版本、生成状态与过期时间。**依赖包含参与上下文和历史摘要的所有文档，不只是最终展示的引用**。
+- 返回前向权威权限与文档元数据服务重新验证所有依赖：当前用户仍可访问、文档未删除、内容和权限版本仍有效。查询身份只能来自已验证的认证上下文。
+- 如启用语义搜索，余弦相似度（例如 0.95）只用于寻找候选；还需验证实体、时间、否定条件和上下文等价性。未经验证的近似问题不直接复用答案；命中率与节省比例需实测。
 
 **Layer 2：Embedding 缓存**
 - 相同 chunk（文档未更新）的 embedding 结果不重复计算
-- 存储：`Redis Hash`，key = `sha256(chunk_text)`，value = `embedding bytes`
-- 命中率几乎 100%（文档不变则 embedding 不变）
+- 存储：`Redis Hash`，key 至少包含租户隔离域、Embedding 模型/预处理版本与 `sha256(chunk_text)`，value = `embedding bytes`
+- Embedding 缓存不能成为无权限获取原文的旁路；模型升级时即使文本未变也不能复用旧向量
 - 节省 Ingestion 时的重复计算成本（文档小幅更新时只需重算变化的 chunk）
 
 **Layer 3：LLM 结果缓存**
-- 完全相同的 `(Query + Context)` 的 LLM 输出缓存，TTL 1 小时
-- 适用场景：用户重复提问、定时任务等
-- 注意：Context 可能因文档更新而变化，TTL 不宜过长
+- 复用完整的调用变体，包括身份隔离域、Query、Context 及其来源版本、模型、Prompt 和生成参数
+- 与 Layer 1 使用相同的依赖记录和输出授权规则；不能作为绕过权限复核的第二条命中路径
+- TTL 只是缓存保留上限，不是权限有效期。只缓存完整且校验成功的结果，流式中断、错误、拒答不写成成功答案
 
 **Query 语义缓存实现细节：**
 
 ```
-用户 Query → Embedding（~50ms） → 查 Redis 向量索引（~5ms）
-    ├── Hit（相似度 > 0.95）→ 直接返回缓存答案（总耗时 ~60ms）
-    └── Miss → 走完整 RAG 流程（~3-5s） → 将 (embedding, answer) 写入缓存
+SSO 身份验证 → 验证会话归属 → 只查询当前隔离域的缓存候选
+  ├── 请求不等价 / 文档更新 / 删除 / 撤权 → 缓存失效，重新执行有权限的检索
+  ├── 权威服务超时 / 授权结果不确定 → 不返回受保护缓存
+  └── 请求匹配且所有依赖有效 → 输出时授权 → 返回完整答案与授权后的引用
 ```
+
+**缓存复用判定示例（JavaScript，精确匹配基线）：**
+
+下面函数只表达判定逻辑，不是完整鉴权中间件。调用方先验证缓存记录 Schema；`context` 来自服务端认证和当前请求，`currentEvidence` 是本次从权威服务获取的检查结果，不能接受客户端传入的 `authorized` 布尔值，也不能复用生成答案时的旧检查结果。
+
+```javascript
+function canReuseAnswer(entry, context, currentEvidence) {
+  if (!entry || entry.status !== 'COMPLETED') return false;
+  if (!Number.isFinite(entry.expiresAtMs) || entry.expiresAtMs <= context.nowMs) {
+    return false;
+  }
+
+  const fields = [
+    'tenantId', 'userId', 'queryHash', 'contextHash',
+    'modelVersion', 'promptVersion', 'generationOptionsHash'
+  ];
+  if (fields.some(field => context[field] == null || entry[field] !== context[field])) {
+    return false;
+  }
+  if (!Array.isArray(entry.dependencies) || entry.dependencies.length === 0) {
+    return false;
+  }
+
+  return entry.dependencies.every(dependency => {
+    const current = currentEvidence?.get(dependency.docId);
+    return current?.authorized === true
+      && current.tenantId === context.tenantId
+      && current.userId === context.userId
+      && current.deleted === false
+      && current.docVersion === dependency.docVersion
+      && current.policyVersion === dependency.policyVersion;
+  });
+}
+```
+
+权限/元数据读取失败时整次验证失败，不使用部分成功结果放行。若检查不通过，因为更新或撤权而失效的缓存可以重走受控检索；权限服务不可用则 fail closed。缓存键隔离和命中后复核缺一不可：前者阻止跨域匹配，后者处理同一用户后来被撤权的情况。
+
+**权限时序边界：** 每次输出依据当前权威授权决策；高敏感答案先缓冲并校验再输出，普通流式答案按段复核、收到撤权通知后停止后续输出。已发送的内容无法收回；若业务要求撤权确认与输出严格排序，需要输出服务与权限版本建立有序屏障，不能仅用通知或 TTL 宣称“瞬间撤回”。引用预览、下载和历史会话的证据也要重新鉴权。
+
+| 必测场景 | 期望 |
+|------|------|
+| 同一问题，不同租户或用户 | 不复用私有缓存 |
+| 同一用户被移出授权组，缓存尚未过期 | 当前权限复核拒绝旧答案 |
+| 答案有未展示为引用的敏感来源 | 撤销任一来源权限后，整份缓存失效 |
+| 文档更新、删除或模型/Prompt/参数变更 | 旧缓存不能作为有效答案返回 |
+| 权限服务超时、只得到部分依赖检查结果 | 不返回受保护内容 |
+| 会话归属不符或请求上下文改变 | 拒绝访问或不命中缓存 |
+
+更完整的权限、历史上下文和撤权设计见 [企业知识库与可信 RAG](../ai-design/enterprise-rag)。
 
 ---
 
@@ -312,6 +376,8 @@ Ingestion Worker 消费：解析 → 切块 → Embedding → 写入
     ↓（约 30s~2min 后）
 新向量可被检索（一致性窗口）
 ```
+
+内容/ACL 变更与删除应通知依赖缓存失效；权威文档元数据中的版本和删除标记、权限服务中的撤权结果先成为生成与输出的检查依据。后台索引和缓存失效消息可能延迟或丢失，因此仍须执行命中后的权威复核，不能等待异步索引完成才阻止访问。
 
 **为什么向量要软删除：**
 
@@ -386,7 +452,6 @@ Content-Type: application/json
 {
   "question": "年假如何申请？",
   "session_id": "sess_xyz",               // 多轮对话 session
-  "user_id": "user_001",
   "stream": true                          // SSE 流式返回
 }
 
@@ -464,6 +529,8 @@ System Prompt:
 **核心原则：在向量检索层做权限过滤，而不是检索后过滤。**
 
 原因：若先召回 100 个结果再过滤权限，可能过滤后只剩 2-3 个，检索质量极差。
+
+租户、用户和组成员身份从服务端验证后的 SSO 上下文取得，查询前校验 `session_id` 的归属。两路检索都应过滤；生成前还需复核权威 ACL、文档版本和删除标记，避免陈旧索引把无权内容送入模型。缓存、引用和历史对话不得绕过同一授权边界。
 
 **实现方案（Milvus metadata filter）：**
 

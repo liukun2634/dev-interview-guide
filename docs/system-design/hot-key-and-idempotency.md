@@ -35,7 +35,7 @@ title: 幂等性与热点 Key 设计
 | **悲观锁 SELECT FOR UPDATE** | 数据库 | 强一致 | 性能差、易死锁 |
 | **乐观锁 / 版本号** | 数据库 | 高并发友好 | 需业务字段配合 |
 | **状态机 + CAS** | 数据库 | 适合多状态流转 | 状态设计要严密 |
-| **Token / Idempotency-Key** | Redis | **通用方案、性能最好** | 需客户端配合 |
+| **Token / Idempotency-Key** | 持久幂等记录 + 数据库事务，Redis 可作缓存 | 通用请求去重与结果重放 | 需绑定身份和参数，外部副作用需单独对账 |
 
 ### 方案一：唯一索引（最简单）
 
@@ -94,68 +94,91 @@ return success();
 - 同一请求重复执行 → 第二次 `affected == 0`，但状态已是目标状态 → 当成功返回
 - 并发场景下也只有一个能修改成功，天然防双扣
 
-### 方案三：Token / Idempotency-Key（通用最强）
+### 方案三：Token / Idempotency-Key（持久去重与结果重放）
 
-Stripe、淘宝、支付宝都用这个方案。**让客户端在每次请求前申请一个唯一 Token，服务端用 Redis 去重**：
+**同一次业务意图的重试复用同一个 key，新业务意图才使用新 key。** key 可以由客户端生成，也可以预先申请，不应在每次网络重试前重新生成。服务端将它绑定到已认证的租户、用户、操作类型和请求指纹。
 
-```
-1. 客户端 → 服务端: GET /api/idempotency-token
-                ← 返回 token = "abc123..."
-
-2. 客户端 → 服务端: POST /api/orders
-                Header: Idempotency-Key: abc123
-                Body: { ... }
-
-3. 服务端处理:
-   ① Redis SET nx idemkey:abc123 → 同时存"处理中"状态
-   ② 成功执行业务
-   ③ Redis 更新为 {"status": "done", "response": <result>}
-   ④ 后续重复请求 → Redis 命中 → 直接返回缓存的 response
-```
-
-#### 关键 Lua 脚本（保证原子性）
-
-```lua
--- KEYS[1] = idemkey:abc123, ARGV[1] = ttl(秒)
-local v = redis.call('GET', KEYS[1])
-if v then
-    return v                             -- 已存在 → 返回缓存结果（可能是"处理中"或最终结果）
-else
-    redis.call('SET', KEYS[1], 'PROCESSING', 'EX', ARGV[1])
-    return 'NEW'                          -- 第一次进来
-end
-```
-
-```java
-public OrderResponse createOrder(String idempotencyKey, OrderRequest req) {
-    String cached = redis.eval(LUA_SET_NX, idempotencyKey, "300");
-
-    if ("NEW".equals(cached)) {
-        // 首次请求：执行业务 + 写回结果
-        OrderResponse resp = doCreateOrder(req);
-        redis.setex(idempotencyKey, 300, JSON.toJSONString(resp));
-        return resp;
-    } else if ("PROCESSING".equals(cached)) {
-        // 上一次请求还在处理中
-        throw new ConflictException("请求处理中，请稍后");
-    } else {
-        // 命中已完成的结果，直接返回
-        return JSON.parseObject(cached, OrderResponse.class);
-    }
-}
-```
-
-#### Token 方案的关键细节（生产踩过的坑）
-
-::: warning ⚠️ 三个常见错误
-
-1. **TTL 设太短** → 用户慢，重试时缓存过期了，重复创建
-2. **TTL 设太长** → 客户端如果复用 token 会被误判重复
-3. **没区分"处理中"和"已完成"** → 第二次请求拿到 "PROCESSING" 不知道该等还是该报错
-
-**最佳实践**：TTL = 业务最长可能耗时 × 5，状态机区分 NEW / PROCESSING / DONE。
-
+::: warning Redis 去重不是业务事务
+“Redis 标记 PROCESSING → 创建订单 → Redis 写 DONE”存在崩溃窗口：订单已提交但 DONE 尚未写入，TTL 过期后重试会再次创建。Lua 只能保证 Redis 内部原子性，不能原子提交数据库订单；续租或延长 TTL 都不能消除这个窗口。
 :::
+
+#### 本地数据库操作：幂等记录与订单同事务提交
+
+以 MySQL/InnoDB 为例，新增持久幂等记录。这里的 `PROCESSING` 只存在于创建订单的未提交事务中，**不会先独立提交占位记录再执行业务**。
+
+```sql
+CREATE TABLE idempotency_requests (
+    tenant_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    operation VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    idempotency_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    order_id BIGINT,
+    http_status SMALLINT,
+    response_json JSON,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, user_id, operation, idempotency_key)
+) ENGINE=InnoDB;
+```
+
+`request_hash` 根据验证并规范化后的业务字段、API 版本计算，例如订单业务号、商品、数量、金额和币种；排除 Trace ID 等传输字段。同 key 不同指纹返回 409，不复用旧响应。租户和用户从认证上下文取得，不信任请求体自行指定。
+
+**事务流程（伪代码，所有数据库操作使用同一主库连接和事务）：**
+
+```text
+校验身份、操作权限、key 格式和请求参数
+scope = (tenant_id, user_id, operation, idempotency_key)
+request_hash = hash(规范化业务参数)
+
+BEGIN
+    尝试插入 scope、request_hash、PROCESSING
+    同 scope 主键冲突时仅保留原记录，不覆盖指纹或结果
+    SELECT 幂等记录 FOR UPDATE
+    指纹不同 -> ROLLBACK，返回 409
+    已为 DONE -> 复核结果访问权限，结束事务后重放原响应
+
+    按稳定业务号创建订单，受数据库业务唯一键保护
+    若业务号已存在，校验归属与原始业务参数，仅复用同一业务意图
+    保存 order_id、原 HTTP 状态码、响应和 DONE
+COMMIT
+
+返回原始业务响应；可选地异步填充 Redis 缓存
+```
+
+沿用前文 `orders(user_id, out_trade_no)` 唯一键时，要求 `user_id` 全局唯一；多租户本地用户编号则必须把 `tenant_id` 同时加入订单查找条件和唯一键。业务号在重试中保持不变。查询后插入本身不具备原子性，必须由唯一约束兜底；并发唯一键冲突或死锁时回滚整个事务，再有界重试并读取已提交记录，不能捕获任意数据库异常后直接继续。
+
+同一 scope 的并发请求会在唯一键或行锁处等待；等待超时可返回处理中/稍后重试，但不能绕开锁创建另一个订单。本地示例只包含短事务数据库操作，不在持锁期间请求 LLM、支付接口或等待用户确认。
+
+| 故障注入点 | 持久状态 | 同 key 重试结果 |
+|------|------|------|
+| 写订单后、COMMIT 前进程崩溃 | 订单和幂等记录一起回滚 | 可以重新执行，不留下半份成功 |
+| COMMIT 成功、HTTP 响应丢失 | 订单与 DONE 同时存在 | 读取主库记录，重放原状态码与响应 |
+| Redis 写入失败或缓存过期 | 数据库记录仍然存在 | 回源持久幂等记录，不再次创建 |
+| COMMIT 结果未知 | 可能已提交，不能直接判为失败 | 在主库按原 scope 查询/重试，由同一约束串行判定 |
+| 同 key 改变订单金额 | 原指纹不匹配 | 409，不创建订单、不返回他人的结果 |
+
+这依赖数据库配置所提供的持久性与故障转移保证。如果已确认提交可能在主从切换后丢失，应用不能仅靠幂等表宣称端到端零重复，应匹配所需的 RPO 和业务对账策略。
+
+#### 外部支付或退款：稳定动作 ID + Outbox + 对账
+
+外部副作用不能与本地数据库做普通单库事务。此时用本地事务写入动作账本和 Outbox，由 Worker 以**持久化的稳定 action_id**调用下游；下游需原子支持幂等并允许按动作 ID 查询结果。
+
+| 状态 | 行为 |
+|------|------|
+| PENDING / SUBMITTED | 返回同一任务或动作 ID，不新建业务动作 |
+| SUCCEEDED | 从持久回执返回已确认结果 |
+| UNKNOWN | 超时不等于失败；按原 action_id 查询，契约允许时以原键重试 |
+| FAILED | 只有权威结果确认失败才进入此状态 |
+
+若下游既无幂等支持也无法查询业务状态，应转人工对账或改造接口，不能自动换一个 key 重试。Outbox 保证意图可恢复，不单独保证外部业务恰好执行一次。
+
+#### 保留期与缓存边界
+
+- **缓存 TTL 只影响性能**，不能决定是否重新执行业务；命中也要验证身份、请求指纹和当前访问权限，只缓存已提交的结果。
+- **持久幂等记录保留期**由客户端重试窗口、业务生命周期和审计要求决定，不是“最长耗时乘 5”。长期操作要保留业务唯一键或去重墓碑，明确超期 key 的拒绝策略；一旦连去重信息也删除，就不能承诺识别任意时间后的重复请求。
+- **不同 key 的重复业务请求**仍由稳定业务号的唯一约束兜底；业务参数哈希不是业务意图 ID，两次合法购买可以有相同商品和金额。
+- **回归测试**至少覆盖并发同 key、同 key 不同参数、提交前后崩溃、缓存清空、不同用户复用相同 key，以及外部调用成功但回执丢失。
 
 ### 方案选型决策表
 
@@ -182,7 +205,7 @@ public OrderResponse createOrder(String idempotencyKey, OrderRequest req) {
 └───────────────────────────────────────┘
 ```
 
-三层缺一不可：客户端能挡掉绝大部分误点，网关挡住重试，业务层是真正的最后防线。
+客户端和网关用于减少误点及重复流量，业务持久约束才保证幂等。图中的参数哈希只能作为短时防抖信号，不能替代业务意图 ID；两次合法购买可以具有相同请求体。即使客户端或 Redis 不可用，也不能绕过数据库幂等记录和业务唯一键。
 
 ---
 
@@ -403,7 +426,7 @@ public Product getWithLogicalExpire(long id) {
 
 **Q：怎么实现 POST 接口的幂等？**
 
-> 三个常用方案：①创建型用业务唯一键 + 数据库唯一索引（最简单）；②状态流转型用状态机 + CAS UPDATE（订单/支付天然适用）；③通用方案是 Idempotency-Key——客户端请求前申请 token，服务端 Redis 缓存请求结果，重复请求直接返回缓存。生产中三层防线：客户端 disable + 网关 Redis SETNX + 业务层强幂等。
+> 三个常用方案：①创建型用稳定业务号 + 数据库唯一索引；②状态流转用状态机 + CAS；③通用接口将 Idempotency-Key 绑定认证身份、操作和请求指纹，幂等记录与本地业务同事务提交，重复请求读取已提交结果。Redis 只作缓存，不能解决业务提交后的崩溃窗口。外部支付/退款另用持久动作 ID、下游幂等和未知结果对账。
 
 **Q：怎么处理 Redis 热点 Key？**
 
@@ -415,4 +438,4 @@ public Product getWithLogicalExpire(long id) {
 
 **Q：幂等性的 Idempotency-Key 该谁生成？TTL 多久？**
 
-> **客户端生成**（UUID 即可），服务端不应主动给 token——主动给 token 增加一次往返延迟。TTL 设置为**业务最长可能耗时 × 5**：太短会让慢请求重试时缓存失效导致重复执行；太长会让客户端正常复用 token 时被误判重复。Stripe 默认 24 小时，多数业务 1-5 分钟够。
+> 客户端生成或服务端预发均可，关键是同一业务意图的重试复用原 key，同 key 改参数要拒绝。缓存 TTL 只影响性能；持久幂等记录按重试窗口、业务生命周期和审计要求保留。超期行为要有明确契约，长期去重依赖稳定业务唯一键或墓碑，不能根据“最长耗时乘 5”承诺不重复执行。

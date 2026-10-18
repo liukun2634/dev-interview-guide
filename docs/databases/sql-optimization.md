@@ -117,17 +117,21 @@ WHERE u.status = 'active';
 
 #### OR → UNION ALL
 
-`OR` 连接不同列的条件时，索引合并效率低，改用 `UNION ALL` 可各自走索引。
+`OR` 连接不同列时，可以评估拆成两个索引扫描，但 `UNION ALL` 不去重，必须使两个分支互斥，否则同时满足条件的记录会返回两次。是否更快需要通过执行计划和实际数据验证。
 
 ```sql
 -- 优化前
 SELECT * FROM users WHERE name = 'Alice' OR email = 'alice@example.com';
 
--- 优化后（name 和 email 各有单列索引时更高效）
+-- 等价改写：第二个分支排除第一个分支已返回的记录
 SELECT * FROM users WHERE name = 'Alice'
 UNION ALL
-SELECT * FROM users WHERE email = 'alice@example.com';
+SELECT * FROM users
+WHERE email = 'alice@example.com'
+    AND (name <> 'Alice' OR name IS NULL);
 ```
+
+`name IS NULL` 不能省略：SQL 的 NULL 比较结果为 UNKNOWN，单写 `name <> 'Alice'` 会漏掉姓名为空但邮箱匹配的记录。也可以评估 `UNION` 去重，但它按整个投影行去重；只有投影保留唯一键等条件成立时，才不会误合并原本不同的记录。
 
 #### 深分页优化
 
@@ -149,23 +153,45 @@ INNER JOIN (
 SELECT * FROM orders WHERE id > 100000 ORDER BY id LIMIT 10;
 ```
 
-#### NOT IN → NOT EXISTS / LEFT JOIN IS NULL
+#### NOT IN → NOT EXISTS / LEFT JOIN IS NULL：先检查 NULL
 
-`NOT IN` 对 NULL 值处理有陷阱，且性能较差。
+以下三种写法在 **`orders.user_id` 和 `blacklist.id` 都有 NOT NULL 约束**时等价。不能仅为了性能就改变 NULL 的业务语义，也不存在某种写法对所有数据分布都最快的保证。
 
 ```sql
--- 优化前
+-- 前提：orders.user_id、blacklist.id 均为 NOT NULL
 SELECT * FROM orders WHERE user_id NOT IN (SELECT id FROM blacklist);
 
--- 优化方案一：NOT EXISTS
+-- 等价方案一：NOT EXISTS
 SELECT * FROM orders o
 WHERE NOT EXISTS (SELECT 1 FROM blacklist b WHERE b.id = o.user_id);
 
--- 优化方案二：LEFT JOIN IS NULL（通常性能最优）
+-- 等价方案二：LEFT JOIN IS NULL
 SELECT o.* FROM orders o
 LEFT JOIN blacklist b ON o.user_id = b.id
 WHERE b.id IS NULL;
 ```
+
+若字段允许 NULL，三种朴素写法的行为不同：
+
+| 情况 | 原始 NOT IN | 上面的朴素反连接 |
+|------|------|------|
+| 黑名单含 NULL，订单用户未匹配 | UNKNOWN，被 WHERE 排除 | 返回该订单 |
+| 订单 user_id 为 NULL，黑名单非空 | UNKNOWN，被 WHERE 排除 | 返回该订单 |
+| 黑名单为空 | 返回所有订单，包括 user_id 为 NULL 的订单 | 返回所有订单 |
+
+需要**保留原始 NOT IN 在 WHERE 中的筛选结果**时，可用下面的 NULL 感知写法；如果业务实际需要“只排除匹配用户”，则是语义调整，应单独确认，而不是称为等价优化。
+
+```sql
+SELECT * FROM orders o
+WHERE NOT EXISTS (
+    SELECT 1 FROM blacklist b
+    WHERE b.id = o.user_id
+       OR b.id IS NULL
+       OR o.user_id IS NULL
+);
+```
+
+该写法也保留空黑名单的行为：子查询没有任何行，所以 NULL 用户仍被返回。新增条件可能影响索引使用，先验证结果一致，再比较执行计划。
 
 #### SELECT * → 指定列
 
@@ -389,7 +415,7 @@ SELECT * FROM orders WHERE id IN (
 | **前缀通配** | `WHERE name LIKE '%张'` | 改用全文索引或反向存储 |
 | **OR 条件部分无索引** | `WHERE a=1 OR b=2`（b 无索引）| 给 b 建索引或拆 UNION |
 | **联合索引违反最左前缀** | 索引 `(a,b,c)` 但 `WHERE b=1` | 调整索引顺序或 SQL |
-| **NOT IN / != / <>** | `WHERE status != 'paid'` | 改写为 `IN ('pending','cancelled')` |
+| **NOT IN / != / <>** | `WHERE status != 'paid'` | 先检查 NULL、状态全集与选择性；不能用不完整的 IN 列表替换，也不一定失效 |
 | **`IS NOT NULL`** | 不一定走索引（看选择性）| 业务允许的话改为非 NULL 列 + 默认值 |
 
 ### 场景 3：JOIN 慢 — 小表驱动大表 + Hash Join (8.0)
@@ -505,7 +531,7 @@ SELECT COUNT(col) FROM t; -- 最慢，需判断 col 非空（且语义不同）
 | Extra 出现 Using temporary | GROUP BY / ORDER BY 产生临时表，检查索引覆盖情况 |
 | 分页接口越翻越慢 | 深分页问题，延迟关联或游标分页 |
 | 大表 JOIN 无索引 | Block Nested Loop 或 Hash Join 降级，务必给关联字段加索引 |
-| `NOT IN` + 子查询 | 改写为 LEFT JOIN IS NULL，避免 NULL 陷阱 |
+| `NOT IN` + 子查询 | 先验证两侧 NULL 约束与空集语义，再比较等价反连接的执行计划 |
 | `COUNT(column)` 结果异常 | 检查列是否含 NULL，考虑改用 `COUNT(*)` |
 
 ---
