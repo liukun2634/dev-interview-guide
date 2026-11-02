@@ -20,7 +20,7 @@ title: 序列与回文 DP
 
 - **两个字符串/数组**之间的操作：将 A 变成 B 最少需要几步？A 和 B 有多少公共部分？
 - **匹配、对齐、变换**：编辑距离、字符串交错、通配符匹配
-- **单序列的子序列问题**：最长递增子序列、最长公共子序列（退化为单串与自身）
+- **单序列的子序列问题**：最长递增子序列；LCS 本身是双串问题，与自身求 LCS 只会得到整个字符串，不能当作通用降维技巧
 - **计数问题**：A 中有多少个子序列等于 B？
 - 问题涉及"不要求连续"——注意区分**子序列**（可跳过）和**子数组**（必须连续）
 
@@ -32,7 +32,7 @@ title: 序列与回文 DP
 
 **单串问题：**
 
-$$dp[i] = \text{考虑前 } i \text{ 个元素时的最优解（通常以第 } i \text{ 个元素结尾）}$$
+单串状态可以是“前缀的答案”，也可以是“必须以当前元素结尾的答案”，二者不能混写。
 
 例如，最长递增子序列中 `dp[i]` = 以 `nums[i]` 结尾的 LIS 长度。
 
@@ -46,25 +46,25 @@ $$dp[i][j] = \text{串 A 的前 } i \text{ 个字符与串 B 的前 } j \text{ �
 
 #### 第二步：推导转移方程——看最后一对元素的决策
 
-双串 DP 转移的核心思路：**考虑 A[i] 和 B[j] 这最后一对元素，它们之间发生了什么？**
+双串 DP 转移的核心思路：**状态表示前 i、j 个元素时，最后一对元素是 A[i-1] 和 B[j-1]，它们之间发生了什么？**
 
-**情况一：A[i] == B[j]（字符匹配）**
+**情况一：A[i-1] == B[j-1]（字符匹配）**
 
 如果最后两个字符相等，我们通常可以"白拿"这个匹配，从 `dp[i-1][j-1]` 转移：
 
 $$dp[i][j] = dp[i-1][j-1] + \text{（匹配的收益）}$$
 
-**情况二：A[i] != B[j]（字符不匹配）**
+**情况二：A[i-1] != B[j-1]（字符不匹配）**
 
 不匹配时，我们有三个选择，每个选择对应一个转移方向：
 
 | 操作 | 转移来源 | 几何含义 |
 |------|---------|---------|
-| 删除 A[i]（或跳过 A[i]） | `dp[i-1][j]` | 在表格中**向上**移动一格 |
-| 删除 B[j]（或跳过 B[j]） | `dp[i][j-1]` | 在表格中**向左**移动一格 |
-| 替换（A[i] 换成 B[j]） | `dp[i-1][j-1]` | 在表格中**斜向左上**移动 |
+| 删除 A[i-1]（LCS 中为跳过） | `dp[i-1][j]` | 在表格中**向上**移动一格 |
+| 向 A 插入 B[j-1]（LCS 中为跳过 B 的尾字符） | `dp[i][j-1]` | 在表格中**向左**移动一格 |
+| 替换 A[i-1] 为 B[j-1] | `dp[i-1][j-1]` | 在表格中**斜向左上**移动 |
 
-取三者的最优值（最小代价或最大收益）。
+这三个操作适用于编辑距离，其他问题只能使用题意允许的转移：LCS 没有替换收益，不同子序列计数也不能任意跳过目标串。不能看到相同的二维表形状，就照搬三方向取最优的公式。
 
 #### 第三步：关键区分——子序列 vs 子数组
 
@@ -74,7 +74,7 @@ $$dp[i][j] = dp[i-1][j-1] + \text{（匹配的收益）}$$
 
 ```
 // 最长公共子序列——不匹配时，从相邻状态继承
-if (A[i] == B[j])  dp[i][j] = dp[i-1][j-1] + 1;
+if (A[i-1] == B[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
 else               dp[i][j] = max(dp[i-1][j], dp[i][j-1]);
 // 不匹配时 dp[i][j] 不归零，因为之前的公共子序列还在
 ```
@@ -83,7 +83,7 @@ else               dp[i][j] = max(dp[i-1][j], dp[i][j-1]);
 
 ```
 // 最长公共子数组——不匹配时，dp 归零
-if (A[i] == B[j])  dp[i][j] = dp[i-1][j-1] + 1;
+if (A[i-1] == B[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
 else               dp[i][j] = 0;  // 必须从头开始
 // 答案是所有 dp[i][j] 中的最大值，而非 dp[m][n]
 ```
@@ -103,9 +103,9 @@ else               dp[i][j] = 0;  // 必须从头开始
 **路径回溯技巧**（还原具体操作序列）：
 
 从 `dp[m][n]` 反向追踪：
-- 若 `A[i] == B[j]`，说明此处匹配，移动到 `dp[i-1][j-1]`
-- 若来自 `dp[i-1][j]`，说明删除了 A[i]，向上移动
-- 若来自 `dp[i][j-1]`，说明删除了 B[j]，向左移动
+- 若 `A[i-1] == B[j-1]` 且匹配满足对应转移，移动到 `dp[i-1][j-1]`
+- 若来自 `dp[i-1][j]`，编辑距离中删除 A[i-1]，向上移动
+- 若来自 `dp[i][j-1]`，编辑距离中向 A 插入 B[j-1]，向左移动
 - 若来自 `dp[i-1][j-1]`（不匹配情况），说明替换，斜向移动
 
 ---
@@ -122,15 +122,15 @@ $$dp[i][j] = \text{将 word1 的前 } i \text{ 个字符变成 word2 的前 } j 
 
 **第二步：转移方程**
 
-考虑 word1[i] 和 word2[j] 这最后一对字符：
+考虑 word1[i-1] 和 word2[j-1] 这最后一对字符：
 
-- **若 word1[i] == word2[j]**：最后一个字符天然匹配，不需要任何操作，直接继承前面的结果：
+- **若 word1[i-1] == word2[j-1]**：最后一个字符天然匹配，不需要任何操作，直接继承前面的结果：
   $$dp[i][j] = dp[i-1][j-1]$$
 
-- **若 word1[i] != word2[j]**：三种操作各对应一个转移方向：
-  - **插入**（向 word1 插入 word2[j]）：等价于 word1 前 i 个字符已经变成了 word2 前 j-1 个，再插入一个字符：$dp[i][j-1] + 1$
-  - **删除**（删除 word1[i]）：等价于 word1 前 i-1 个字符已经变成了 word2 前 j 个：$dp[i-1][j] + 1$
-  - **替换**（将 word1[i] 替换为 word2[j]）：等价于 word1 前 i-1 个字符已经变成了 word2 前 j-1 个，再替换最后一个：$dp[i-1][j-1] + 1$
+- **若 word1[i-1] != word2[j-1]**：三种操作各对应一个转移方向：
+    - **插入**（向 word1 插入 word2[j-1]）：先完成目标的前 j-1 个字符，再插入最后一个：$dp[i][j-1] + 1$
+    - **删除**（删除 word1[i-1]）：先把源串前 i-1 个字符变成目标前 j 个：$dp[i-1][j] + 1$
+    - **替换**（将 word1[i-1] 替换为 word2[j-1]）：先转换前面的两个前缀，再替换最后一个：$dp[i-1][j-1] + 1$
 
 $$dp[i][j] = \min(dp[i][j-1], dp[i-1][j], dp[i-1][j-1]) + 1$$
 
@@ -168,10 +168,10 @@ class Solution {
                 } else {
                     // 三种操作取最小，各加 1 步
                     dp[i][j] = Math.min(
-                        dp[i][j - 1],      // 插入：为 word1[0..i] 插入 word2[j]
+                        dp[i][j - 1],      // 插入 word2[j-1]
                         Math.min(
-                            dp[i - 1][j],      // 删除：删除 word1[i]
-                            dp[i - 1][j - 1]   // 替换：word1[i] → word2[j]
+                            dp[i - 1][j],      // 删除 word1[i-1]
+                            dp[i - 1][j - 1]   // 替换 word1[i-1] 为 word2[j-1]
                         )
                     ) + 1;
                 }
@@ -199,6 +199,72 @@ class Solution {
 | 最长重复子数组 | [LC 718](https://leetcode.cn/problems/maximum-length-of-repeated-subarray/) | 要求**连续**（子数组），不匹配时 dp 归零 | 不匹配时 `dp[i][j] = 0`；答案是表格中的最大值而非右下角 |
 
 ---
+
+### 完整题解：最长公共子序列 {#longest-common-subsequence}
+
+[LeetCode 1143](https://leetcode.cn/problems/longest-common-subsequence/) 的状态 `dp[row][column]` 表示两个前缀的 LCS 长度。相等时用左上角加一，不等时取上方和左方的较大值；空前缀边界全部为 0。
+
+这里保存的是“两个前缀中的最优子序列”，不要求最后两个字符被选中。因此不匹配时不能归零，答案也可以直接取整个前缀对应的右下角。
+
+```java
+public int longestCommonSubsequence(String first, String second) {
+    int[] dp = new int[second.length() + 1];
+    for (int row = 1; row <= first.length(); row++) {
+        int diagonal = 0;
+        for (int column = 1; column <= second.length(); column++) {
+            int upper = dp[column];
+            if (first.charAt(row - 1) == second.charAt(column - 1)) {
+                dp[column] = diagonal + 1;
+            } else {
+                dp[column] = Math.max(upper, dp[column - 1]);
+            }
+            diagonal = upper;
+        }
+    }
+    return dp[second.length()];
+}
+```
+
+对 `abcde` 与 `ace`，答案为 3；对 `abc` 与 `def`，答案为 0。时间 $O(mn)$，空间 $O(n)$，交换两串使较短串作为列可把空间降到 $O(\min(m,n))$。`diagonal` 保存上一行的左上角，不是本行刚更新的左边值。
+
+**还原一条 LCS**：保留二维长度表，从右下角出发，相等时记录字符并向左上走，不等时走向保持当前最优长度的上方或左方，最后反转记录。平局可以任选一条；若要字典序最小或全部 LCS，就需要额外规则，不能声称任意回溯自动满足。
+
+**与最长重复子数组对照**：LC 718 的状态要求两个元素必须同时作为连续段结尾，所以不匹配时为 0、答案取整张表的最大值。例如 `[1,2,3]` 与 `[1,3]` 的 LCS 长度是 2，但最长公共连续段只有 1。
+
+### 完整题解：不同的子序列 {#distinct-subsequences}
+
+[LeetCode 115](https://leetcode.cn/problems/distinct-subsequences/) 统计从 source 中删除若干位置，得到 target 的方案数。位置不同即为不同方案；`rabbbit` 变成 `rabbit` 有 3 种方式。
+
+设 `ways[row][matched]` 表示源串前 row 个字符构成目标前 matched 个字符的方案数。按“是否使用源串最后这个位置”划分：
+
+```text
+不使用 source[row-1]：ways[row-1][matched]
+使用 source[row-1]：只有字符相等时，增加 ways[row-1][matched-1]
+```
+
+两类方案按是否包含这个位置互斥，故可以相加。不能加 `ways[row][matched-1]`：目标的字符不能随意丢弃。空目标有一种方案（全部不选），非空目标不能从空源串产生。
+
+```java
+public BigInteger numDistinctExact(String source, String target) {
+    BigInteger[] ways = new BigInteger[target.length() + 1];
+    Arrays.fill(ways, BigInteger.ZERO);
+    ways[0] = BigInteger.ONE;
+    for (int sourceIndex = 0; sourceIndex < source.length(); sourceIndex++) {
+        for (int matched = Math.min(sourceIndex + 1, target.length()); matched >= 1; matched--) {
+            if (source.charAt(sourceIndex) == target.charAt(matched - 1)) {
+                ways[matched] = ways[matched].add(ways[matched - 1]);
+            }
+        }
+    }
+    return ways[target.length()];
+}
+```
+
+需要 `java.math.BigInteger` 和 `java.util.Arrays`。按 Java 字符下标处理，适用于原题字符范围。这里保留精确计数，不随意取模；原题需要 int 返回值时，可对最终结果调用 `intValueExact()` 并使用题目给定的结果范围保证。
+
+**为什么倒序？** 一次处理只能使用当前源字符一次。若正序处理 source=`a`、target=`aa`，刚形成 `ways[1]=1` 后又拿它更新 `ways[2]`，就会把同一个 a 使用两次。
+
+**为什么使用 BigInteger？** 最终答案较小，不代表所有前缀计数都小。例如源串大量 a 后接 b，目标大量 a 后接 c，最终答案为 0，但中间“选择若干个 a”的组合数仍可超过 long。复杂度是 $O(mn)$ 次大整数操作、$O(n)$ 个计数槽位；大整数的位数增长也要计入实际成本。
 
 ### 进阶优化：LIS 的 $O(n \log n)$ 贪心 + 二分
 

@@ -48,6 +48,16 @@ const sources = [
     .map(marker => snippet('arrays/binary-search.md', marker))),
   wrap('WindowExample', snippet('arrays/sliding-window.md', 'public String minWindow')),
   wrap('LisExample', snippet('dynamic-programming/dp-optimization.md', 'public int[] longestIncreasingSubsequence')),
+    wrap('GroupKnapsackExample', snippet('dynamic-programming/knapsack-dp.md', 'public int groupKnapsackMaxValue')),
+    wrap('LinearDpExamples', ...['public int maxProduct', 'public boolean wordBreak', 'public int maximalSquare', 'public int calculateMinimumHP']
+        .map(marker => snippet('dynamic-programming/linear-dp.md', marker))),
+    wrap('KnapsackExamples', ...['public int findTargetSumWays', 'public int completeKnapsackMinCoins', 'public int completeKnapsackCountCombinations', 'public int completeKnapsackCountPermutations']
+        .map(marker => snippet('dynamic-programming/knapsack-dp.md', marker))),
+    wrap('SequenceDpExamples', ...['public int longestCommonSubsequence', 'public BigInteger numDistinctExact']
+        .map(marker => snippet('dynamic-programming/sequence-dp.md', marker))),
+    'class TreeNode { int val; TreeNode left, right; TreeNode(int value) { val = value; } }',
+    renameSolution(snippet('dynamic-programming/tree-dp.md', 'public int maxPathSum'), 'MaximumTreePathExample'),
+    renameSolution(snippet('dynamic-programming/tree-dp.md', 'public int rob(TreeNode root)'), 'TreeRobExample'),
   snippet('dynamic-programming/dp-optimization.md', 'class PrefixSumDPExample'),
   renameSolution(snippet('dynamic-programming/dp-optimization.md', 'public int sumSubarrayMins'), 'MinimumsExample'),
   renameSolution(snippet('dynamic-programming/probability-dp.md', 'public double knightProbability('), 'ForwardKnight'),
@@ -180,6 +190,269 @@ public class AlgorithmExamplesCheck {
             check(compositions.countWays(size)==expected.mod(BigInteger.valueOf(1000000007)).longValue(),"composition count");
         }
         invalid(()->compositions.countWays(-1));
+    }
+
+    private static boolean bruteWordBreak(String text, int start, List<String> words) {
+        if (start == text.length()) return true;
+        for (String word : words) {
+            if (text.startsWith(word, start) && bruteWordBreak(text, start + word.length(), words)) return true;
+        }
+        return false;
+    }
+
+    private static int bruteSquare(char[][] matrix) {
+        int best = 0;
+        for (int row = 0; row < matrix.length; row++) {
+            for (int column = 0; column < matrix[0].length; column++) {
+                for (int side = 1; row + side <= matrix.length && column + side <= matrix[0].length; side++) {
+                    boolean allOnes = true;
+                    for (int scanRow = row; scanRow < row + side; scanRow++) {
+                        for (int scanColumn = column; scanColumn < column + side; scanColumn++) {
+                            if (matrix[scanRow][scanColumn] != '1') allOnes = false;
+                        }
+                    }
+                    if (allOnes) best = Math.max(best, side * side);
+                }
+            }
+        }
+        return best;
+    }
+
+    private static int bruteHealth(int[][] dungeon, int row, int column, int total, int minimum) {
+        int nextTotal = total + dungeon[row][column];
+        int nextMinimum = Math.min(minimum, nextTotal);
+        if (row == dungeon.length - 1 && column == dungeon[0].length - 1) return 1 - nextMinimum;
+        int best = Integer.MAX_VALUE;
+        if (row + 1 < dungeon.length) best = Math.min(best, bruteHealth(dungeon, row + 1, column, nextTotal, nextMinimum));
+        if (column + 1 < dungeon[0].length) best = Math.min(best, bruteHealth(dungeon, row, column + 1, nextTotal, nextMinimum));
+        return best;
+    }
+
+    private static int bruteSigns(int[] numbers, int position, int sum, int target) {
+        if (position == numbers.length) return sum == target ? 1 : 0;
+        return bruteSigns(numbers, position + 1, sum + numbers[position], target)
+            + bruteSigns(numbers, position + 1, sum - numbers[position], target);
+    }
+
+    private static int bruteCoinCombinations(int[] coins, int position, int remaining) {
+        if (position == coins.length) return remaining == 0 ? 1 : 0;
+        int total = 0;
+        for (int used = 0; used * coins[position] <= remaining; used++) {
+            total += bruteCoinCombinations(coins, position + 1, remaining - used * coins[position]);
+        }
+        return total;
+    }
+
+    private static int bruteCoinPermutations(int[] coins, int remaining) {
+        if (remaining == 0) return 1;
+        int total = 0;
+        for (int coin : coins) if (coin <= remaining) total += bruteCoinPermutations(coins, remaining - coin);
+        return total;
+    }
+
+    private static int minimumCoinsBfs(int[] coins, int amount) {
+        int[] distance = new int[amount + 1];
+        Arrays.fill(distance, -1);
+        distance[0] = 0;
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        queue.add(0);
+        while (!queue.isEmpty()) {
+            int sum = queue.remove();
+            for (int coin : coins) {
+                int next = sum + coin;
+                if (next <= amount && distance[next] == -1) {
+                    distance[next] = distance[sum] + 1;
+                    queue.add(next);
+                }
+            }
+        }
+        return distance[amount];
+    }
+
+    private static boolean isSubsequence(String candidate, String target) {
+        int matched = 0;
+        for (int index = 0; index < target.length() && matched < candidate.length(); index++) {
+            if (candidate.charAt(matched) == target.charAt(index)) matched++;
+        }
+        return matched == candidate.length();
+    }
+
+    private static int bruteTreePath(List<TreeNode> nodes) {
+        List<List<Integer>> neighbors = new ArrayList<>();
+        for (int position = 0; position < nodes.size(); position++) neighbors.add(new ArrayList<>());
+        for (int position = 0; position < nodes.size(); position++) {
+            TreeNode node = nodes.get(position);
+            for (TreeNode child : new TreeNode[]{node.left, node.right}) {
+                if (child == null) continue;
+                int childIndex = nodes.indexOf(child);
+                neighbors.get(position).add(childIndex);
+                neighbors.get(childIndex).add(position);
+            }
+        }
+        int best = Integer.MIN_VALUE;
+        for (int start = 0; start < nodes.size(); start++) {
+            boolean[] visited = new boolean[nodes.size()];
+            ArrayDeque<int[]> queue = new ArrayDeque<>();
+            queue.add(new int[]{start, nodes.get(start).val});
+            visited[start] = true;
+            while (!queue.isEmpty()) {
+                int[] current = queue.remove();
+                best = Math.max(best, current[1]);
+                for (int next : neighbors.get(current[0])) {
+                    if (visited[next]) continue;
+                    visited[next] = true;
+                    queue.add(new int[]{next, current[1] + nodes.get(next).val});
+                }
+            }
+        }
+        return best;
+    }
+
+    private static int bruteTreeRob(List<TreeNode> nodes) {
+        int best = 0;
+        for (int mask = 0; mask < (1 << nodes.size()); mask++) {
+            boolean valid = true;
+            int sum = 0;
+            for (int position = 0; position < nodes.size(); position++) {
+                if ((mask & (1 << position)) == 0) continue;
+                TreeNode node = nodes.get(position);
+                sum += node.val;
+                for (TreeNode child : new TreeNode[]{node.left, node.right}) {
+                    if (child != null && (mask & (1 << nodes.indexOf(child))) != 0) valid = false;
+                }
+            }
+            if (valid) best = Math.max(best, sum);
+        }
+        return best;
+    }
+
+    private static void dynamicProgramming() {
+        GroupKnapsackExample grouped = new GroupKnapsackExample();
+        check(grouped.groupKnapsackMaxValue(List.of(List.of(0, 1)), new int[]{0, 0}, new int[]{3, 5}, 0) == 5,
+            "zero-weight items in one group must not combine");
+        check(grouped.groupKnapsackMaxValue(List.of(List.of(0, 1), List.of(2)), new int[]{0, 0, 0}, new int[]{3, 5, 7}, 0) == 12,
+            "zero-weight choices across different groups may combine");
+        check(grouped.groupKnapsackMaxValue(List.of(List.of(0, 1)), new int[]{1, 2}, new int[]{3, 5}, 3) == 5,
+            "one item per group");
+        LinearDpExamples linear = new LinearDpExamples();
+        check(linear.maxProduct(new int[]{-2, 3, -4}) == 24, "negative minimum becomes maximum");
+        check(linear.maxProduct(new int[]{-2}) == -2, "nonempty maximum product");
+        check(linear.maxProduct(new int[]{-2, 0, -1}) == 0, "zero splits product ranges");
+        check(linear.wordBreak("cars", List.of("car", "ca", "rs")), "longest-prefix greedy counterexample");
+        check(!linear.wordBreak("catsandog", List.of("cats", "dog", "sand", "and", "cat")), "unreachable suffix");
+        check(linear.wordBreak("", List.of()), "empty word-break prefix");
+        check(linear.maximalSquare(new char[0][0]) == 0, "empty square grid");
+        check(linear.maximalSquare(new char[][]{{'1', '0'}, {'1', '1'}}) == 1, "square needs all three neighbors");
+        check(linear.calculateMinimumHP(new int[][]{{-5}}) == 6, "negative final cell");
+        check(linear.calculateMinimumHP(new int[][]{{10}}) == 1, "positive final cell");
+        check(linear.calculateMinimumHP(new int[][]{{1, -10, 20}, {0, 0, 0}}) == 1, "maximum path sum is not minimum health");
+        check(linear.calculateMinimumHP(new int[][]{{-2,-3,3},{-5,-10,1},{10,30,-5}}) == 7, "dungeon known example");
+        List<String> candidates = List.of("a", "b", "aa", "ab", "ba", "bb", "aaa", "aab", "aba", "abb", "baa", "bab", "bba", "bbb");
+        for (int trial = 0; trial < 400; trial++) {
+            int[] values = new int[1 + random.nextInt(7)];
+            for (int index = 0; index < values.length; index++) values[index] = random.nextInt(7) - 3;
+            int expected = Integer.MIN_VALUE;
+            for (int start = 0; start < values.length; start++) {
+                int product = 1;
+                for (int end = start; end < values.length; end++) {
+                    product *= values[end];
+                    expected = Math.max(expected, product);
+                }
+            }
+            check(linear.maxProduct(values) == expected, "product versus all contiguous subarrays");
+            StringBuilder text = new StringBuilder();
+            int length = random.nextInt(9);
+            for (int index = 0; index < length; index++) text.append(random.nextBoolean() ? 'a' : 'b');
+            List<String> words = new ArrayList<>();
+            for (String word : candidates) if (random.nextBoolean()) words.add(word);
+            check(linear.wordBreak(text.toString(), words) == bruteWordBreak(text.toString(), 0, words), "word break versus all splits");
+            int rows = 1 + random.nextInt(4), columns = 1 + random.nextInt(4);
+            char[][] matrix = new char[rows][columns];
+            int[][] dungeon = new int[rows][columns];
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) {
+                    matrix[row][column] = random.nextBoolean() ? '1' : '0';
+                    dungeon[row][column] = random.nextInt(11) - 5;
+                }
+            }
+            check(linear.maximalSquare(matrix) == bruteSquare(matrix), "square versus direct cell scan");
+            check(linear.calculateMinimumHP(dungeon) == bruteHealth(dungeon, 0, 0, 0, 0), "dungeon versus all path prefix minima");
+        }
+        KnapsackExamples knapsack = new KnapsackExamples();
+        SequenceDpExamples sequences = new SequenceDpExamples();
+        check(knapsack.findTargetSumWays(new int[]{0, 0, 1}, 1) == 4, "target sum doubles zero choices");
+        check(knapsack.findTargetSumWays(new int[20], 0) == 1048576, "all-zero target sum");
+        check(knapsack.findTargetSumWays(new int[]{1, 2}, Integer.MIN_VALUE) == 0, "negative target range guard");
+        check(sequences.longestCommonSubsequence("abcde", "ace") == 3, "known LCS");
+        check(sequences.numDistinctExact("rabbbit", "rabbit").equals(BigInteger.valueOf(3)), "known distinct subsequences");
+        check(sequences.numDistinctExact("a", "aa").signum() == 0, "one source position cannot be reused");
+        check(sequences.numDistinctExact("", "").equals(BigInteger.ONE), "one empty subsequence");
+        check(sequences.numDistinctExact("a".repeat(100) + "b", "a".repeat(50) + "c").signum() == 0,
+            "large intermediate counts with zero final answer");
+        BigInteger binomial = BigInteger.ONE;
+        for (int count = 1; count <= 50; count++) {
+            binomial = binomial.multiply(BigInteger.valueOf(100 - count + 1)).divide(BigInteger.valueOf(count));
+        }
+        check(sequences.numDistinctExact("a".repeat(100), "a".repeat(50)).equals(binomial), "exact count above long range");
+        for (int mask = 1; mask < 32; mask++) {
+            List<Integer> selected = new ArrayList<>();
+            for (int coin = 1; coin <= 5; coin++) if ((mask & (1 << (coin - 1))) != 0) selected.add(coin);
+            int[] coins = selected.stream().mapToInt(Integer::intValue).toArray();
+            for (int amount = 0; amount <= 8; amount++) {
+                check(knapsack.completeKnapsackCountCombinations(coins, amount) == bruteCoinCombinations(coins, 0, amount), "coin combinations versus count enumeration");
+                check(knapsack.completeKnapsackCountPermutations(coins, amount) == bruteCoinPermutations(coins, amount), "coin permutations versus sequence enumeration");
+                check(knapsack.completeKnapsackMinCoins(coins, amount) == minimumCoinsBfs(coins, amount), "minimum coins versus BFS");
+            }
+        }
+        for (int trial = 0; trial < 400; trial++) {
+            int[] numbers = new int[random.nextInt(9)];
+            for (int position = 0; position < numbers.length; position++) numbers[position] = random.nextInt(5);
+            int target = random.nextInt(41) - 20;
+            check(knapsack.findTargetSumWays(numbers, target) == bruteSigns(numbers, 0, 0, target), "target sum versus all sign assignments");
+            StringBuilder first = new StringBuilder(), second = new StringBuilder();
+            int firstLength = random.nextInt(9), secondLength = random.nextInt(7);
+            for (int position = 0; position < firstLength; position++) first.append((char) ('a' + random.nextInt(3)));
+            for (int position = 0; position < secondLength; position++) second.append((char) ('a' + random.nextInt(3)));
+            int longest = 0, ways = 0;
+            for (int mask = 0; mask < (1 << first.length()); mask++) {
+                StringBuilder candidate = new StringBuilder();
+                for (int position = 0; position < first.length(); position++) if ((mask & (1 << position)) != 0) candidate.append(first.charAt(position));
+                if (isSubsequence(candidate.toString(), second.toString())) longest = Math.max(longest, candidate.length());
+                if (candidate.toString().equals(second.toString())) ways++;
+            }
+            check(sequences.longestCommonSubsequence(first.toString(), second.toString()) == longest, "LCS versus all subsequences");
+            check(sequences.numDistinctExact(first.toString(), second.toString()).equals(BigInteger.valueOf(ways)), "subsequence counts versus position masks");
+        }
+        MaximumTreePathExample paths = new MaximumTreePathExample();
+        TreeRobExample robber = new TreeRobExample();
+        TreeNode example = new TreeNode(-10);
+        example.left = new TreeNode(9); example.right = new TreeNode(20);
+        example.right.left = new TreeNode(15); example.right.right = new TreeNode(7);
+        check(paths.maxPathSum(example) == 42, "tree optimum excludes root");
+        check(paths.maxPathSum(new TreeNode(-3)) == -3, "nonempty negative tree and repeated calls");
+        TreeNode branching = new TreeNode(1);
+        branching.left = new TreeNode(2);
+        branching.left.left = new TreeNode(3); branching.left.right = new TreeNode(4);
+        check(paths.maxPathSum(branching) == 9, "three branches do not form one path");
+        invalid(() -> paths.maxPathSum(null));
+        for (int trial = 0; trial < 240; trial++) {
+            List<TreeNode> nodes = new ArrayList<>();
+            List<TreeNode> available = new ArrayList<>();
+            TreeNode root = new TreeNode(random.nextInt(21) - 10);
+            nodes.add(root); available.add(root);
+            int size = 1 + random.nextInt(8);
+            for (int position = 1; position < size; position++) {
+                TreeNode node = new TreeNode(random.nextInt(21) - 10);
+                TreeNode parent = available.get(random.nextInt(available.size()));
+                if (parent.left == null) parent.left = node;
+                else parent.right = node;
+                if (parent.left != null && parent.right != null) available.remove(parent);
+                nodes.add(node); available.add(node);
+            }
+            check(paths.maxPathSum(root) == bruteTreePath(nodes), "tree path versus all endpoint pairs");
+            for (TreeNode node : nodes) node.val = Math.abs(node.val);
+            check(robber.rob(root) == bruteTreeRob(nodes), "tree robber versus all independent node subsets");
+        }
     }
 
     private static void probabilities() {
@@ -368,7 +641,7 @@ public class AlgorithmExamplesCheck {
     }
 
     public static void main(String[] args) throws Exception {
-        arrays();probabilities();graphs();caches();limiters();
+        arrays();dynamicProgramming();probabilities();graphs();caches();limiters();
         System.out.println("PASS: "+checks+" Java assertions; arrays, DP, probabilities, shortest paths, SCC, LFU and rate limiters.");
     }
 }

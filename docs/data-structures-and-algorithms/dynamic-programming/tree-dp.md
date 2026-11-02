@@ -10,7 +10,7 @@ title: 树形 DP
 树形 DP = **后序遍历 + 状态从子节点向父节点汇聚**。关键在于：
 1. 明确每个节点需要向父节点"汇报"什么信息（定义返回状态）
 2. 区分"返回给父节点的值"与"全局最优答案"——两者往往不同
-3. 递归函数返回数组/元组，而非单一值
+3. 返回值由父节点需要的信息决定，可以是标量，也可以是数组/元组；不要为了套模板强加维度
 :::
 
 ## 识别信号
@@ -204,6 +204,72 @@ class Solution {
 
 - **时间复杂度**：$O(n)$，每个节点恰好访问一次
 - **空间复杂度**：$O(h)$，递归栈深度，$h$ 为树高；最坏情况（链状树）$O(n)$
+
+## 典型例题：二叉树最大路径和 {#maximum-path-sum}
+
+[LeetCode 124](https://leetcode.cn/problems/binary-tree-maximum-path-sum/) 中，一条路径可以从任意节点开始，在任意节点结束，但必须非空、沿相邻节点连接，不能重复经过节点。节点值可以为负，答案不一定经过根节点。
+
+### 两个问题对应两个状态
+
+**向父节点提供的贡献**：必须经过当前节点，最多向左或向右延伸一侧。若返回“两侧都接入”的分叉，再由父节点接一条边，就形成三叉形，不再是一条路径。
+
+**当前子树内的最佳路径**：可以完整位于左子树、完整位于右子树，或者经过当前节点连接左右两条单边贡献。
+
+```text
+leftGain  = max(0, 左子树向上传递的单边贡献)
+rightGain = max(0, 右子树向上传递的单边贡献)
+
+single = node.val + max(leftGain, rightGain)
+through = node.val + leftGain + rightGain
+best = max(through, 左子树 best, 右子树 best)
+```
+
+把负数子树贡献截为 0，表示可以不接这条支路；但当前节点不能省略。因此全负树仍返回最大的那个节点值，而不是空路径的 0。
+
+### Java 实现：不依赖跨调用全局变量
+
+沿用 LeetCode 的 `TreeNode`，其成员为 `int val`、`TreeNode left` 和 `TreeNode right`。每次递归返回 `[single, best]`，同一个对象重复调用也不会残留上一棵树的答案。
+
+```java
+class Solution {
+    public int maxPathSum(TreeNode root) {
+        if (root == null) throw new IllegalArgumentException("tree must be nonempty");
+        return summarizePath(root)[1];
+    }
+
+    private int[] summarizePath(TreeNode node) {
+        if (node == null) return new int[]{0, Integer.MIN_VALUE};
+        int[] left = summarizePath(node.left);
+        int[] right = summarizePath(node.right);
+        int leftGain = Math.max(0, left[0]);
+        int rightGain = Math.max(0, right[0]);
+        int single = node.val + Math.max(leftGain, rightGain);
+        int through = node.val + leftGain + rightGain;
+        int best = Math.max(through, Math.max(left[1], right[1]));
+        return new int[]{single, best};
+    }
+}
+```
+
+代码按原题节点数和节点值范围使用 int；空树不符合题意，示例显式拒绝。空子树的 `single` 为 0，`best` 为负无穷，后者只参与比较、不参与加法，避免把空路径选为答案。
+
+时间 $O(n)$，活跃递归栈与状态为 $O(h)$。Java 对高度接近节点数的退化树可能栈溢出，工程输入无法限制树高时，可用显式栈生成后序顺序并保存节点状态，不能认为递归实现天然能处理任意深度。
+
+### 手推与反例
+
+```text
+       -10
+       /  \
+      9    20
+          /  \
+         15   7
+```
+
+节点 20 的 single 是 `20 + 15 = 35`，best 是 `15 + 20 + 7 = 42`；根节点经过自身的候选为 `9 - 10 + 35 = 34`，但整棵树仍应保留子树的 42。
+
+检查三个边界：单节点 -3 返回 -3；根为 1、左孩子 2 且 2 的孩子为 3 和 4 时，答案是 9 而非把四个点都加起来的 10；连续两次调用分别处理正值树和全负树，第二次不能残留第一次的结果。
+
+**迁移技巧**：二叉树直径把贡献改为深度、答案改为左右深度之和；打家劫舍 III 则需要向父节点分别报告“选与不选”，不能只返回一个不区分约束的最大值。不同题共用后序遍历，但不共用同一种状态语义。
 
 ## 延伸题目
 

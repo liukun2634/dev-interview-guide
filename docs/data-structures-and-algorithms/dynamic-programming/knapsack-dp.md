@@ -7,7 +7,7 @@ title: 背包 DP
 <span class="dig-tag dig-tag--category">动态规划</span> <span class="dig-tag dig-tag--medium">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥 高频</span>
 
 ::: tip 💡 核心要点
-背包问题的本质是：一组物品 + 容量限制 + 选择决策。掌握 0/1 背包和完全背包两个模板，理解遍历方向的原理，就能解决所有背包变体。
+背包问题的本质是：一组物品 + 容量限制 + 选择决策。0/1 背包和完全背包是起点；变体还要检查是否恰好装满、怎样区分方案、是否分组以及状态规模。循环方向来自“本次转移应读取哪一层”，不能只背正序或倒序。
 :::
 
 ## 识别信号
@@ -117,7 +117,7 @@ j=2: dp[2] = max(dp[2], dp[0] + 3) = 3
 
 ### 第四步：完全背包模板
 
-与 0/1 背包**唯一的区别**：内层循环改为正序。
+在重量严格为正、目标同为最大价值的这组一维模板中，代码差异是容量改为正序；本质差异是“选当前物品”读取本层而不是上一层。计数、恰好装满或零重量情况，还必须重新检查语义和初始化。
 
 ```java
 int[] dp = new int[capacity + 1];
@@ -191,16 +191,17 @@ dp[j] = dp[j] || dp[j - w[i]];
 
 ```java
 for (int g = 0; g < groups; g++) {         // 外层：枚举组
+    int[] previous = dp.clone();
     for (int j = capacity; j >= 0; j--) {  // 中层：倒序容量（0/1 语义）
         for (int k : group[g]) {           // 内层：枚举组内物品
             if (j >= w[k])
-                dp[j] = Math.max(dp[j], dp[j - w[k]] + v[k]);
+                dp[j] = Math.max(dp[j], previous[j - w[k]] + v[k]);
         }
     }
 }
 ```
 
-注意循环顺序：组在最外层，容量在中间，组内物品在最内层。
+组在最外层，每个候选都从**上一组快照**读取，才能保证同组最多选一个。重量严格为正时，特定倒序原地写法也可成立；若重量允许为 0，仅靠倒序仍会读取本组刚写入的 `dp[j]`，把同组多个物品一起选入。快照写法兼容非负重量，也让容量方向不再影响这个约束。
 
 ---
 
@@ -308,10 +309,11 @@ public int groupKnapsackMaxValue(List<List<Integer>> groups, int[] w, int[] v, i
     int[] dp = new int[capacity + 1];
 
     for (List<Integer> group : groups) {
+        int[] previous = dp.clone();
         for (int j = capacity; j >= 0; j--) { // 组内最多选一个，仍是倒序
             for (int idx : group) {
                 if (j >= w[idx]) {
-                    dp[j] = Math.max(dp[j], dp[j - w[idx]] + v[idx]);
+                    dp[j] = Math.max(dp[j], previous[j - w[idx]] + v[idx]);
                 }
             }
         }
@@ -319,6 +321,8 @@ public int groupKnapsackMaxValue(List<List<Integer>> groups, int[] w, int[] v, i
     return dp[capacity];
 }
 ```
+
+该模板允许每组不选、重量为 0，容量与重量必须非负，数组和物品下标需有效，价值累加需落在 int 范围内。反例：同组两个零重量物品价值为 3 和 5，容量为 0 时答案应为 5，而不是 8。若要求每组恰好选一个，则需要把新一层初始化为不可达，不能直接保留“不选”分支。
 
 ### 模板 7：多重背包（二进制拆分优化）
 
@@ -386,7 +390,7 @@ public int twoDimensional01Knapsack(String[] strs, int m, int n) {
 |------|------------|---------|
 | 0/1 背包 | 倒序 `j = cap...w` | 最大值 / 可行性 / 计数 |
 | 完全背包 | 正序 `j = w...cap` | 最小硬币数 / 组合数 |
-| 分组背包 | 倒序（组内枚举物品） | 每组最多选一个 |
+| 分组背包 | 从上一组快照读取，容量可正序或倒序 | 每组最多选一个 |
 | 二维 0/1 背包 | 两个维度都倒序 | 两种资源限制 |
 
 ---
@@ -473,6 +477,69 @@ public boolean canPartition(int[] nums) {
 - **空间复杂度**：O(target)，一维滚动数组
 
 ---
+
+## 典型例题：目标和 {#target-sum}
+
+[LeetCode 494](https://leetcode.cn/problems/target-sum/) 给非负整数数组的每个元素添加正号或负号，统计最终和为 target 的方案数。例子 `[1,1,1,1,1]`、target 为 3，答案是 5：恰好挑一个位置使用负号。
+
+### 把正负号转成选子集
+
+设所有元素总和为 total，分配正号的元素和为 positive，负号的元素和为 negative，则：
+
+$$positive + negative = total,\qquad positive - negative = target$$
+
+因此 `positive = (total + target) / 2`。问题变成：每个数组位置最多选一次，统计和恰好等于 positive 的子集数。
+
+先检查 `abs(target) <= total`，再检查 `total + target` 是偶数；否则不可能构造合法子集。数组元素按**位置**区分，相同数值不应去重，因为选择不同位置对应不同的符号表达式。
+
+```java
+public int findTargetSumWays(int[] nums, int target) {
+    int total = 0;
+    for (int number : nums) total += number;
+    if (Math.abs((long) target) > total) return 0;
+    if ((total + target) % 2 != 0) return 0;
+
+    int capacity = (total + target) / 2;
+    int[] ways = new int[capacity + 1];
+    ways[0] = 1;
+    for (int number : nums) {
+        for (int sum = capacity; sum >= number; sum--) {
+            ways[sum] += ways[sum - number];
+        }
+    }
+    return ways[capacity];
+}
+```
+
+代码按 LC 494 的非负数、数组长度和总和约束设计，int 可以容纳总和与方案数；扩展输入范围时需重新估算容量与计数上界。时间 $O(n\cdot capacity)$，空间 $O(capacity)$。它是关于数值容量的伪多项式算法，不代表 total 极大时仍然可行。
+
+### 零为什么必须保留
+
+处理元素 0 时，转移成为 `ways[sum] += ways[sum]`：正零和负零是两种符号选择，所以所有已有方案数翻倍，容量 0 也必须参与更新。
+
+`[0,0,1]`、target 为 1 的答案是 4；全为 0、target 为 0 时答案是 $2^n$。若容量循环写成 `sum > 0`，或者先过滤掉 0，就会漏计。倒序使每个位置只处理一次，而不是禁止同一轮读取自身的所有情况；零元素需要按题意解释这种自读。
+
+## 计数技巧：循环顺序为什么改变答案 {#counting-order}
+
+以数值互异的正整数 `{1,2}`、目标和 3 为例：组合只有 `1+1+1`、`1+2` 两种；排列还把 `2+1` 作为第三种。
+
+**物品在外层**时，每一轮只加入一种新面额，方案按“允许使用到哪种面额”分类。`1+2` 只会在处理面额 2 时形成，不会再以 `2+1` 生成一遍，所以模板 4 统计组合。
+
+**目标和在外层**时，内层枚举的是“最后加入哪个数”。尾元素不同就是互斥分支：末尾为 1 的方案来自目标 2，末尾为 2 的方案来自目标 1，所以模板 5 统计排列。
+
+不是 `for` 自带“组合”或“排列”属性，而是循环顺序对应了不同的状态层次与方案划分。写 `+=` 前先回答：**同一份答案能否从两条路径被重复生成？**
+
+### 三个不能直接套模板的情况
+
+1. **重复面额**：若两个 1 代表同一种无限硬币，输入应先去重；若代表两个独立的限量物品，则不能去重。先定义方案身份，再处理重复。
+2. **零或负数可无限使用**：可能产生无限多种表示或循环依赖，正整数完全背包的正序模板不再直接成立。LC 322、518、377 的正数约束不是可省略的细节。
+3. **多重背包计数**：二进制拆分通常用于最优值或可行性，不能机械复用于计数。数量 5 拆成 `1、2、2` 后，选择两个物品有两种“包”的选法，却是同一种原始数量；需要按每种物品的使用次数分类计数。
+
+### 恰好装满与不超过容量
+
+只有一个重量 2、价值 5 的物品，容量 3 时，“不超过容量”的最优价值是 5，“恰好装满”却不可达。前者可以把每个容量初值设为 0，后者只能让容量 0 可达，其余设为负无穷或单独保存可达性。
+
+使用极值哨兵时应先检查前驱可达，再做加法；不要依赖 `Integer.MIN_VALUE + value` 或 `Integer.MAX_VALUE + cost` 恰好没有溢出。计数模板中的 int 也只适用于已知计数上界，不能未经题意允许就取模。
 
 ## 延伸题目
 

@@ -19,11 +19,11 @@ title: 线性与网格 DP
 当你看到题目具备以下特征时，优先考虑线性 DP：
 
 - 输入是**一维数组或字符串序列**
-- 问题要求对序列做**逐位决策**，答案随位置单调推进
-- 每个位置的决策只影响"后续"而不影响"之前"——即无后效性
+- 问题要求对序列做**逐位决策**，状态依赖沿位置推进；状态值本身不一定单调
+- 状态保存了影响后续选择的必要信息，不必保留到达该状态的完整历史
 - 典型问句：最大/最小/方案数，且决策是"选还是不选当前元素"或"从哪个前驱跳过来"
 
-**反例**：如果决策会影响之前的状态（如环形结构），则需要拆成多个线性子问题；如果状态依赖右边的元素，则需要反向 DP 或区间 DP。
+**边界判断**：首尾相邻可能需要分情况处理，例如环形打家劫舍；依赖右侧状态可以从右往左递推，并不因此一定变成区间 DP。真正要检查的是状态之间的依赖和合法计算顺序。
 
 ## 通用思考框架
 
@@ -36,7 +36,7 @@ title: 线性与网格 DP
 - 这个定义更"宽松"，第 i 个元素不一定参与最终答案
 - 转移时可以选择"不动"：`dp[i] = dp[i-1]`（跳过第 i 个）
 - 最终答案直接是 `dp[n]`，不需要遍历所有 i 取最大值
-- 适合：打家劫舍、爬楼梯、解码方法
+- 适合：打家劫舍。爬楼梯和解码方法也可以按前缀定义状态，但计数的是完整到达或完整解码，不能随意“跳过”元素
 
 **语义 B：`dp[i]` = 以第 i 个元素结尾（必须选第 i 个）时的最优解**
 
@@ -54,7 +54,7 @@ title: 线性与网格 DP
 
 确定了状态定义后，问自己：**站在位置 i，我有哪些决策？每种决策对应从哪个更小的状态转移来？**
 
-线性 DP 的决策模型主要有两种：
+线性 DP 常见的决策模型有三种：
 
 **模型一：选或不选当前元素**
 
@@ -100,13 +100,11 @@ dp[i] = dp[i-1] + dp[i-2]   // 爬楼梯：从 i-1 或 i-2 跳一步过来
 **常见边界陷阱**：
 
 - 打家劫舍：`dp[0]` 和 `dp[1]` 需要特殊处理，因为 `dp[i-2]` 在 i=1 时会越界
-- 解码方法：空字符串应返回 1（空串有 1 种解码方式），`dp[0] = 1` 是逻辑上的哨兵值
+- 解码方法：`dp[0] = 1` 表示内部递推的空前缀有一种完成方式；外部空输入是否接受应单独约定，LC 91 的输入为非空字符串
 
 ### 遍历顺序
 
-线性 DP 几乎都是**从左到右**遍历，因为 `dp[i]` 依赖更小下标的状态。
-
-唯一需要思考的是：`dp[i]` 依赖 `dp[i-1]` 还是 `dp[i-2]`？这影响变量的初始化顺序，但不改变"从小到大"这个方向。
+前缀状态依赖较小下标时，从左到右计算；后缀状态依赖较大下标时，从右到左计算。遍历方向来自状态定义，而不是“线性 DP 必须正序”的模板规则。压缩空间前，还要区分依赖的是上一轮旧值还是本轮新值。
 
 ### 空间优化
 
@@ -216,6 +214,93 @@ public int rob(int[] nums) {
 
 ---
 
+## 典型例题：乘积最大子数组 {#maximum-product}
+
+[LeetCode 152](https://leetcode.cn/problems/maximum-product-subarray/) 要求非空连续子数组的最大乘积。它与最大子数组和的关键区别是：**乘上负数会交换大小关系**，因此只保留最大值会丢掉后续可能变成最优的负数。
+
+### 为什么要同时保存最大与最小
+
+定义 `maxEnding`、`minEnding` 为必须以当前位置结尾的最大、最小乘积。处理 `current` 时有三种来源：从当前元素重新开始、接在旧最大乘积后面、接在旧最小乘积后面。
+
+```text
+newMax = max(current, oldMax * current, oldMin * current)
+newMin = min(current, oldMax * current, oldMin * current)
+answer = max(answer, newMax)
+```
+
+以 `[-2, 3, -4]` 为例：
+
+| 当前元素 | 最大结尾乘积 | 最小结尾乘积 | 全局答案 |
+|----------|--------------|--------------|----------|
+| -2 | -2 | -2 | -2 |
+| 3 | 3 | -6 | 3 |
+| -4 | 24 | -12 | 24 |
+
+旧的 `-6` 在乘上 `-4` 后变成 24。这里保存最小值不是为了返回最小答案，而是为了让状态对未来选择足够完整。
+
+### Java 实现与边界
+
+输入遵循题目约束：数组非空，相关连续子数组乘积可用 32 位整数表示。若扩展到任意大整数，应改用有明确溢出处理的实现，不能仅将返回值改成 long 就认为所有乘法安全。
+
+```java
+public int maxProduct(int[] nums) {
+    int maxEnding = nums[0];
+    int minEnding = nums[0];
+    int best = nums[0];
+    for (int index = 1; index < nums.length; index++) {
+        int current = nums[index];
+        int previousMax = maxEnding;
+        int previousMin = minEnding;
+        maxEnding = Math.max(current,
+                Math.max(previousMax * current, previousMin * current));
+        minEnding = Math.min(current,
+                Math.min(previousMax * current, previousMin * current));
+        best = Math.max(best, maxEnding);
+    }
+    return best;
+}
+```
+
+时间 $O(n)$，额外空间 $O(1)$。必须先保存两个旧值再更新；`[-2]` 的答案是 -2，不能把全局答案初始化为 0；遇到 0 时两个结尾状态自然归零，下一项仍可重新开始。用 `[-2, 0, -1]` 可以检查是否错误地把不连续的负数连乘。
+
+## 典型例题：单词拆分 {#word-break}
+
+[LeetCode 139](https://leetcode.cn/problems/word-break/) 给定字符串和词典，判断能否完整拆成词典中的单词，单词可重复使用。例如 `cars` 与 `['car', 'ca', 'rs']` 可以拆成 `ca + rs`；总选最长前缀 `car` 会留下无法处理的 `s`。
+
+### 从最后一个单词倒推
+
+定义 `reachable[end]` 表示前 `end` 个字符能被完整拆分。最后一个单词若是半开区间 `[start, end)`，必须同时满足前缀 `[0, start)` 可拆、这一段属于词典。
+
+`reachable[0] = true` 是空前缀边界；答案是 `reachable[text.length()]`，不能找到一段合法单词就提前返回整个字符串可拆。位置从小到大推进，所有单词非空，因此不会形成位置依赖环。
+
+```java
+public boolean wordBreak(String text, List<String> dictionary) {
+    Set<String> words = new HashSet<>(dictionary);
+    int maxLength = 0;
+    for (String word : words) maxLength = Math.max(maxLength, word.length());
+
+    boolean[] reachable = new boolean[text.length() + 1];
+    reachable[0] = true;
+    for (int end = 1; end <= text.length(); end++) {
+        for (int start = Math.max(0, end - maxLength); start < end; start++) {
+            if (reachable[start] && words.contains(text.substring(start, end))) {
+                reachable[end] = true;
+                break;
+            }
+        }
+    }
+    return reachable[text.length()];
+}
+```
+
+需要 `java.util` 中的 List、Set、HashSet。空串扩展返回 true；词典为空时，非空字符串返回 false。实现按 Java UTF-16 下标处理，适用于原题字符范围。
+
+### 复杂度不能漏掉 substring
+
+设最长词长为 $L$，最多检查 $O(nL)$ 个候选；Java 的 substring 复制和首次字符串哈希还需要与候选长度成正比的时间，因此这里预期时间上界为 $O(nL^2)$，另计词典构建。额外空间包含 $O(n)$ 状态、词典和临时子串。
+
+可用 Trie 沿合法前缀扫描，减少重复复制与哈希。但应先把“合法切分点”的 DP 讲清楚，再讨论字符串匹配优化。若要求输出一种拆分，首次置 true 时记录 `parent[end] = start`，随后从末尾回溯；若要求输出全部拆分，输出规模本身可能指数增长。
+
 ## 延伸题目
 
 | 题目 | 链接 | 与典型题的区别 | 关键技巧 |
@@ -253,7 +338,7 @@ public int rob(int[] nums) {
 - 求从起点到终点的**最优路径值**或**路径方案数**
 - 典型问句：最小代价路径、有多少条不同路径
 
-**反例**：如果可以向四个方向自由移动（如岛屿问题），通常是 DFS/BFS，不是网格 DP。网格 DP 的关键约束是**移动方向单一**，从而保证无后效性。
+**边界判断**：四向自由移动可能产生环，普通路径递推不能直接套用；但若移动要求数值严格增大，依赖图仍然无环，例如矩阵最长递增路径可以使用记忆化搜索。关键是依赖是否有可求解的顺序，而不是几何方向是否单一。
 
 ## 通用思考框架
 
@@ -275,7 +360,9 @@ $$dp[i][j] = f\bigl(dp[i-1][j],\ dp[i][j-1]\bigr)$$
 
 其中 $f$ 根据题意是 $\min$ / $\max$ / $+$。
 
-**最小路径和**：$dp[i][j] = \min(dp[i-1][j], dp[i][j-1]) + grid[i][j]$
+**最小路径和**：
+
+$$dp[i][j] = \min(dp[i-1][j], dp[i][j-1]) + grid[i][j]$$
 
 **不同路径（计数）**：$dp[i][j] = dp[i-1][j] + dp[i][j-1]$
 
@@ -417,6 +504,91 @@ public int minPathSum(int[][] grid) {
 - **空间复杂度**：O(m × n)（原版）/ O(n)（空间优化版）
 
 ---
+
+## 典型例题：最大正方形 {#maximal-square}
+
+[LeetCode 221](https://leetcode.cn/problems/maximal-square/) 要求 0/1 矩阵中最大全 1 正方形的面积。这里的状态不是“到达格子的路径”，而是 **以该格子为右下角的正方形最大边长**。
+
+### 为什么是三个邻居的最小值
+
+当前格子为 0 时边长为 0；为 1 时，要扩成边长 `side + 1`，上方、左方、左上方三个已有正方形都至少具有边长 side，才能覆盖新的整个区域。
+
+```text
+side[row][column] = 0                                      当前为 0
+side[row][column] = 1 + min(上方, 左方, 左上方)              当前为 1
+```
+
+取 max 会把某一方向的连续长度误当成一个完整面积。例如矩阵 `[[1,0],[1,1]]` 中，右下角虽然左方和左上方都有 1，上方的 0 仍使最大边长只能为 1。
+
+### 滚动数组保留旧对角线
+
+`dp[column]` 更新前是上方，`dp[column - 1]` 已经是本行左方；左上方需要额外变量 `diagonal` 保存。每行开始时它重置为 0，处理完一格后再把旧上方值交给下一格。
+
+```java
+public int maximalSquare(char[][] matrix) {
+    if (matrix.length == 0 || matrix[0].length == 0) return 0;
+    int columns = matrix[0].length;
+    int[] dp = new int[columns + 1];
+    int bestSide = 0;
+    for (char[] row : matrix) {
+        int diagonal = 0;
+        for (int column = 1; column <= columns; column++) {
+            int upper = dp[column];
+            if (row[column - 1] == '1') {
+                dp[column] = 1 + Math.min(diagonal,
+                        Math.min(upper, dp[column - 1]));
+                bestSide = Math.max(bestSide, dp[column]);
+            } else {
+                dp[column] = 0;
+            }
+            diagonal = upper;
+        }
+    }
+    return bestSide * bestSide;
+}
+```
+
+输入为矩形矩阵，元素为 `'0'` 或 `'1'`，面积落在 int 范围内。时间 $O(mn)$，空间 $O(n)$。答案是最大边长的平方，不是右下角那个状态；遇到 0 必须清零，不能继承上一行的正方形。
+
+## 典型例题：地下城游戏 {#dungeon-game}
+
+[LeetCode 174](https://leetcode.cn/problems/dungeon-game/) 中，人物只能向右或下走，进入格子后生命值增加或减少，整个过程必须始终至少为 1，求最小初始生命值。
+
+### 为什么最大路径和不够
+
+同样的最终收益可能对应完全不同的最低生命值。例如矩阵 `[[1,-10,20],[0,0,0]]` 中，上方路线总收益更大，但中途需要扛过 -10；沿下方路线却只需初始生命值 1。只保存路径总和会丢掉途中最低值的限制。
+
+换成反向状态：`need[row][column]` 表示**进入该格子之前**至少需要多少生命，才能从此处到终点且始终存活。
+
+```text
+后继最低要求 = min(右侧 need, 下方 need)
+当前最低要求 = max(1, 后继最低要求 - 当前格子增益)
+终点最低要求 = max(1, 1 - 终点增益)
+```
+
+外面的 max 保证“进入格子前”也存活；当前格子提供大量补给时，初始生命不能因此变成 0 或负数。
+
+```java
+public int calculateMinimumHP(int[][] dungeon) {
+    int rows = dungeon.length;
+    int columns = dungeon[0].length;
+    int[] need = new int[columns + 1];
+    Arrays.fill(need, Integer.MAX_VALUE / 4);
+    need[columns - 1] = 1;
+
+    for (int row = rows - 1; row >= 0; row--) {
+        for (int column = columns - 1; column >= 0; column--) {
+            int next = Math.min(need[column], need[column + 1]);
+            need[column] = Math.max(1, next - dungeon[row][column]);
+        }
+    }
+    return need[0];
+}
+```
+
+需要 `java.util.Arrays`；输入遵循 LC 174 的非空矩形及数值范围，预留的 INF 大于任何合法需求。时间 $O(mn)$，空间 $O(n)$。这里从右下往左上计算，不能照搬最小路径和的正向循环。
+
+单格 `[-5]` 需要 6，单格 `[10]` 需要 1；经典矩阵 `[[-2,-3,3],[-5,-10,1],[10,30,-5]]` 的答案为 7。可以枚举小矩阵所有路径，用“1 减去最低前缀和”得到参考答案，对拍反向 DP。
 
 ## 延伸题目
 
