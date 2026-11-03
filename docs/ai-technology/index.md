@@ -210,7 +210,7 @@ AI 的核心机制都可以用架构图表达：
 | Prompt Engineering | Zero/Few-shot、CoT、Self-Consistency、ToT、Prompt 安全 | 🔥🔥🔥 | [Prompt Engineering](./prompt-engineering) |
 | 上下文工程与 Agent 记忆 | 上下文组装、压缩、记忆分类、写入/更新/删除、隔离与评测 | 专题 | [上下文与记忆](./context-and-memory) |
 | Embedding 与向量数据库 | Word2Vec/BERT、向量数据库选型、ANN 算法(HNSW/IVF) | 🔥🔥 | [Embedding 与向量数据库](./embedding-and-vector-db) |
-| RAG 检索增强生成 | RAG 架构、分块策略、混合检索、Rerank、HyDE/GraphRAG | 🔥🔥🔥 | [RAG](./rag) |
+| RAG 检索增强生成 | 分块与混合检索、Rerank、检索指标代码、权限与失败定位 | 🔥🔥🔥 | [RAG](./rag) |
 
 ### AI Agent
 
@@ -245,10 +245,10 @@ AI 的核心机制都可以用架构图表达：
 |------|---------|---------|---------|
 | 模型微调与训练 | SFT、LoRA/QLoRA、RLHF/DPO、分布式训练 | 🔥🔥 | [模型训练](./model-training) |
 | 合成数据与知识蒸馏 | 数据生产、回答/分布/特征蒸馏、on-policy、来源隔离、学生评测 | 专题 | [合成数据与蒸馏](./synthetic-data-and-distillation) |
-| AI 评估与可靠性工程 | 评测集隔离、Judge 校准、Agent 轨迹、pass 指标、统计与发布 | 专题 | [AI 评估](./ai-evaluation) |
+| AI 评估与可靠性工程 | 评测集隔离、Judge 校准、业务评分器、Agent 轨迹、统计与发布 | 专题 | [AI 评估](./ai-evaluation) |
 | 模型对齐与 AI 安全 | RLHF/DPO/GRPO/RLVR、Constitutional AI、Red Teaming、Guardrails | 🔥🔥🔥 | [对齐与安全](./evaluation-and-alignment) |
 | LLM 推理优化 | KV Cache、MQA/GQA、量化、推测解码、Continuous Batching | 🔥🔥🔥 | [推理优化](./inference-optimization) |
-| AI 应用架构设计 | 架构模式、模型服务、API 设计、成本优化、可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
+| AI 应用架构设计 | 模型服务、API、重试决策、幂等与取消、成本与可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
 | AI 系统设计面试题 | 设计框架、智能客服/代码补全案例、权衡分析 | 🔥🔥 | [系统设计](./ai-system-design) |
 | AI 前沿趋势与新范式 | Compound AI Systems、Model Routing、GraphRAG、Evals-Driven、AI 可观测性 | 🔥🔥🔥 | [前沿趋势](./ai-trends) |
 | AI 安全与越狱防护 | Prompt Injection、数据泄露、权限隔离与 Red Teaming | 🔥🔥🔥 | [安全与越狱](./security-and-jailbreak) |

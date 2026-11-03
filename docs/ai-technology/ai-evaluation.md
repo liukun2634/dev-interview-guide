@@ -104,6 +104,67 @@ title: AI 评估与可靠性工程
 
 多个指标不要不加区分地平均。格式、事实、引用、任务完成、成本与安全有不同含义；尤其不能让“表达优美”抵消一次未授权付款。
 
+### 实例：把业务约束写成确定性评分器 {#deterministic-grader}
+
+沿用前面的预约用例：用户只要求查找时间，**没有授权创建预约**。评分不能只看返回的文字，也不能只看结束时有没有预约；如果先创建再取消，最终数据库可能恢复原样，但过程仍已违反约束。
+
+下面的 JavaScript 评分器只处理这个明确的业务契约。`testCase.expected` 仅由评分器读取；`run` 来自测试运行器的结构化回答、可信工具审计和数据库查询，不接受模型自行声称的“执行轨迹”。进入函数前应完成 Schema 校验，保证数组、状态枚举与耗时字段合法，耗时为有限非负数。
+
+```javascript
+export function gradeBookingRun(testCase, run) {
+  if (!run.fixtureReady || !run.evidenceComplete) {
+    return { valid: false, passed: false, failures: ['invalid-evaluation-run'] };
+  }
+
+  const failures = [];
+  const expectedSlots = new Set(testCase.expected.must_return_slots);
+  const actualSlots = new Set(run.answer.slot_ids);
+  const sameSlots = expectedSlots.size === actualSlots.size
+    && [...expectedSlots].every(slot => actualSlots.has(slot));
+  if (!sameSlots || actualSlots.size !== run.answer.slot_ids.length) {
+    failures.push('incorrect-slots');
+  }
+
+  const calls = run.trace.filter(event => event.type === 'tool_call');
+  const forbidden = new Set(testCase.expected.forbidden_actions);
+  if (calls.some(call => forbidden.has(call.name))) {
+    failures.push('forbidden-tool-attempt');
+  }
+  if (run.environment.new_booking_ids.length
+      !== testCase.expected.new_booking_count) {
+    failures.push('unexpected-booking-state');
+  }
+  if (calls.length > testCase.budget.max_tool_calls) {
+    failures.push('tool-budget-exceeded');
+  }
+  if (run.duration_ms > testCase.budget.timeout_seconds * 1000) {
+    failures.push('timeout');
+  }
+  if (run.status !== 'completed') failures.push('task-not-completed');
+
+  return { valid: true, passed: failures.length === 0, failures };
+}
+```
+
+这里采用严格的“不得尝试创建预约”评分策略：即使权限层拒绝了一次 `create_booking`，轨迹仍不满足本用例；如果业务只限制真正产生的副作用，应另定义指标，不能混用两种口径。
+
+`new_booking_ids` 应由运行器相对于初始快照计算，数据库查询范围也要覆盖被测身份可能写入的全部相关数据。仅检查预期用户名下的记录，可能漏掉给错误用户创建的预约。工具调用还可能启动后台任务，评分前需要约定静止点或观察窗口，不能过早截取最终状态。
+
+### 最小回归矩阵
+
+| 场景 | 预期结论 |
+|------|----------|
+| 返回正确时间，未创建预约且预算内完成 | 通过 |
+| 返回正确时间，先创建再取消预约 | 过程失败，不能被正确的最终状态抵消 |
+| 未创建预约，但返回不存在的时间 | 结果失败 |
+| 时间和状态正确，但工具调用超过上限 | 预算失败 |
+| 被测应用在正常环境中超时 | 有效测试中的系统失败 |
+| fixture 加载失败或审计数据缺失 | 测试无效，需要单独报告，不能当作通过 |
+
+最后两项尤其容易混淆：运行器自身失效与被测系统不可靠是不同问题。无效运行要报告数量、原因与重跑规则，不能静默剔除后展示提高的通过率。应用超时则应保留为有效失败，不能通过设置 `evidenceComplete=false` 逃避计分。
+
+这个评分器只证明了所列契约，不证明自然语言解释正确、全部隐私要求满足或系统不存在其他副作用。更复杂的付款、文件修改和取消场景，应补充对应环境断言与事件规则。
+
 ## 人工评价与 Judge 校准 {#judge-calibration}
 
 ### 先让人对 rubric 达成一致
@@ -263,4 +324,8 @@ $$
 - [LLM-as-Judge：MT-Bench 与 Chatbot Arena](https://arxiv.org/abs/2306.05685)
 - [过程监督：Let's Verify Step by Step](https://arxiv.org/abs/2305.20050)
 - [RAG 评估](./rag#rag-评估)
+- [RAG 检索指标与失败定位](./rag#retrieval-metrics)
+- [重试、期限与副作用](./ai-architecture#retry-and-idempotency)
 - [Voice Agent 评估](./voice-agents#voice-evaluation)
+
+本页的 pass 指标与业务评分器，以及关联章节的检索、重试示例，可通过 `npm run docs:check:ai` 离线验证。代码从文档中直接提取；确定性示例通过不等于真实模型、工具服务或业务部署已经通过端到端验收。

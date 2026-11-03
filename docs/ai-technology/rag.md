@@ -665,9 +665,9 @@ RAG 不能“先全库检索、再让模型判断用户能否看”。租户、�
 
 ### Prompt Caching 在 RAG 中的应用
 
-RAG 场景下的 Prompt Caching 与 Agent 略有不同——RAG 的**检索片段每次都在变**，所以**不能像 Agent 一样缓存上下文中部**。正确的姿势：
+RAG 的检索片段通常随问题变化，但 Prompt Cache 并不是按“RAG 或 Agent”分类的特殊缓存。能否复用取决于供应商机制和实际匹配的输入前缀；重复出现的相同上下文也可能命中。通常先把稳定指令前置，再放变化的检索结果，以减少前缀失效。
 
-::: tip 💡 RAG 的 Prompt 排版黄金顺序
+::: tip 💡 一种便于复用稳定前缀的排版
 
 ```
 1. System Prompt（不变 → 支持时优先评估缓存）
@@ -694,8 +694,8 @@ RAG 系统的评估需要从**检索质量**和**生成质量**两个维度进�
 
 | 指标 | 维度 | 衡量内容 |
 |------|------|----------|
-| **Context Precision** | 检索 | 检索到的文档中相关文档的比例 |
-| **Context Recall** | 检索 | 所有相关文档被检索到的比例 |
+| **Context Precision** | 上下文 | 按评估框架的相关性与排名定义衡量片段质量，不直接等同于简单命中比例 |
+| **Context Recall** | 上下文 | 常用于衡量参考答案事实能否被上下文支持，与标注文档 Recall@K 需要区分 |
 | **Faithfulness** | 生成 | 生成的回答是否忠实于检索到的上下文 |
 | **Answer Relevancy** | 生成 | 生成的回答与原始问题的相关性 |
 | **Answer Correctness** | 端到端 | 最终回答的准确性（与标准答案对比） |
@@ -703,6 +703,69 @@ RAG 系统的评估需要从**检索质量**和**生成质量**两个维度进�
 | **ACL Leakage Rate** | 安全 | 无权限文档被召回、引用或泄露的比例（目标为 0） |
 
 离线检索还常用 **Recall@K、MRR、nDCG@K**；在线需观察无答案拒答率、P50/P95 延迟、Token/查询、缓存命中和用户反馈。RAGAS/LLM-as-Judge 可扩展评测，但会有 Judge 偏差，关键事实与权限边界应结合确定性检查和人工抽检。评测集应同时包含可回答、不可回答、多跳、时间敏感、精确标识符、对抗注入和越权查询。
+
+### 实例：计算检索指标 {#retrieval-metrics}
+
+先固定标注单位：是文档、Chunk，还是支撑一个答案的证据集合？同一文档的多个 Chunk 不能一会儿当多个相关结果，一会儿又共用一个文档级分母。相关集合也必须限制为当前身份有权访问的内容；否则系统可能为了提高召回率而被错误地奖励越权检索。
+
+下面计算**二值相关标注**下的单个查询指标。排名从 1 开始，只观察前 K 个返回位置；重复 ID 占据位置，但不获得第二次命中奖励，避免重复召回把指标刷高。
+
+```javascript
+export function retrievalMetrics(retrievedIds, relevantIds, limit) {
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new RangeError('K must be a positive safe integer');
+    }
+    const relevant = new Set(relevantIds);
+    if (relevant.size === 0) {
+        return { precisionAtK: null, recallAtK: null, rrAtK: null, ndcgAtK: null };
+    }
+
+    const top = retrievedIds.slice(0, limit);
+    const hits = new Set();
+    let reciprocalRank = 0;
+    let discountedGain = 0;
+    for (let index = 0; index < top.length; index++) {
+        const documentId = top[index];
+        if (!relevant.has(documentId) || hits.has(documentId)) continue;
+        hits.add(documentId);
+        if (reciprocalRank === 0) reciprocalRank = 1 / (index + 1);
+        discountedGain += 1 / Math.log2(index + 2);
+    }
+
+    let idealGain = 0;
+    for (let index = 0; index < Math.min(limit, relevant.size); index++) {
+        idealGain += 1 / Math.log2(index + 2);
+    }
+    return {
+        precisionAtK: hits.size / limit,
+        recallAtK: hits.size / relevant.size,
+        rrAtK: reciprocalRank,
+        ndcgAtK: discountedGain / idealGain,
+    };
+}
+```
+
+输入 ID 应由运行器规范化为同一类型。这个实现的 Precision@K 固定用 K 作分母，少返回的位置按未命中计；部分框架使用实际返回数作分母，比较前必须统一口径。无相关标注的查询返回 null，应单独评估正确拒答与误召回，不能把它们当成 Recall=1 混进平均分。
+
+例子：相关集合为 `{A,B}`，检索结果为 `[X,A,A,B]`，K=3。只看 `[X,A,A]`，命中一个不同的相关 ID，所以 Precision@3=1/3、Recall@3=1/2、RR@3=1/2；第二个 A 不再增加 DCG。单个查询得到的是 RR，按适用查询求平均后才是 MRR。
+
+这里的 nDCG 使用 0/1 增益；若标注有多级相关性，需统一增益函数（例如 `2^grade - 1`）、排序与理想列表。它不能直接替代答案正确性、引用支持度或 ACL 检查。
+
+### 从分数定位失败层 {#rag-failure-isolation}
+
+评估不应只产出一个总分，还应帮助决定下一步改哪一层：
+
+| 观察到的问题 | 优先检查 | 对照实验 |
+|--------------|----------|----------|
+| 正确证据根本不在候选集 | 文档摄取、解析、索引更新、ACL、Query 改写 | 绕过生成模型，人工检查候选与授权范围 |
+| 候选里有证据，但 Top-K 丢掉了 | Reranker、去重、截断与上下文预算 | 比较重排前后同一候选集合的 Recall / nDCG |
+| 证据已进入 Prompt，答案仍错误 | Prompt、模型、冲突证据与引用约束 | 固定人工标注的正确上下文，仅评估生成器 |
+| 不可回答的问题被编出答案 | 缺证据识别与拒答策略 | 加入无答案样本，分别统计误答与过度拒答 |
+| 平均分变好，少数用户出现泄露 | 授权过滤、缓存身份、日志与引用范围 | 使用跨租户和权限变化的负向测试，作为独立硬门槛 |
+
+“给生成器正确证据”的实验只用于定位，不是端到端 RAG 成绩。调优时一次改变一个主要因素，固定语料、标注和预算；否则不能确定提升来自检索、模型升级还是增大 Top-K。
+
+多跳任务还需要检查**证据是否成套**：单个相关 Chunk 命中并不说明两段必要事实都已找到。可以为每个问题标注一个或多个充分证据集合，统计至少有一套被完整召回的比例，并与普通 Recall 分开报告。
 
 ### 评估框架
 
@@ -723,6 +786,8 @@ RAG 系统的评估需要从**检索质量**和**生成质量**两个维度进�
 ---
 
 ## 完整 RAG Pipeline 示例
+
+下面是教学流程骨架，依赖外部的分块、Embedding、向量存储与模型适配器，不是可直接上线的私有知识库。示例未实现身份和 ACL；生产版本必须在召回阶段使用可信授权条件，并让缓存、引用和日志遵守相同边界，不能仅依赖 Prompt 中的提醒。
 
 ```python
 class SimpleRAGPipeline:

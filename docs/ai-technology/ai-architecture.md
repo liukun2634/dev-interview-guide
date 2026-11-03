@@ -46,7 +46,7 @@ graph LR
 
 在自回归生成中，每生成一个新 Token 都需要计算注意力。由于已生成 Token 的 Key 和 Value 不会改变，可以将其**缓存**起来，避免重复计算。
 
-KV Cache 缓存已计算的 Key/Value，每步只需计算新 Token 的 Q/K/V，将总计算量从 O(n^2) 降为每步 O(n)。(详见 [LLM 推理优化](./inference-optimization))
+KV Cache 复用历史 Token 的 Key/Value，避免每次解码都重新计算整个前缀。固定模型维度时，长度为 n 的前缀上，新 Token 的标准稠密注意力仍需读取 $O(n)$ 的历史 KV；生成整段序列的注意力工作量仍可能为二次量级，不能说总计算量因此变成线性。详见 [LLM 推理优化](./inference-optimization)。
 
 - KV Cache 是所有 LLM 推理框架的**标配优化**
 - **代价**：显存消耗随序列长度线性增长（长上下文场景下成为瓶颈）
@@ -57,11 +57,13 @@ KV Cache 缓存已计算的 Key/Value，每步只需计算新 Token 的 Q/K/V，
 
 | 量化方案 | 精度损失 | 显存节省 | 特点 |
 |----------|----------|----------|------|
-| **FP16/BF16** | 无 | 基准 | 训练和推理标准精度 |
-| **INT8** | 极低 | ~50% | 生产部署的安全选择 |
-| **GPTQ** | 低 | ~75% | 训练后量化，需要校准数据集 |
-| **AWQ** | 低 | ~75% | 保护"重要"权重，效果优于 GPTQ |
-| **GGUF** | 低~中 | ~75% | llama.cpp 格式，支持 CPU 推理 |
+| **FP16/BF16** | 相对所选基线评价 | 基准 | 16 位浮点格式，指数与有效精度范围不同 |
+| **INT8** | 依赖模型、算子和任务 | 原始权重体积约减半 | 实际内存还有尺度、未量化层、KV 与运行时开销 |
+| **GPTQ** | 需校准与任务评测 | 取决于位宽 | 训练后权重量化方法，常见 4 位配置不代表所有实现相同 |
+| **AWQ** | 依赖校准与任务 | 取决于位宽 | 激活感知权重量化，不保证在所有模型上优于 GPTQ |
+| **GGUF** | 取决于所存张量的量化配置 | 取决于具体配置 | 模型文件格式，不是某一种固定量化算法或位宽 |
+
+相对 16 位权重，理想的 4 位原始权重体积约为四分之一，但不意味着整卡显存必然节省 75% 或推理一定加速。算子实现、反量化开销、批量大小和内存带宽都要在实际硬件上测试。
 
 ### 推测解码 Speculative Decoding
 
@@ -73,15 +75,13 @@ KV Cache 缓存已计算的 Key/Value，每步只需计算新 Token 的 Q/K/V，
                                       → 第 4 个拒绝，从大模型重新采样 t4'
 ```
 
-- **不损失生成质量**——数学上保证与大模型直接生成等价
-- 推理速度可提升 **2~3 倍**
+- 采用正确的接受／拒绝与分布修正算法时，可以保持目标采样分布；近似变体不能直接沿用这个保证
+- 提速取决于草稿接受率、验证成本、硬件和批量，不预设固定倍数
 - 适用于大模型推理延迟敏感的场景
 
 ### 连续批处理 Continuous Batching
 
-传统静态批处理在所有请求完成后才整体返回，导致短请求被长请求拖慢。连续批处理允许请求在完成后立即返回，新请求可随时加入：
-
-静态批处理要求所有请求完成后才整体返回；连续批处理允许请求完成后立即释放资源，新请求可随时加入当前批次。(详见 [LLM 推理优化](./inference-optimization))
+静态批处理通常在批次开始时固定请求集合，短请求完成后可能留下空闲槽位；它并不必然禁止逐请求流式返回。连续批处理在解码调度边界移出完成请求并接纳新请求，提高资源利用率，但仍需控制公平性、排队时延和 KV 容量。详见 [LLM 推理优化](./inference-optimization)。
 
 ---
 
@@ -129,6 +129,8 @@ async def chat(request: ChatRequest):
 
 ### Token 预算控制
 
+下面是接口骨架，计数、分词、反分词与异常类型由调用方实现。实际预算必须统计序列化后的系统指令、消息、工具 Schema 与附件；不能只数用户 prompt，也不能把任意消息历史当字符串截断后破坏工具调用关系。
+
 ```python
 class TokenBudget:
     """Token 预算管理器"""
@@ -154,6 +156,88 @@ class TokenBudget:
             tokens = tokens[:max_context]
         return self.detokenize(tokens)
 ```
+
+---
+
+## 超时、重试与副作用 {#retry-and-idempotency}
+
+### 先判断失败发生在哪一层
+
+HTTP 错误码只说明某个接口的观察结果，不足以证明整个任务没有执行。特别是工具调用和长任务：客户端超时后，远端可能已经写入数据库、创建文件或启动部署。
+
+| 失败情况 | 通常应如何处理 |
+|----------|----------------|
+| 400 参数或 Schema 错误 | 修复请求，不原样重复提交 |
+| 401 / 403 身份或授权失败 | 检查配置和授权，不通过换模型绕过策略 |
+| 429 限流、部分 5xx 或网络中断 | 在可安全重放、有限次数与总期限内考虑重试 |
+| 已向用户输出部分文本 | 显式标记中断或使用受支持的恢复机制，不静默拼接两次生成 |
+| 写操作返回超时，提交状态不明 | 先用业务键查询或对账，不把新请求当成无副作用重试 |
+| 任务本身不符合验收 | 修复 Prompt、工具或实现；网络重试不保证改变业务错误 |
+
+例如创建预约返回超时，不能立即生成一个新幂等键再创建一次。先查询原业务操作，若服务端提供可靠幂等契约，重试也应沿用原键和同一参数；否则进入人工或异步对账。
+
+### 代码：只决定是否重试，不自动执行
+
+下面的 JavaScript 纯函数演示客户端决策，`attempt` 从 1 开始，`maxAttempts` 包含首次请求。`replaySafe` 必须由执行层确认，而不是由模型输出；即使一次纯生成可重试，也可能增加费用或得到不同答案。
+
+```javascript
+export function planModelRetry({
+    status,
+    attempt,
+    remainingMs,
+    replaySafe,
+    outputStarted = false,
+    maxAttempts = 3,
+    attemptTimeoutMs = 1000,
+    retryAfterMs = 0,
+    jitter = Math.random(),
+}) {
+    if (!Number.isSafeInteger(attempt) || attempt < 1
+            || !Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
+        throw new RangeError('Invalid attempt counts');
+    }
+    if (![remainingMs, attemptTimeoutMs, retryAfterMs, jitter].every(Number.isFinite)
+            || remainingMs < 0 || attemptTimeoutMs <= 0 || retryAfterMs < 0
+            || jitter < 0 || jitter > 1) {
+        throw new RangeError('Invalid retry budget');
+    }
+    if (status !== null && (!Number.isInteger(status) || status < 100 || status > 599)) {
+        throw new RangeError('Invalid HTTP status');
+    }
+    const transient = status === null || [408, 429, 500, 502, 503, 504].includes(status);
+    if (!transient) return { action: 'stop', reason: 'non-retryable-response' };
+    if (replaySafe !== true) return { action: 'reconcile', reason: 'unknown-side-effect' };
+    if (outputStarted) return { action: 'stop', reason: 'partial-output' };
+    if (attempt >= maxAttempts) return { action: 'stop', reason: 'attempt-limit' };
+
+    const backoffCapMs = Math.min(10000, 250 * 2 ** Math.min(attempt - 1, 8));
+    const delayMs = Math.max(retryAfterMs, Math.floor(backoffCapMs * jitter));
+    if (delayMs + attemptTimeoutMs > remainingMs) {
+        return { action: 'stop', reason: 'deadline-budget' };
+    }
+    return { action: 'retry', delayMs, timeoutMs: attemptTimeoutMs };
+}
+```
+
+`status=null` 仅表示适配层已识别的网络失败，不包括 JSON 解析错误、业务异常或用户取消。供应商的错误体可能进一步区分限流和额度耗尽，应在调用前归类；不能看到任意 429 都认为等待一定能解决。
+
+运行器负责解析 `Retry-After` 的秒数或 HTTP 日期、使用单调时钟计算剩余总预算，以及在真正发送前重新检查期限和取消信号。`reconcile` 是让业务层查明副作用，不是允许它无限轮询。调用者不能只实现 retry 分支而忽略 stop 与 reconcile。
+
+### 不要让多层重试相乘
+
+客户端、网关、模型 SDK 和任务 Worker 如果分别允许三次尝试，最坏可能放大到 $3^4=81$ 次下游调用。选择一个主要重试责任层，显式配置其他层的行为，传播 deadline、任务 ID、尝试号和取消信号，并记录实际总次数。
+
+Fallback 也需要能力与数据边界检查：备用模型是否支持相同工具和结构化输出，是否允许接收该租户数据，是否已通过相同评测。换模型不是无条件可用的异常处理方式。
+
+### 长任务至少分开三种身份
+
+- **任务 ID**：标识用户要完成的工作，跨重试保持稳定。
+- **尝试 ID**：标识一次执行，便于追踪失败、耗时和成本。
+- **业务幂等键**：标识某个具体副作用，例如一次预约；与身份、操作类型、参数摘要共同校验。
+
+客户端取消后应进入“取消请求中”，直到执行器确认已停止或完成对账，再记录终态。收到取消请求不证明远端没提交；恢复任务时也不能从头重放所有已经确认完成的副作用。
+
+把这些分支加入 [Agent 评估](./ai-evaluation#deterministic-grader)：模拟写入后丢失响应、流式输出中断、延迟审批、额度耗尽和取消竞态，比只测试“模型服务返回 200”更能检验可靠性。
 
 ---
 

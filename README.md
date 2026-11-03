@@ -73,10 +73,11 @@ npm run docs:dev
 
 ```bash
 npm run docs:check:source
+npm run docs:check:ai
 npm run docs:check
 ```
 
-前者快速检查 Markdown 内部链接与锚点；后者完成生产构建并检查实际生成页面，GitHub Pages 部署使用同一门禁。搜索索引覆盖标题、正文和行内代码，不索引大段代码块；代码示例仍在文章中完整显示。
+`docs:check:source` 快速检查 Markdown 内部链接与锚点；`docs:check:ai` 直接提取文档中的 JavaScript，离线验证评估指标、业务评分与重试策略，不调用收费模型。`docs:check` 会先运行 AI 示例检查，再完成生产构建并检查实际生成页面与 sitemap，GitHub Pages 部署使用同一门禁。搜索索引覆盖标题、正文和行内代码，不索引大段代码块；代码示例仍在文章中完整显示。
 
 ## 🤝 参与贡献
 
