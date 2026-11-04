@@ -22,7 +22,7 @@ title: 系统设计
 | 概念 | 简释 | 详细页面 |
 |------|------|----------|
 | 一致性哈希 / 虚拟节点 | 将节点和数据映射到同一哈希环，增减节点时仅迁移相邻区间数据 | [分布式理论](./distributed-theory) |
-| CAP / BASE | 分布式系统不可能同时满足一致性、可用性、分区容错性；BASE 是 CAP 在实践中的折中 | [分布式理论](./distributed-theory) |
+| CAP / BASE | CAP 讨论网络分区时线性一致性与可用性的取舍；BASE 是面向可用性与最终一致性的设计思路 | [分布式理论](./distributed-theory) |
 | Paxos / Raft / ZAB | 三种分布式共识算法，用于在节点故障时就某个值达成一致 | [分布式理论](./distributed-theory) |
 | 分布式锁 / Redlock | 利用 Redis 或 ZooKeeper 实现跨进程互斥，Redlock 是基于多节点 Redis 的锁方案 | [分布式理论](./distributed-theory) |
 | 读写分离 / 主从复制 | 主库处理写请求，从库同步数据后处理读请求，提升读吞吐量 | [存储选型](./database-selection) |
@@ -33,7 +33,7 @@ title: 系统设计
 | 负载均衡算法 | 轮询、加权轮询、最少连接、一致性哈希等，用于将流量均衡分配到后端节点 | [高可用架构](./high-availability) |
 | 蓝绿部署 / 金丝雀发布 | 蓝绿部署通过切换流量实现零停机上线；金丝雀发布先对小比例用户灰度验证 | [高可用架构](./high-availability) |
 | 熔断 / 降级 / 限流 | 熔断在下游故障时快速失败；降级返回兜底响应；限流控制请求速率保护系统 | [限流与熔断](./rate-limiting) |
-| 消息幂等 / Exactly-Once | 消息幂等保证重复消费不产生副作用；Exactly-Once 语义确保消息恰好被处理一次 | [消息队列](./message-queue) |
+| 消息幂等 / Exactly-Once | 幂等约束重复副作用；Exactly-Once 必须说明事务、存储和外部副作用的保证范围 | [消息队列](./message-queue) |
 | 服务发现 / 注册中心 | 服务启动时向注册中心注册地址，调用方动态查询实例列表，支持弹性伸缩 | [微服务架构](./microservices) |
 | CQRS / Event Sourcing | CQRS 将读写模型分离；Event Sourcing 以事件日志为系统状态的唯一来源 | [微服务架构](./microservices) |
 | 分布式 ID（Snowflake） | 全局唯一 ID 生成方案，由时间戳、机器 ID 和序列号组成，保证趋势递增 | [系统设计方法论](./system-design-methodology) |
@@ -54,13 +54,13 @@ title: 系统设计
 
 | 主题 | 概念 | 核心知识点 |
 |------|------|------|
-| [系统设计方法论](./system-design-methodology) | 系统设计面试的标准步骤与思维框架 | 需求澄清→容量估算→高层设计→详细设计→扩展优化，附短链接系统案例 |
+| [系统设计方法论](./system-design-methodology) | 从需求推导容量和正确性协议 | 逐层流量估算、并发与尾延迟、故障容量、业务不变量、短链案例 |
 | [分布式理论](./distributed-theory) | 分布式系统的理论基石 | CAP/BASE、一致性模型、Paxos/Raft/ZAB、一致性哈希、分布式时钟 |
 | [分布式事务](./distributed-transaction) | 跨服务数据一致性方案 | 2PC/3PC、TCC、Saga、本地消息表、事务消息 |
-| [高可用架构](./high-availability) | 保障系统持续可用的设计原则 | SLA、冗余设计、故障转移、限流熔断降级、负载均衡、蓝绿部署 |
+| [高可用架构](./high-availability) | 保障系统持续可用的设计原则 | SLI/SLO/错误预算、故障域、重试与 deadline、灾备切换、演练验收 |
 | [高并发读架构](./high-concurrency-read) | 百万 QPS 读怎么扶 | 全链路逐级削峰（CDN/网关/多级缓存/读写分离）、商品详情/热搜/抢票案例 |
-| [高并发写架构](./high-concurrency-write) | 秒杀/抢单/发帖怎么扶 | CDN 验证码降速 + 网关限流 + Redis 预扣 + MQ 削峰 + 分库分表 |
-| [缓存策略](./caching-strategies) | 缓存的使用模式与一致性 | 读写策略、缓存更新、一致性方案、Bloom Filter、HyperLogLog |
+| [高并发写架构](./high-concurrency-write) | 秒杀/抢单/发帖的受理与恢复 | 可靠受理、Outbox、库存状态机、积压推导、幂等补偿、故障窗口 |
+| [缓存策略](./caching-strategies) | 缓存的使用模式与一致性 | 提交后失效、旧值回填、版本水位、读己之写、新鲜度和回源预算 |
 | [限流与熔断](./rate-limiting) | 流量控制与故障隔离 | 令牌桶/漏桶、熔断状态机、降级策略、Sentinel/Hystrix |
 | [消息队列](./message-queue) | 异步解耦与削峰填谷 | Kafka/RocketMQ/RabbitMQ、消息可靠性、顺序消息、幂等消费 |
 | [微服务架构](./microservices) | 服务拆分与治理 | 服务注册发现、API 网关、服务通信、CQRS、Event Sourcing |
@@ -71,6 +71,12 @@ title: 系统设计
 | [系统设计实战题](./interview-cases/) | 以常见产品场景构造的模拟设计练习，规模与技术选型按题设讨论 | 即时通信、电商、支付、配送、协作与 AI 平台等场景 |
 
 ## 建议顺序
+
+深入追问可沿三条线串联：
+
+- **容量与故障**：方法论中的逐层估算 → 高可用的故障域与剩余容量 → [Kubernetes](../engineering-practice/kubernetes) 的 HPA、资源限制和发布预算。
+- **读路径正确性**：缓存策略中的失效时序与新鲜度 → [Redis 实战](../engineering-practice/redis) 的复制、故障切换、L1 广播和排障。
+- **写路径可靠性**：高并发写的受理状态机 → [分布式事务](./distributed-transaction) 的 Outbox/补偿 → Redis Stream 的 ACK、接管与持久去重。
 
 按以下四个层次推进，可以有效建立知识体系：
 

@@ -81,9 +81,9 @@ K8s 的"大脑"不是一次性执行命令，而是**无数个控制器在跑无
 | 设计 | 为什么这么设计 |
 |------|--------------|
 | **只有 API Server 能访问 etcd** | 收敛所有认证/授权/准入/校验逻辑到一处；其他组件无状态，可任意重启/多副本 |
-| **所有状态存 etcd** | etcd 用 Raft 保证强一致，是集群唯一"事实来源"；组件全部宕机后从 etcd 恢复即可 |
+| **API 资源状态持久化到 etcd** | etcd 用 Raft 维护一致性；应用数据、节点上的容器状态和外部云资源并不因此获得备份 |
 | **组件间用 list-watch 而非轮询** | 控制器/kubelet 通过 watch **长连接增量接收**状态变更，实时且低开销；避免几千个组件疯狂轮询 API Server |
-| **组件彼此不直接通信** | 全部通过 API Server 中转（"状态驱动"），组件解耦、可独立演进、易扩展 |
+| **控制器通过 API 资源解耦** | 编排协作以资源状态为中心；API Server 到 kubelet 的日志/执行请求、kubelet 到运行时的 CRI 调用等仍是直接通信 |
 
 ::: tip 💡 面试黄金回答（一句话讲透 K8s 设计）
 
@@ -133,7 +133,7 @@ K8s 的"大脑"不是一次性执行命令，而是**无数个控制器在跑无
 
 > ① `kubectl` 把 YAML 发给 **API Server** → 认证/授权/准入 → 写 **etcd**；② **Deployment Controller** watch 到 → 创建 ReplicaSet；③ **ReplicaSet Controller** watch 到 → 创建 Pod 对象（还没节点）；④ **Scheduler** watch 到未调度 Pod → 选节点 → 写回 `nodeName`；⑤ 对应节点 **kubelet** watch 到 → 调容器运行时拉镜像起容器；⑥ kubelet 上报状态写回 etcd → `kubectl get pod` 看到 Running。
 >
-> **整条链路没有任何组件直接互相调用，全靠 watch etcd 状态变化驱动**——这就是"声明式 + 控制循环"的实际运转。
+> **编排链路由 API 资源变化驱动，控制器监听的是 API Server，而不是直连 etcd。** kubelet 仍要通过 CRI 调用运行时。`Running` 只描述 Pod 阶段，不等于应用已经 Ready，也不等于请求已经可以通过 Service 成功到达。
 
 :::
 
@@ -149,6 +149,42 @@ K8s 的"大脑"不是一次性执行命令，而是**无数个控制器在跑无
 | **PV / PVC / StorageClass** | 持久化存储 | [2.5](#_2-5-存储-volume-pv-pvc) |
 | **HPA / VPA** | 自动伸缩 | [2.6](#_2-6-自动伸缩) |
 | **RBAC / PSS** | 权限 / Pod 安全 | [2.8](#_2-8-安全) |
+
+## 1.5 控制循环深挖：事件会丢，为什么仍能收敛？
+
+控制器不是把每个通知当作必须执行一次的业务命令，而是把通知当作“这个对象可能需要重新检查”的提示。典型链路是：
+
+```text
+API Server LIST/WATCH
+  -> Informer 本地缓存
+  -> Workqueue（通常按 namespace/name 排队、去重）
+  -> Reconcile：读当前状态，计算差异，执行有限动作
+  -> 成功后结束；暂时失败则限速重试
+```
+
+**为什么不直接在 watch 回调里创建资源？** 事件可能重复，连接可能中断，控制器可能在执行外部操作后崩溃；本地缓存也可能暂时落后于 API Server。必须基于当前状态做幂等调谐，而不是假定通知恰好送达一次。watch 的旧 `resourceVersion` 不再可用时，客户端需要重新 LIST 并恢复 WATCH。
+
+| 字段/机制 | 解决的问题 | 不能推导出的保证 |
+|-----------|------------|------------------|
+| `metadata.resourceVersion` | 标识资源版本；更新时用于乐观并发控制，冲突后重新读取并计算 | 不是业务时间戳，也不能当作业务自增序列 |
+| `metadata.generation` | 对 Deployment 等资源，期望配置变化会递增代数 | 不表示控制器已经完成发布 |
+| `status.observedGeneration` | 支持该字段的控制器报告自己观察到的期望代数 | “已观察”不等于“全部副本可用”，还要看 Conditions 和副本数 |
+| `ownerReferences` | 建立 Deployment、ReplicaSet、Pod 等从属关系，供垃圾回收使用 | 不负责回滚外部数据库、云服务中的副作用 |
+| `finalizers` | 删除时先设置 `deletionTimestamp`，等待清理控制器完成职责后移除标记 | 控制器失效会让对象长期 Terminating；强行移除可能泄漏外部资源 |
+
+**Operator 创建云资源的例子**：创建云盘成功后，写回 Kubernetes 状态失败。下一次调谐不能盲目再创建一块盘，应通过对象 UID 派生的幂等标识查询已有资源，再补写状态。删除则要考虑云 API 超时、资源已不存在、凭据失效，确保重试能够推进，而不是无限重复副作用。
+
+### 控制平面故障与业务故障不是同一件事
+
+| 故障 | 通常还能工作 | 受影响的能力与检查点 |
+|------|--------------|----------------------|
+| API Server 暂不可用 | 已运行容器与已下发的部分网络规则可能继续服务 | 新发布、调度及状态更新受阻；依赖实时 Kubernetes API 的应用可能直接失败 |
+| Scheduler 不可用 | 已调度 Pod 不会因此停止 | 新 Pod 保持 Pending；检查调度器健康和 leader election |
+| Controller Manager 不可用 | 现有进程通常继续运行 | 副本补齐、节点处理等调谐受阻，不能把“存量可用”当作“自愈可用” |
+| etcd 失去多数派 | 现有数据平面可能继续运行 | 控制平面无法正常提交状态更新；恢复 quorum 或按流程恢复快照 |
+| 工作节点失联 | 其他节点上的副本可能继续服务 | 检测、驱逐、重建、存储挂载都需要时间；失联节点上的旧进程未必已停止 |
+
+**备份边界**：etcd 快照保存 Kubernetes API 状态，不包含 PVC 中的数据库数据，也不自动包含外部密钥和所有证书。恢复演练要同时验证 etcd 快照、解密所需密钥、应用备份、卷快照一致性及恢复后的网络依赖，实际测量 RPO/RTO。
 
 ---
 
@@ -180,12 +216,11 @@ Pod 是 K8s 最小调度单元，封装一个或多个共享资源的容器。
 ```
 Pending → Running → Succeeded / Failed
 
-Pod 内部启动顺序:
+Pod 内部启动过程（不含原生 Sidecar 的常规情况）:
   Init Container（串行，全部成功才继续）
-    → Main Container 启动
-      → PostStart Hook（可选）
-        → 运行中（探针持续检测）
-          → PreStop Hook（可选）→ 容器终止
+    → Main Container 启动，PostStart Hook 可能与入口进程并发
+      → 运行中（探针持续检测）
+        → 进入终止宽限期 → PreStop Hook（可选）→ TERM → 到期后 KILL
 ```
 
 | 阶段 | 含义 |
@@ -219,7 +254,7 @@ Pod 通常不直接创建，而是交给上层 **Workload Controller** 管理。
 | Pod 身份 | 随机后缀（`app-7d4f-xk2p`）| 稳定有序（`app-0`、`app-1`）|
 | 网络标识 | IP 随机变化 | 固定 DNS，配 Headless Service |
 | 存储 | 共享或无持久存储 | 每 Pod 独占 PVC，重建仍绑原数据 |
-| 启动/伸缩顺序 | 并行、无序 | 严格有序（0→1→2，缩容反向）|
+| 启动/伸缩顺序 | 通常并行，不保证顺序 | 默认 `OrderedReady`；可用 `Parallel` 放宽扩缩容顺序，更新另由更新策略控制 |
 
 ### 为什么是 Deployment → ReplicaSet → Pod 三层？（设计内核）
 
@@ -231,11 +266,11 @@ Deployment（管版本 + 更新策略）
     └── ReplicaSet v2（新版本 image:2.0）← 当前
             └── Pod、Pod、Pod
 
-滚动更新: 逐步 v2 +1 Pod、v1 -1 Pod → 平滑切换、零停机
-回滚:     把流量切回 v1 ReplicaSet（一直保留着）→ 秒级回滚
+滚动更新: 按策略增加 v2、缩减 v1；是否无损取决于容量、就绪和摘流
+回滚:     恢复旧 Pod 模板，扩容旧 ReplicaSet、缩减新 ReplicaSet
 ```
 
-**职责分离**：ReplicaSet 只负责"维持 N 个副本"（副本控制）；Deployment 在其上管理"多版本 + 更新策略 + 回滚"（版本控制）。旧 ReplicaSet 保留（`revisionHistoryLimit` 控制数量），回滚直接切回，无需重拉镜像。这是职责单一原则在资源设计上的体现。
+**职责分离**：ReplicaSet 只负责"维持 N 个副本"（副本控制）；Deployment 在其上管理"多版本 + 更新策略 + 回滚"（版本控制）。`revisionHistoryLimit` 保留的是历史 ReplicaSet 对象，不保证旧 Pod 或节点镜像缓存仍在。回滚仍可能经历调度、拉镜像、启动和就绪检查；也不会自动恢复数据库 schema 或外部配置。
 
 ## 2.3 配置管理（ConfigMap / Secret）
 
@@ -250,7 +285,7 @@ Deployment（管版本 + 更新策略）
 
 > Secret 数据仅 Base64 编码，任何有读权限的人都能 `base64 -d` 还原明文。生产必须：① 开 etcd 静态加密（EncryptionConfiguration）；② 用外部密钥系统（Vault / AWS Secrets Manager / External Secrets Operator）；③ RBAC 严格限制读取权限。
 
-**环境变量 vs 文件挂载的关键区别**：文件挂载的 ConfigMap/Secret **更新后会自动同步到 Pod**（有延迟）；而**环境变量注入的值在 Pod 启动后固定**，改了 ConfigMap 也不生效，必须重启 Pod。
+**环境变量 vs 文件挂载的关键区别**：普通投射卷中的 ConfigMap/Secret 更新会最终同步，但使用 `subPath` 挂载不会自动更新，应用也必须主动重新读取或监听文件变化。环境变量在容器启动后固定，需要替换 Pod 才能使用新值。不可变配置配合版本化名称或 Pod 模板中的配置摘要，可以把配置变化纳入可追踪的发布过程。
 
 ## 2.4 Service 与网络
 
@@ -273,43 +308,55 @@ Deployment（管版本 + 更新策略）
 | **ClusterIP**（默认） | 仅集群内部 | 微服务互调 |
 | **NodePort** | 集群外，`节点IP:端口`（30000-32767）| 测试临时对外 |
 | **LoadBalancer** | 集群外，云厂商 LB | 生产对外暴露 |
+| **ExternalName** | DNS 返回外部名称的 CNAME | 外部服务别名，不提供代理或健康检查 |
 | **Headless**（`clusterIP: None`） | 返回 Pod IP 列表 | StatefulSet 固定寻址 |
 
-> 生产常用 **ClusterIP + Ingress** 组合，避免每个服务开昂贵的 LoadBalancer。
+> Headless 是 `ClusterIP` Service 的一种配置，不是单独的 `spec.type`。生产 HTTP 服务常用 **ClusterIP + Ingress/Gateway** 组合；NodePort 也可以作为外部负载均衡的后端，并非只能用于测试。
 
 ### 服务发现 + Endpoints（内核）
 
-CoreDNS 为每个 Service 建 DNS 记录 `<service>.<namespace>.svc.cluster.local`，Pod 直接用服务名访问。Service **不直接连 Pod**，而是通过 **Endpoints/EndpointSlice** 动态维护"匹配且**就绪**的 Pod IP 列表"，kube-proxy 据此生成转发规则。readinessProbe 失败的 Pod 被移出 Endpoints——这就是"摘流量不重启"的实现。
+在常用的 `cluster.local` 集群域下，CoreDNS 为 Service 提供 `<service>.<namespace>.svc.cluster.local` 记录。EndpointSlice 控制器维护后端地址及 `ready`、`serving`、`terminating` 条件，网络数据平面据此选择后端。普通 Service 通常不把新连接分配给未就绪 Pod，但 `publishNotReadyAddresses` 等配置会改变此行为；已有连接也不会因 readiness 失败自动迁移。新系统优先使用 EndpointSlice，旧 Endpoints API 已从 Kubernetes 1.33 起弃用。
 
 ### 容器网络模型与 CNI
 
 **K8s 网络四大铁律**：① 每个 Pod 一个 IP，Pod 内容器共享网络命名空间；② 所有 Pod 不经 NAT 互通（跨节点也是）；③ 节点与 Pod 互通；④ Pod 自看 IP == 他看它的 IP。
 
-> **关键**：K8s **只定义 CNI 规范，不实现网络**——具体由 CNI 插件实现（所以装完 K8s 还要单独装网络插件）。
+> **关键**：Kubernetes 定义 Pod 网络模型，常见 Linux 容器运行时通过 CNI 接口调用网络插件完成地址分配、网络配置。CNI 是独立规范，不是由 Kubernetes 单独定义；NetworkPolicy 是否生效取决于网络实现。
 
-| CNI 插件 | 模式 | 性能 | NetworkPolicy | 适用 |
-|------|------|------|---------|------|
-| **Flannel** | Overlay（VXLAN）| 中（封装开销）| ❌ | 入门/测试 |
-| **Calico** | BGP / IPIP | 高（接近裸网络）| ✅ | **生产首选** |
-| **Cilium** | eBPF + BGP | 最高（绕开 iptables）| ✅✅ L3-L7 | **现代云原生首选** |
+| 网络实现 | 常见能力 | 选型时必须确认 |
+|----------|----------|----------------|
+| **Flannel** | VXLAN 等 Pod 连通方案 | 单独使用通常不执行 NetworkPolicy，需要其他策略组件 |
+| **Calico** | 路由、Overlay、网络策略及可选 eBPF 数据平面 | 底层网络是否支持路由模式、MTU、策略与内核兼容性 |
+| **Cilium** | eBPF 数据平面、网络策略、可观测性及可选 Service 代理替换 | 内核要求、替换 kube-proxy 的配置、升级与故障定位成本 |
 
-### kube-proxy 三种模式（内核 + 规模瓶颈）
+### kube-proxy 与替代数据平面（内核 + 规模瓶颈）
 
-| 模式 | 数据结构 | 大规模性能 |
-|------|--------|-----------|
-| **iptables**（默认） | 规则链 | **O(N) 线性匹配**，5000+ Service 后膨胀到几十万条、更新阻塞数秒 |
-| **IPVS** | LVS 内核哈希表 | **O(1) 匹配** + RR/LC 等算法，**大规模推荐** |
-| **eBPF**（Cilium） | eBPF Map | 最高 |
+| 实现 | 核心机制 | 评估重点 |
+|------|----------|----------|
+| kube-proxy **iptables** | 生成 netfilter 规则，配合 conntrack 转发 | 新连接匹配成本、规则同步耗时、Service/Endpoint 变化频率 |
+| kube-proxy **nftables** | 使用 nftables 的集合和映射表达转发规则 | Kubernetes、内核和网络插件支持情况，以及 NodePort 等行为差异 |
+| kube-proxy **IPVS** | IPVS 虚拟服务和连接调度，部分功能仍需其他规则 | 维护状态及 Service 语义兼容性，不能仅凭查表复杂度认定更优 |
+| **eBPF Service 实现** | 由 Cilium 等网络组件实现，可替换 kube-proxy | 不是 kube-proxy 的一个模式；评估功能、可观测性与运维能力 |
 
-> **ClusterIP 是虚拟 IP**——不绑在任何网卡上，只是 kube-proxy 的一个 DNAT 目标，所以 ping 不通、抓包也看不到。大规模生产必须切 IPVS 或 Cilium eBPF。
+> **ClusterIP 是服务虚拟地址，但实现不唯一**：iptables 模式通常不把它绑定到接口，IPVS 模式可能绑定到虚拟接口。Service 面向配置的传输层端口，`ping` 的 ICMP 结果不能判定 Service 是否正常；抓包能看到什么取决于抓取位置与数据平面。应通过目标协议和端口验证，不以固定 Service 数量作为换方案的唯一阈值。
+
+### 一次集群内 HTTP 请求经过哪些层？
+
+1. 客户端解析 Service 名称，普通 ClusterIP Service 返回虚拟 IP；Headless 通常返回后端地址，选择与重试更多由客户端承担。
+2. 建立连接时，节点的数据平面选择后端，将流量送到 `targetPort`。EndpointSlice 和 API Server 不在每个请求的数据转发路径上。
+3. 后端在其他节点时，由网络插件配置的路由或隧道完成跨节点传输。Overlay 需要考虑封装后的 MTU；大包失败而小包成功时应检查 PMTU。
+4. TCP 连接建立后通常保持同一后端。HTTP keep-alive、HTTP/2 与 gRPC 的长连接可能造成负载倾斜，增加 Pod 不等于存量连接自动再平衡。
+5. 外部流量还涉及云 LB、Ingress/Gateway、源地址转换与连接排空。`externalTrafficPolicy: Local` 可限制为节点本地后端，但要配合 LB 健康检查，考虑节点间流量不均。
+
+**排查顺序**：域名解析 → Pod IP 与端口 → Service IP 与端口 → Ingress/Gateway。Pod IP 可达而 Service 不通，优先检查 selector、EndpointSlice、端口和数据平面规则；只有域名不通，优先检查 CoreDNS、DNS 出站策略和客户端 DNS 缓存。
 
 ### Ingress：七层入口
 
-Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由**：按域名/路径分发、统一 TLS 终止、一个入口服务多个后端。Ingress 本身只是规则，必须部署 **Ingress Controller**（Nginx/Traefik）才生效。新一代标准是 **Gateway API**（2023 GA，角色分离 + 支持 TCP/UDP/gRPC）。
+Service 提供 TCP/UDP/SCTP 等传输层服务抽象，**Ingress 提供 HTTP/HTTPS 路由规则**，必须配合具体 Ingress Controller 才生效。Gateway API 通过 GatewayClass、Gateway 和不同 Route 资源区分基础设施与应用职责；各 Route 类型的成熟度和控制器支持范围并不相同，不能把“Gateway API 核心资源 GA”理解成所有协议、功能都可用。
 
 ### NetworkPolicy：网络隔离
 
-默认所有 Pod 互通（"大平层"），**NetworkPolicy 实现 Pod 间防火墙**（零信任底线）。注意它靠 CNI 实现，**Flannel 不支持**，需 Calico/Cilium。一旦某 Pod 被任意 NetworkPolicy 选中，就从"默认全通"变为"默认全拒 + 白名单"。
+默认没有网络策略隔离时，Pod 间通常可以互通。NetworkPolicy 的隔离按 **Ingress/Egress 方向分别生效**：被某方向的策略选中后，该方向只允许匹配任一策略的流量，规则是并集，不存在“后写规则覆盖前面规则”。一次连接必须同时满足源端适用的 Egress 和目标端适用的 Ingress 规则。默认拒绝出站后要显式考虑 DNS 的 UDP/TCP 53、数据库与外部依赖；策略对象创建成功不代表 CNI 已支持并执行策略。
 
 ## 2.5 存储（Volume / PV / PVC）
 
@@ -327,6 +374,28 @@ Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由*
 
 **访问模式**：`ReadWriteOnce`（单节点读写，块存储如云盘）、`ReadOnlyMany`（多节点只读）、`ReadWriteMany`（多节点读写，需 NFS/CephFS）。
 
+### 从 PVC 到挂载：调度和存储为什么会互相等待？
+
+```text
+PVC 申请容量与 StorageClass
+  -> 动态制备/绑定 PV
+  -> 为 Pod 选择满足卷拓扑的节点
+  -> CSI 控制器 attach（如果驱动需要）
+  -> 节点侧 stage/publish，容器获得挂载点
+```
+
+`volumeBindingMode: WaitForFirstConsumer` 会把制备/绑定延后到有 Pod 需要该卷、调度器能综合节点约束时，避免先把云盘建在可用区 A，Pod 却只能去 B。因此 PVC Pending 不一定是故障，要看是否仍在等待使用者，以及 StorageClass、CSI 和节点拓扑事件。
+
+| 容易混淆的保证 | 实际边界 |
+|----------------|----------|
+| RWO 等于只能一个 Pod 写 | RWO 是单节点访问约束，同节点多个 Pod 可能共享；支持该能力的 CSI 卷可用 `ReadWriteOncePod` 限制为一个 Pod |
+| StatefulSet 等于数据库高可用 | 它管理身份和 Pod/PVC，不实现数据库选主、复制一致性和数据修复 |
+| 删除 Pod 等于删除数据 | PVC 通常独立保留；还要检查 StatefulSet PVC 保留策略、PV `reclaimPolicy` 和驱动行为 |
+| `Retain` 等于备份 | 保留原卷不防误写、误删、勒索和可用区级故障；仍需独立备份及恢复演练 |
+| 强删失联 Pod 能马上恢复单写 | API 对象消失不证明旧进程已停；有状态服务需要 fencing，避免旧实例继续写共享资源 |
+
+**恢复时间要分段测量**：节点故障检测 + Pod 重建 + 卷 detach/attach + 数据库恢复/追日志 + readiness。仅看到新 Pod Running，不能宣称业务已经恢复。
+
 ## 2.6 自动伸缩
 
 **HPA / VPA / CA 三者别混淆**：
@@ -337,7 +406,27 @@ Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由*
 | **VPA**（Vertical） | 单 Pod 的 requests/limits | 调规格 | 难水平扩展的有状态应用 |
 | **CA**（Cluster Autoscaler） | **节点数量** | 加减 Node | Pod 因资源不足 Pending 时扩节点 |
 
-> **典型组合**：HPA 扩 Pod → 节点不够 Pod Pending → CA 扩节点 → Pod 被调度。HPA 依赖 **Metrics Server**，且 Pod 必须设 `requests` 才能算利用率。HPA 和 VPA 一般不同时作用同一指标（会打架）。
+> **典型组合**：HPA 扩 Pod → 节点不够 Pod Pending → CA 扩节点 → Pod 被调度。CPU/内存资源指标通常由 Metrics Server 提供；自定义/外部指标需要相应适配器。以资源利用率为目标时，必须设置对应的 `requests`，绝对值或外部指标不都依赖这一分母。HPA 和 VPA 不宜未经协调同时改变同一资源的利用率与 request。
+
+### HPA 如何从指标算出副本数？
+
+忽略缺失指标、容差和稳定窗口时，基本关系是：
+
+$$
+N_{desired} = \left\lceil N_{current} \times \frac{M_{current}}{M_{target}} \right\rceil
+$$
+
+例如 4 个 Pod，每个 CPU request 为 500m，平均用量为 400m，利用率是 80%；目标 50%，建议副本数为 `ceil(4 × 80 / 50) = 7`。这不是“CPU 使用达到 limit 的 80%”。若错误地把 request 降到 250m，同样的负载会显示 160%，扩容建议也随之改变。
+
+实际控制器还要处理：
+
+- **多个指标**：分别计算，采用较大的副本建议；指标获取失败时会保守处理，不能把缺失值直接当零缩容。
+- **启动阶段**：未就绪 Pod、缺失采样和启动 CPU 峰值需要特殊处理，避免把预热误判成稳定负载。
+- **稳定窗口与速率**：缩容窗口保留近期较高建议，伸缩策略限制单位时间变化量，减少反复扩缩。
+- **扩容滞后**：采样、控制循环、节点创建、镜像下载和应用预热都耗时。秒级突发需要预留容量、预扩容和入口限流。
+- **错误的扩容信号**：数据库锁等待导致 P99 上升时，增加应用副本可能制造更多 DB 连接；应结合并发、队列年龄和依赖饱和度判断。
+
+HPA 接管后，GitOps 不应持续把 `spec.replicas` 强行改回固定值。迁移字段所有权时需按所用 apply 方式操作，避免直接删除字段触发一次意外缩容。
 
 ## 2.7 调度、探针与终止
 
@@ -359,7 +448,22 @@ Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由*
 | **Pod Affinity/AntiAffinity** | Pod 选 Pod | "和 Redis 同节点 / 副本分散到不同节点" |
 | **Taints + Tolerations** | 节点选 Pod | "我有污点，只有能容忍的 Pod 才能来" |
 
-> 硬约束 `requiredDuringScheduling`（不满足就 Pending）vs 软约束 `preferredDuringScheduling`（尽量满足带 weight）。master 节点默认带 `NoSchedule` 污点，所以普通 Pod 不上去。生产高可用必配 `podAntiAffinity + topologyKey: hostname` 让副本跨节点分散。
+> 硬约束 `requiredDuringScheduling` 不满足会 Pending；软约束 `preferredDuringScheduling` 只是带权偏好。容忍污点表示“可以来”，不保证被调度到该节点。生产可结合反亲和与 `topologySpreadConstraints` 分散节点/可用区；硬性“一节点一个副本”也可能让滚动发布的额外副本无处可放。
+
+### requests、limits、QoS 与驱逐：四层机制不能混为一谈
+
+| 机制 | 作用时间 | 具体影响 |
+|------|----------|----------|
+| `requests` | 调度与资源竞争 | 按 Node Allocatable 和已请求资源判断能否放入，不是看 `kubectl top` 此刻是否空闲 |
+| CPU limit | 容器运行时 | 常见 Linux 实现通过 CPU 配额节流；可能 CPU 总量不高但短时耗尽配额，导致 P99 上升 |
+| memory limit | 容器运行时 | 触及 cgroup 内存约束可能触发 OOM；不是像 CPU 一样限速等待 |
+| QoS 与节点压力驱逐 | 节点资源不足时 | 与是否超出 request、Pod Priority、资源用量有关，不能只按 QoS 名称断言固定驱逐顺序 |
+
+按常见的容器级资源配置，**Guaranteed** 要求 Pod 中所有相关容器的 CPU、内存 request 和 limit 都设置且分别相等；不满足 Guaranteed、但有资源设置的是 **Burstable**；完全没有这些设置的是 **BestEffort**。Guaranteed 也不能防止容器超过自己的内存 limit。
+
+**Java 服务例子**：容器 limit 为 1Gi，不应直接给 `-Xmx1g`。RSS 还包括 metaspace、线程栈、直接内存、JIT 和 native 分配；`emptyDir.medium: Memory` 的 tmpfs 也会消耗内存预算。先分解内存，再设堆上限，结合 working set、RSS、GC 和 OOM 事件验证。
+
+**CPU limit 是否必须设置？** 多租户环境可能要求严格配额；对延迟敏感、隔离条件良好的服务，也可能保留合理 request 而不设过紧 CPU limit。依据平台策略和节流指标决策，不把“所有资源一律设相同 request/limit”当作万能模板。
 
 ### 三种探针（分工不同，不能混用）
 
@@ -371,7 +475,7 @@ Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由*
 
 ::: warning ⚠️ liveness 和 readiness 别用同一个查外部依赖的端点
 
-> 若两者都探 `/health` 且里面查 DB，当 DB 抖动 → readiness 失败摘流量（合理）+ **liveness 也失败重启 Pod（灾难）** → 重启后 DB 还没好 → 继续重启雪崩。**正确分工**：liveness 只探进程自身是否卡死（轻量、不查外部依赖），readiness 才查下游依赖。
+> 若两者都探包含 DB 检查的 `/health`，DB 抖动可能导致所有实例反复重启，进一步增加连接与恢复压力。liveness 应检查进程自身不可恢复的故障；readiness 判断能否提供所承诺的服务，而不是把所有下游都列为硬依赖。共享依赖故障时，若所有副本同时被摘除，反而失去返回缓存或降级响应的能力。
 
 :::
 
@@ -379,19 +483,21 @@ Service 是四层（TCP）暴露，**Ingress 提供七层（HTTP/HTTPS）路由*
 
 ```
 kubectl delete pod →
-1. Pod 转 Terminating
-2. 并发: 从 Endpoints 移除（不再接新流量） + 触发 preStop Hook
+1. API 标记删除；kubelet 观察后启动本地终止流程与宽限期计时
+2. 并发: EndpointSlice 标记终止/非就绪 + 执行 preStop Hook
 3. preStop 执行完 → 发 SIGTERM 给主进程
-4. 等 terminationGracePeriodSeconds（默认 30s）
+4. 使用宽限期剩余时间完成请求、连接排空和进程退出
 5. 仍未退 → SIGKILL 强杀
 ```
 
 ::: warning ⚠️ 优雅终止两大坑
 
-> ① **502 错误**：摘 Endpoints 是异步的（kube-proxy 同步有延迟），可能 Pod 已关闭但还在被转发。解决：preStop `sleep 5` 等同步完再关。
+> ① **502 错误**：EndpointSlice、代理、外部 LB 的状态传播是异步的，已有连接也可能继续送请求。preStop 的短暂等待只能缓解传播竞态，`sleep 5` 不是通用保证。需要测量摘流延迟，配合应用停止接新请求、处理存量请求及客户端安全重试。
 > ② **PID 1 信号**：用 `sh -c "java ..."` 启动时 shell 是 PID 1，不转发 SIGTERM 给 Java → 优雅终止失效，30s 后被硬杀。解决：用 `exec java ...` 或加 `tini`。
 
 :::
+
+宽限期包含 preStop，不是在 hook 结束后再给完整 30 秒。预算应覆盖“摘流等待 + 最长允许在途请求 + 退出清理 + 余量”；WebSocket/gRPC 长流还需要最大连接寿命、重连和恢复协议。
 
 ## 2.8 安全
 
@@ -439,7 +545,7 @@ spec:
 
 ## 场景 1：无状态应用部署
 
-Deployment 管 3 副本 + ClusterIP Service + 资源限制 + 健康探针：
+Deployment 管 3 副本 + ClusterIP Service + 资源限制 + 健康探针。以下使用占位镜像；应用需提供对应健康端点。Spring Boot 应启用 Actuator 的 probes 分组，并确认端口与安全规则允许 kubelet 访问：
 
 ```yaml
 apiVersion: apps/v1
@@ -462,14 +568,21 @@ spec:
         resources:
           requests: { cpu: "100m", memory: "128Mi" }
           limits:   { cpu: "500m", memory: "512Mi" }
-        livenessProbe:
-          httpGet: { path: /actuator/health, port: 8080 }
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet: { path: /actuator/health, port: 8080 }
-          initialDelaySeconds: 5
+        startupProbe:
+          httpGet: { path: /actuator/health/liveness, port: 8080 }
           periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 30
+        livenessProbe:
+          httpGet: { path: /actuator/health/liveness, port: 8080 }
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        readinessProbe:
+          httpGet: { path: /actuator/health/readiness, port: 8080 }
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 2
 ---
 apiVersion: v1
 kind: Service
@@ -484,7 +597,7 @@ spec:
 
 ::: tip 💡 requests vs limits 的设计意义
 
-> **requests** 是调度依据（Scheduler 按它找装得下的节点）+ HPA 计算基准；**limits** 是运行时硬约束（CPU 超了限流、内存超了 OOMKilled）。三种 QoS：`requests==limits` → **Guaranteed**（最后被驱逐）；只设 requests → **Burstable**；都不设 → **BestEffort**（资源紧张第一个被驱逐）。生产至少 Burstable。
+> 上例是 Burstable，数值仅示意，不代表 Java 服务的生产推荐规格。startupProbe 约提供 `30 × 5 = 150` 秒的启动探测预算；readiness 成功还应意味着初始化和必要预热已完成。资源参数要由压测、启动峰值与故障冗余要求确定。
 
 :::
 
@@ -534,13 +647,26 @@ kind: HorizontalPodAutoscaler
 metadata: { name: my-app-hpa }
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: my-app }
-  minReplicas: 2
+  minReplicas: 3
   maxReplicas: 10
   metrics:
   - type: Resource
     resource:
       name: cpu
       target: { type: Utilization, averageUtilization: 50 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Pods
+        value: 2
+        periodSeconds: 30
 ```
 
 > 依赖 Metrics Server，Pod 必须设 `requests`。
@@ -555,7 +681,9 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1          # 最多多出 1 个 Pod
-      maxUnavailable: 0    # 最多 0 个不可用（零停机）
+      maxUnavailable: 0
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
   template:
     spec:
       containers:
@@ -571,7 +699,9 @@ kubectl rollout undo deployment/my-app --to-revision=2   # 回滚指定版
 
 ::: tip 💡 maxSurge / maxUnavailable 取舍
 
-> `maxUnavailable:0 + maxSurge:1` 零停机但更新慢、多占资源，**在线服务首选**；`maxUnavailable:1 + maxSurge:0` 不多占资源但少 1 副本。另有 `Recreate`（先全停再全起，有停机，适合不允许多版本共存如 DB schema 不兼容）。
+> `maxUnavailable:0 + maxSurge:1` 优先保留旧副本，但需要额外调度容量，且不等于请求零失败。`minReadySeconds` 要求新副本持续 Ready 一段时间才算 Available；`progressDeadlineSeconds` 超时会报告发布未取得进展，不会自动回滚。百分比 `maxSurge` 向上取整、`maxUnavailable` 向下取整；正在终止的 Pod 还可能继续占资源。
+
+> `Recreate` 会先停旧版本再启动新版本，有明确停机窗口。涉及数据库字段变更时，优先采用 expand-contract：先加兼容字段、部署兼容读写、回填与核对，再移除旧字段，保留应用回滚的可能性。
 
 :::
 
@@ -586,8 +716,54 @@ spec:
     lifecycle:
       preStop:
         exec:
-          command: ["sh", "-c", "sleep 5"]   # 等 Endpoints 同步完再关，避免 502
+          command: ["sh", "-c", "sleep 5"]
 ```
+
+这里的 5 秒只是示例，且镜像需要包含 `sh` 和 `sleep`。应用必须另外实现 SIGTERM 优雅关闭；若宽限期 60 秒，hook 用掉 5 秒后，业务退出预算就少了 5 秒。
+
+## 场景 6：跨故障域部署与 PDB
+
+在 Deployment 的 Pod 模板中加入以下片段，尝试将副本分散到不同可用区：
+
+```yaml
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: my-app
+```
+
+它依赖节点的可用区标签与可调度容量，不会凭空产生三个可用区；必须查看实际放置结果。只剩部分故障域时，硬约束可能阻止恢复副本，需要提前决定“严格分散”与“降级集中部署”的取舍。
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: my-app-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: my-app
+```
+
+对于 3 个 Ready 副本，这个 PDB 通常允许经 Eviction API 一次驱逐 1 个；如果已有 1 个不可用，再 drain 可能被阻塞。**PDB 不防节点宕机，不限制 Deployment 自身的滚动更新，也不拦截直接删除 Pod。** 故障会消耗预算，但不能被预算“阻止”。
+
+发布前检查节点容量、PDB、拓扑约束、资源配额和 HPA 下限是否相容。若 `minAvailable` 等于当前全部副本，维护可能一直无法推进；正确处理是恢复健康或补容量，再按变更流程调整，不能习惯性绕过 PDB。
+
+## 场景 7：一次发布的验收与回退清单
+
+| 阶段 | 必须确认 | 失败时动作 |
+|------|----------|------------|
+| 发布前 | 镜像可拉取、配置版本、schema 兼容、surge 容量、回退版本 | 暂停发布，补齐前置条件 |
+| 发布中 | 新副本 Ready/Available、5xx、P99、依赖错误、CPU 节流 | 停止放量；区分应用故障、容量不足和基础设施故障 |
+| 发布后 | 业务成功率、队列年龄、旧版本连接排空、资源回落 | 在回退兼容窗口内恢复旧模板或执行预定修复 |
+| 故障演练 | 单 Pod/单节点故障、依赖超时、镜像仓库不可用 | 测量恢复时间和错误预算消耗，不能只检查副本数 |
 
 ---
 
@@ -595,14 +771,14 @@ spec:
 
 | 陷阱 | 现象 | 正确做法 |
 |------|------|----------|
-| 不设 `resources.limits` | 单 Pod 无限吃 CPU/内存，挤爆节点、别的 Pod 被驱逐 | 始终设 requests + limits，HPA 也依赖 requests |
+| 资源预算未经压测 | 调度超卖、CPU 节流或 OOM | 设置合理 requests、内存上限；CPU limit 按隔离要求和延迟指标决定 |
 | liveness/readiness 同配置且查外部依赖 | DB 抖动时 liveness 也失败 → 反复重启雪崩 | liveness 只探进程自身，readiness 才查依赖；启动慢用 startupProbe |
 | 以为 Secret 是加密的 | 仅 Base64，有读权限即可解码 | 开 etcd 静态加密 / 用 Vault / RBAC 限权 |
 | 业务进程不是 PID 1 | SIGTERM 不被转发，优雅终止失效，30s 硬杀 | 用 `exec` 启动或加 tini |
 | 环境变量注入配置后改 ConfigMap | 改了不生效 | 环境变量需重启 Pod；要热更新用文件挂载 |
-| 4 个节点做集群 | 脑裂时 2+2 没有多数派，etcd 卡死 | etcd/控制平面用奇数节点（3/5/7）|
+| 混淆工作节点数与 etcd 成员数 | 误以为所有 K8s 节点都必须奇数 | etcd 常用 3/5 个投票成员；4 成员和 3 成员都只能容忍 1 个失败，工作节点不受此限制 |
 | JVM 没识别容器内存 | 早期 JDK 看宿主机内存 → OOMKilled | `-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport`（JDK 10+）|
-| iptables 模式大集群变慢 | 5000+ Service 后 O(N) 匹配、更新阻塞 | 切 IPVS 或 Cilium eBPF |
+| 不测量就更换网络数据平面 | 规则同步、conntrack 或带宽问题被混淆 | 先定位瓶颈，再评估 nftables/eBPF 等方案的兼容性与收益 |
 | 有状态应用用 Deployment | Pod 重建 IP 变、无固定身份、共享存储数据错乱 | 用 StatefulSet 或专用 Operator |
 
 ## Pod 故障 5 大模式速查
@@ -612,14 +788,37 @@ spec:
 | **Pending** | 调度失败（资源/亲和/污点/PVC）| `kubectl describe pod` 看 Events |
 | **ImagePullBackOff** | 镜像拉不下来（名错/私有仓库/网络）| `kubectl describe pod` 看 Events |
 | **CrashLoopBackOff** | 启动即退被反复重启 | `kubectl logs --previous` 看崩溃堆栈 |
-| **OOMKilled**（Exit 137）| 内存超 limits 被杀 | `kubectl describe pod` 看 Last State |
-| **Running 但不通** | Endpoints 空 / selector 不匹配 / NetworkPolicy | `kubectl get endpoints <svc>` |
+| **OOMKilled** | 容器或节点内存压力触发终止 | `kubectl describe pod` 看 Last State，结合节点事件 |
+| **Running 但不通** | 后端未就绪 / selector 或端口不匹配 / 网络策略 | `kubectl get endpointslices -l kubernetes.io/service-name=my-app-svc` |
 
 ::: tip 💡 排查口诀
 
-> **"看状态 → describe 事件 → logs --previous → exec 进容器"**，90% 的 Pod 故障 4 步内定位。状态码记两个：**137=OOM，143=优雅终止超时**（128+SIGKILL / 128+SIGTERM）。
+> **先保留现场，再改配置**：看状态 → describe 事件 → logs --previous → 必要时进入调试环境。137 通常对应 `128 + SIGKILL(9)`，不一定是 OOM；143 通常对应 `128 + SIGTERM(15)`，不等于优雅终止超时。需要结合终止 reason、时间线、探针与节点日志判断。
 
 :::
+
+### 实战排障：应用 CPU 不高，为什么 P99 突然升高？
+
+1. 用请求 trace 分离入口等待、业务执行、DB/Redis 调用和响应写回，先判断时间花在哪一层。
+2. 查看容器 CPU throttling 与 request/limit。分钟平均 CPU 低，不能排除短时间配额耗尽；不要因此直接缩容。
+3. 对比连接池等待、GC 暂停、节点 memory/disk pressure、DNS 延迟和 conntrack 使用量。
+4. 按 Pod、节点、可用区、版本分组：只有新版本异常优先暂停发布；同节点多个服务异常优先查节点；所有副本访问同依赖都慢则查依赖。
+5. 在单个金丝雀副本调整一个变量，观察 P99 与错误率，确认后再推广。
+
+以下是只读起点，将 namespace 和 Pod 名替换为实际值；日志可能包含业务敏感信息，导出前需脱敏：
+
+```bash
+kubectl -n app get pods -l app=my-app -o wide
+kubectl -n app describe pod my-app-pod
+kubectl -n app logs my-app-pod -c my-app --previous --tail=100
+kubectl -n app get events --sort-by=.metadata.creationTimestamp
+kubectl -n app get endpointslices -l kubernetes.io/service-name=my-app-svc -o yaml
+kubectl -n app describe hpa my-app-hpa
+kubectl -n app get pdb
+kubectl -n app top pod --containers
+```
+
+`kubectl top` 依赖资源指标服务，也不是历史监控。没有上一轮容器实例时 `logs --previous` 不适用；CrashLoopBackOff/Terminating 是展示状态，不是新的 Pod phase。
 
 ---
 
@@ -631,7 +830,7 @@ spec:
 
 **Q2：K8s 核心组件有哪些？一次 `kubectl apply` 后发生了什么？**
 
-控制平面：API Server（统一入口 + 唯一读写 etcd）、Scheduler（选节点）、Controller Manager（跑控制器收敛状态）、etcd（强一致状态存储）。数据平面：kubelet（确保容器按期望运行）、kube-proxy（Service 网络规则）、容器运行时。apply 流程：kubectl→API Server 认证授权写 etcd→Deployment Controller 建 ReplicaSet→ReplicaSet Controller 建 Pod→Scheduler 选节点写 nodeName→kubelet 调运行时起容器→上报状态。全靠 list-watch 状态驱动，无组件直接互调。
+控制平面：API Server、Scheduler、Controller Manager、etcd。数据平面：kubelet、Service 网络实现、容器运行时。apply 后通过 API 资源依次驱动 Deployment、ReplicaSet、调度与 kubelet 的调谐；kubelet 通过 CRI 启动容器并上报状态。控制器监听 API Server，不直接监听 etcd；Running 与 Ready/Available 要分别判断。
 
 **Q3：为什么 Pod 是最小调度单位而不是容器？**
 
@@ -639,11 +838,11 @@ Pod 是一组"必须部署在一起、共享资源"的容器的原子单元。�
 
 **Q4：Deployment 和 StatefulSet 的区别？为什么中间要夹 ReplicaSet？**
 
-Deployment 管无状态（Pod 对等、随机命名、IP 随机、可替换）；StatefulSet 管有状态（稳定标识 `app-0`、独占 PVC、有序启停）。夹 ReplicaSet 是为滚动更新和回滚：ReplicaSet 只管"维持 N 副本"，Deployment 管"多版本 + 更新策略"，每次更新新建 ReplicaSet 逐步切换、旧的保留供秒级回滚。
+Deployment 管可替换的无状态副本；StatefulSet 提供稳定身份、卷关联及可配置的顺序语义，不替代数据库复制与选主。ReplicaSet 维持副本数，Deployment 协调不同版本；回滚恢复旧模板，仍需要创建并就绪相应 Pod，不保证秒级，也不自动回滚数据库。
 
 **Q5：Service 有哪几种类型？为什么 ClusterIP ping 不通？**
 
-ClusterIP（默认，仅内部）、NodePort（节点 IP+端口，测试对外）、LoadBalancer（云 LB，生产对外）、Headless（返回 Pod IP，StatefulSet 用）。ClusterIP 是**虚拟 IP**，不绑在任何网卡上，只是 kube-proxy 的 iptables/IPVS 里一个 DNAT 目标，访问时内核直接改写成真实 Pod IP，所以 ping 不通、抓包看不到。
+`spec.type` 有 ClusterIP、NodePort、LoadBalancer、ExternalName；Headless 通过 `clusterIP: None` 配置。虚拟 IP 的实现随数据平面而异，Service 只定义配置的传输层协议和端口，所以应检查 TCP/UDP 等实际服务，而不是通过 ICMP 判断健康。
 
 **Q6：liveness 和 readiness 探针的区别？启动慢的应用怎么配？**
 
@@ -651,15 +850,15 @@ liveness 检测是否还活着，失败重启容器（检测死锁）；readines
 
 **Q7：`kubectl delete pod` 后怎么保证零停机？**
 
-Pod 转 Terminating，并发地摘 Endpoints + 执行 preStop，然后 SIGTERM，等 grace period（默认 30s）超时 SIGKILL。零停机要点：① preStop `sleep 5` 等 kube-proxy 同步完 Endpoints 再关，避免 502；② 应用收 SIGTERM 后处理完存量请求再退；③ 确保业务进程是 PID 1（exec/tini），否则 SIGTERM 不转发。
+不能仅靠 delete 命令保证零失败。需要冗余容量、就绪检测、异步摘流、应用连接排空和正确的信号处理。preStop 与退出处理共用终止宽限期，等待时长需实测；长连接需要重连和恢复协议。滚动发布由 Deployment 策略控制，维护驱逐还要结合 PDB。
 
 **Q8：K8s 网络模型？CNI 是什么？大集群 kube-proxy 怎么选？**
 
-四大铁律：每 Pod 独立 IP、所有 Pod 不经 NAT 互通、节点与 Pod 互通、Pod 自看 IP 一致。K8s 只定义 CNI 规范不实现网络，由插件实现：Flannel（Overlay，简单损耗 10%）、Calico（BGP，生产标配）、Cilium（eBPF，最现代）。kube-proxy 默认 iptables 在 5000+ Service 后 O(N) 变慢，大集群切 IPVS（O(1) 哈希）或 Cilium eBPF。
+Kubernetes 定义 Pod 网络模型，运行时通常通过 CNI 配置网络。选型要分开讨论 Pod 连通、NetworkPolicy 和 Service 转发：iptables、nftables、IPVS 属于 kube-proxy 的实现选项，Cilium 等可以用 eBPF 替代 Service 代理。依据内核兼容性、规则同步、连接规模和运维能力压测，不用固定服务数量或未经测量的性能排名做决定。
 
 **Q9：怎么排查 Pod 起不来 / 反复重启？**
 
-看状态定位类型：Pending→describe 看 Events（资源/亲和/污点/PVC）；ImagePullBackOff→镜像名/私有仓库 secret/网络；CrashLoopBackOff→`logs --previous` 看崩溃堆栈；Exit 137=OOMKilled（describe 看 Last State，调大 limits 或查内存泄漏）；Running 但不通→`get endpoints` 看是否为空（readiness 失败或 selector 不匹配）。口诀：看状态→describe→logs --previous→exec 进容器。
+先用 describe 事件区分调度、拉镜像、卷挂载与启动失败，再结合上一轮日志、终止 reason、探针和节点压力定位。Exit 137 只能提示 SIGKILL，不能直接断定 OOM。Running 但不可达时检查 EndpointSlice 条件、selector、端口、网络策略，再沿 Pod IP、Service IP、DNS 分层测试。
 
 **Q10：什么是 Operator？和 Helm 的区别？**
 
@@ -686,7 +885,15 @@ Operator = CRD（自定义资源）+ Controller（reconcile loop），把运维�
 | 副本分散 / 高可用 | podAntiAffinity / topologySpread |
 | 专用节点排斥普通 Pod | Taints + Tolerations |
 | 启动慢反复重启 | startupProbe |
-| 发布出现 502 | preStop sleep + Endpoints 异步 |
+| 发布出现 502 | 异步摘流、连接排空、就绪与终止时间预算 |
 | Pod 间网络隔离 | NetworkPolicy（需 Calico/Cilium）|
-| 大集群 Service 变慢 | kube-proxy 切 IPVS / eBPF |
+| 大集群 Service 变慢 | 规则同步、conntrack、连接倾斜与数据平面选型 |
 | 有状态服务声明式管理 | Operator（CRD + Controller）|
+
+## 延伸阅读
+
+- [Kubernetes：Pod 生命周期与终止](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)
+- [Kubernetes：Service 与 EndpointSlice](https://kubernetes.io/docs/concepts/services-networking/service/)
+- [Kubernetes：HPA 算法与伸缩行为](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+- [Kubernetes：中断与 PDB](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/)
+- [高可用架构](../system-design/high-availability)：把副本、容量和故障域放回业务 SLO 中讨论。
