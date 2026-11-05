@@ -336,6 +336,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: '章节概览', link: '/engineering-practice/' },
             { text: '设计模式', link: '/engineering-practice/design-patterns' },
+            { text: '测试策略与可靠交付', link: '/engineering-practice/testing-and-delivery' },
             { text: 'Docker 容器化', link: '/engineering-practice/docker' },
             { text: 'Kubernetes', link: '/engineering-practice/kubernetes' },
             { text: '🔥 Helm 与 Kustomize', link: '/engineering-practice/helm-kustomize' },

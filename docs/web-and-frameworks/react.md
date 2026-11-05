@@ -18,27 +18,21 @@ React 是 Facebook 开源的声明式 UI 库，核心哲学是 **UI = f(state)**
 
 理解 React 的版本演进，本质是看清"**架构换代**"和"**心智模型迁移**"两条主线。每一次大版本都对应一次开发模式的范式转移。
 
-| 版本 | 发布时间 | 关键变化 | 心智模型影响 |
-|------|---------|---------|------------|
-| **0.3 – 0.14** | 2013.05 – 2015.10 | 首次开源（JSConf US 2013）；JSX、虚拟 DOM、单向数据流 | 声明式 UI 替代 jQuery 命令式操作 |
-| **15** | 2016.04 | 重写核心，DOM 渲染从 SVG 命名空间剥离；正式版本号 1.0 之外的成熟 | 稳定 API，社区开始大规模采用 |
-| **16（Fiber）** | 2017.09 | **Fiber 架构重写**：可中断渲染、错误边界、Portals、Fragment、自定义 DOM 属性 | 协调器从递归改为可中断链表，为并发模式埋下基础 |
-| **16.3** | 2018.03 | 新生命周期（`getDerivedStateFromProps`）、新 Context API、`React.forwardRef` | 旧 `componentWillMount/Receive/Update` 被标记 Unsafe |
-| **16.6** | 2018.10 | `React.memo`、`React.lazy` + `Suspense`（仅代码分割） | 懒加载首次正式登场 |
-| **16.8（Hooks）** | 2019.02 | **🔥 Hooks 正式发布**：`useState` / `useEffect` / `useContext` / `useReducer` | 函数组件取代类组件成为默认；逻辑复用从 HOC/Render Props 转向自定义 Hook |
-| **17** | 2020.10 | "无新特性"版本：新 JSX Transform（无需 `import React`）、事件委托从 document 改为 root | 为多版本共存铺路，被称为"过渡桥梁" |
-| **18** | 2022.03 | **并发渲染（Concurrent Rendering）正式 GA**：`createRoot`、`useTransition`、`useDeferredValue`、`useId`、Automatic Batching、Suspense for SSR、Streaming SSR | 渲染从同步到可打断；状态更新可标记优先级 |
-| **18.2 / 18.3** | 2022.06 – 2024.04 | 稳定期；19 升级前的最后过渡版（`useFormState` 等实验性） | 生态全面拥抱并发模式 |
-| **19** | 2024.12 | **🔥 Actions / `useActionState` / `useOptimistic` / `useFormStatus`**；**ref as prop**（不再需要 `forwardRef`）；**`use()` API**（条件读取 Promise/Context）；**Document Metadata**（`<title>` / `<meta>` 直接放组件内）；Server Components 稳定 API；`<form action>` 直接传函数 | 表单状态托管给框架；元数据组件化；客户端/服务端边界清晰化 |
-| **19.1** | 2025.03 | Owner Stack 调试增强；服务端错误更易追踪 | 调试体验向 Server Components 靠拢 |
-| **React Compiler RC** | 2025 年 | **🔥 自动 memo 化**：编译器静态分析，自动插入 `useMemo` / `useCallback` / `React.memo` | 性能优化从"手动 memo"走向"零心智负担" |
+1. **早期版本到 React 15（2013-2016）**：建立 JSX、组件、单向数据流与声明式更新模型，不把虚拟 DOM 本身当作性能保证。
+2. **React 16（2017）**：Fiber 重写协调器，为可中断工作打基础，加入错误边界、Portals 等能力。16.3 演进 Context、ref 与生命周期；16.6 引入 memo、lazy 和代码分割场景的 Suspense。
+3. **React 16.8（2019）**：Hooks 正式发布，状态与副作用逻辑可在函数组件中组合，复用从 HOC/render props 扩展到自定义 Hook。
+4. **React 17（2020）**：主要为渐进升级与生态过渡服务，事件委托移到 root；新 JSX transform 不再要求 JSX 文件显式导入 React。
+5. **React 18（2022）**：createRoot、自动批处理、Transition、deferred value、流式 SSR 与 Suspense 等形成新的调度和加载模型。18.3 主要帮助发现升级到 19 前的兼容问题，不能把 canary API 当作所有 18.x 稳定功能。
+6. **React 19（2024）**：Actions、useActionState、useOptimistic、useFormStatus、ref as prop、use API 与元数据支持等，进一步明确交互和服务端边界。RSC 的框架/打包器集成 API 仍需核对兼容版本，不能仅凭组件 API 稳定就忽略框架升级约束。
+7. **React 19.1 / 19.2（2025）**：继续完善调试和服务端能力；19.2 引入 useEffectEvent、Activity、Performance Tracks 等，强调区分响应式依赖与 Effect 内非响应式逻辑。
+8. **React Compiler 1.0（2025.10）**：独立构建期工具，自动 memo 化组件与 Hook 中可优化的计算。需确认项目实际启用，不能修复副作用或业务正确性问题。
 
 ::: warning ⚠️ 版本迁移高频面试题
 
 1. **"为什么 React 17 没有新特性？"** → 不是没做事，而是把所有破坏性改动延迟，让企业能在同一应用中混用 17/18 子树渐进升级。
 2. **"`createRoot` 和 `ReactDOM.render` 的区别？"** → 18 用 `createRoot` 才开启并发模式；老 API 仍可用但性能与行为按旧逻辑走。
 3. **"React 19 是不是要废掉 Redux？"** → 不会废，但 Server Actions + `useActionState` + `useOptimistic` 让**大量 Redux 用于"表单 + 加载状态"的场景**变得多余；Redux 仍适合复杂客户端状态机。
-4. **"React Compiler 出来后还要写 `useMemo` 吗？"** → 默认不需要；但 Compiler 不接管副作用、不能跨组件优化、对动态依赖无能为力，**仍需理解原理以应对边缘场景**。
+4. **"React Compiler 出来后还要写 `useMemo` 吗？"** → 先确认构建是否启用 Compiler，再以 profiler 判断。新代码可依赖其自动优化，已有 memo 不应无验证地批量删除；缓存只应影响性能，不能成为正确性的前提。
 :::
 
 ### 三大阶段心智模型
@@ -208,36 +202,94 @@ function Counter() {
 
 #### useEffect — 副作用
 
-替代类组件的 `componentDidMount`、`componentDidUpdate`、`componentWillUnmount`：
+Effect 用于与网络、订阅、计时器等外部系统同步，不应简单理解为三个生命周期方法的替身。下面覆盖快速切换 `userId`、请求失败、非法响应和卸载清理；项目有框架 loader 或服务端状态库时，优先使用其缓存与请求管理能力。
 
 ```tsx
 import { useEffect, useState } from 'react'
 
+type Profile = { id: number; name: string }
+type ProfileState =
+  | { userId: number; status: 'loading' }
+  | { userId: number; status: 'ready'; user: Profile }
+  | { userId: number; status: 'error'; message: string }
+
+function isProfile(value: unknown): value is Profile {
+  return typeof value === 'object' && value !== null &&
+    'id' in value && typeof value.id === 'number' &&
+    'name' in value && typeof value.name === 'string'
+}
+
 function UserProfile({ userId }: { userId: number }) {
-  const [user, setUser] = useState(null)
+  const [state, setState] = useState<ProfileState>({ userId, status: 'loading' })
 
   useEffect(() => {
-    // 副作用：数据请求
-    let cancelled = false
-    fetch(`/api/users/${userId}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled) setUser(data)  // 防止组件卸载后 setState
-      })
+    let active = true
+    const controller = new AbortController()
+    setState({ userId, status: 'loading' })
 
-    // cleanup 函数：组件卸载或依赖变化前执行
-    return () => { cancelled = true }
-  }, [userId])  // 依赖数组：userId 变化时重新执行
+    async function loadProfile() {
+      try {
+        const response = await fetch(`/api/users/${userId}`, { signal: controller.signal })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const payload: unknown = await response.json()
+        if (!isProfile(payload)) throw new Error('Invalid profile response')
+        if (active) setState({ userId, status: 'ready', user: payload })
+      } catch (failure) {
+        if (!active || controller.signal.aborted) return
+        setState({ userId, status: 'error', message: '用户信息加载失败' })
+      }
+    }
 
-  return <div>{user?.name}</div>
+    void loadProfile()
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [userId])
+
+  if (state.userId !== userId || state.status === 'loading') {
+    return <p role="status">加载中</p>
+  }
+  if (state.status === 'error') return <p role="alert">{state.message}</p>
+  return <div>{state.user.name}</div>
 }
 ```
 
 | 依赖数组 | 执行时机 |
 |----------|----------|
 | 不传 | 每次渲染后都执行（慎用） |
-| `[]` 空数组 | 仅在组件挂载后执行一次 |
+| `[]` 空数组 | 每次挂载时建立同步；开发 StrictMode 可能额外执行 setup/cleanup |
 | `[dep1, dep2]` | 挂载后执行，dep 变化时重新执行 |
+
+**为什么既 abort 又检查 active？** abort 尝试取消可取消的网络工作，active 防止已完成网络后的解析/异步链或不支持取消的实现写入过期结果。React 不会保证 A、B 请求按发送顺序完成。把 state 与 userId 关联还能避免依赖变化到 Effect 运行之间短暂展示上一个用户的数据。取消客户端请求并不撤销服务端已经提交的写操作。
+
+#### 闭包、依赖与 React 19.2 的 useEffectEvent
+
+每次 render 的变量是该次渲染的快照。定时器捕获旧 state，并不代表 React 没更新数据；应按需求选择函数式更新、正确依赖、ref 或 Effect Event，而不是禁用依赖检查。
+
+`useEffectEvent` 适合从 Effect 触发、但需要读取最新 props/state 的非响应式逻辑。例如订阅依赖 `roomId`，收到连接事件时读取最新 theme，不必因 theme 变化重新建连。它不是省略真正依赖的工具，也不能替代普通事件处理函数随意传给子组件。API 需要 React 19.2 及支持相应规则的 Hooks lint 配置。
+
+#### 面试追问：并发渲染不等于请求自动按序完成
+
+| 机制 | 解决什么 | 不保证什么 |
+|------|----------|------------|
+| `startTransition` / `useTransition` | 标记非紧急状态更新，让紧急交互优先 | 不把同步重计算搬到 Worker，不自动去抖或取消网络请求 |
+| `useDeferredValue` | 让消费某个值的 UI 可以稍后更新 | 不是固定延迟计时器，也不自动减少请求数 |
+| Suspense | 为支持挂起的渲染数据源或代码加载提供边界 | 普通 Effect 内 fetch 不会自动触发 Suspense |
+| Error Boundary | 捕获其后代渲染等阶段的错误 | 不自动接管所有事件回调和异步 Promise 拒绝 |
+| StrictMode | 开发期重放检查，暴露不纯渲染与缺失清理 | 不是生产请求被固定执行两次的规则 |
+
+render 阶段可能重试或被丢弃，因此不能在 render 中下单、订阅或修改外部状态。提交后的 Effect 要有对称清理；只用 `useRef` 跳过第二次执行，往往掩盖而不是修复资源泄漏。
+
+#### 从状态归属讲到 RSC 与安全
+
+先区分局部交互状态、URL 可分享状态、服务器数据缓存和表单草稿，再选工具。把所有数据都放全局 store 会制造多份真相；把派生值放进 state 再用 Effect 同步，也容易产生中间不一致。
+
+Server Components 不是 SSR 的同义词：RSC 划分组件代码运行和依赖边界，SSR 生成初始 HTML，Hydration 为需要交互的客户端部分接续行为。`'use client'` 标记模块依赖边界，不代表该组件绝不参与服务端 HTML 生成。服务端函数同样是可被调用的入口，必须重新验证身份、参数和对象级权限，不能信任客户端隐藏了按钮。
+
+**验证清单**：请求 A 后发 B，让 B 先完成；卸载后返回；HTTP 500；返回结构不合法；StrictMode 下重复挂载；同一列表重新排序后输入状态是否跟随正确 key。性能再用 Profiler、浏览器长任务与真实交互指标分析，不以“加了 useMemo”作为优化证据。
+
+参考：[React 19.2](https://react.dev/blog/2025/10/01/react-19-2)、[React Compiler 1.0](https://react.dev/blog/2025/10/07/react-compiler-1)。
 
 #### useRef — 持久引用
 
@@ -679,18 +731,17 @@ function UserProfile({ id }: { id: number }) {
 
 ### React Server Components (RSC) 与 Next.js 15
 
-React Server Components（RSC）是 **React 18.x / 19** 引入、**Next.js 13 App Router** 开始大规模生产化的核心范式变革。2025-2026 年前端面试**"什么是 RSC、它和 SSR 有什么区别"**是必问题。
+React 19 提供稳定的 Server Components 组件 API，Next.js App Router 等框架负责具体集成。相关岗位应能解释 RSC 与 SSR 的区别，并核对 React、框架和打包器版本，而不是把它们视为一个开关。
 
 #### Server Component vs Client Component vs SSR
 
-| 维度 | 传统 Client Component | SSR（Server-Side Rendering）| **Server Component（RSC）** |
-|------|---------------------|--------------------------|-------------------------|
-| **运行位置** | 浏览器 | 服务端首次渲染 + 浏览器 hydration | **始终在服务端**（每次请求都跑）|
-| **JS 包含** | ✅ 打包到 bundle | ✅ 打包到 bundle | **❌ 零 JS 发到浏览器** |
-| **能用 hooks** | ✅ 全部 | ✅ 全部 | ❌（**无 useState/useEffect**）|
-| **能直接读数据库** | ❌（要经 API）| ❌ | **✅ 直接 SQL/ORM 调用** |
-| **能用 async/await** | ❌（要 hooks）| ❌ | **✅ 函数本身可以 async** |
-| **能保留交互状态** | ✅ | ✅（hydration 后）| ❌（每次重渲染）|
+**Server Component**：组件代码在服务器侧运行，也可能在构建期执行或使用缓存，不要求每次请求都重新执行。可以使用服务端数据访问能力，但必须检查权限；组件自身代码不进入客户端 bundle，不代表整页没有 JS，它可以组合 Client Component。不能使用依赖客户端交互状态和 Effect 的 Hook。
+
+**Client Component**：提供状态、事件和浏览器交互，需要把相关代码发送给浏览器。在支持 SSR 的框架中也可能先在服务端生成初始 HTML，再 hydration；浏览器专属 API 不应无保护地用于服务端执行路径。客户端事件处理器可以 async，不等于组件渲染函数可以任意声明为 async。
+
+**SSR**：是一种生成 HTML 的渲染方式，与组件的 Server/Client 边界不是互斥选项。服务端数据加载可以访问数据库；Effect 不在服务端执行，客户端初次渲染应与服务端输出兼容，避免随机数、时间、语言环境和浏览器状态造成 hydration mismatch。
+
+**Hydration 与 RSC payload**：前者使客户端组件接续已有 HTML 的交互，后者描述服务端组件渲染结果及客户端组件引用。组件身份、位置和 key 决定客户端状态保留，不能笼统说“RSC 更新就把所有交互状态重置”。
 
 ```tsx
 // Server Component（默认）
@@ -936,13 +987,11 @@ function UserPanel({ userPromise }) {
 
 ### 主流方案对比（2026）
 
-| 方案 | 原理 | 优点 | 缺点 |
-|------|------|------|------|
-| **Module Federation**（Webpack 5 / Rspack）| 运行时跨应用共享模块 | ✅ 共享依赖（不重复下载 React）；✅ 主子框架自由 | 配置复杂；版本协议要约定 |
-| **qiankun**（阿里）| 基于 single-spa + 沙箱 | ✅ 沙箱隔离强；中文生态好 | 性能损耗；CSS/JS 隔离仍有边界 |
-| **micro-app**（京东）| Web Components + JS 沙箱 | ✅ 接入极简（一个标签） | 生态较新 |
-| **wujie**（腾讯）| iframe + WebComponent | ✅ 真隔离（iframe）；性能优于传统 iframe | iframe 通信复杂 |
-| **Native iframe** | 浏览器原生 | ✅ 最强隔离 | 通信差、SEO 差、UX 割裂 |
+- **Module Federation**：按构建器与 runtime 配置共享远程模块；依赖版本、共享 scope 和 singleton 需要明确约定，不保证只配置一个字段就永不重复加载 React。
+- **qiankun**：基于应用生命周期与沙箱等机制组织子应用，需要检查全局变量、CSS、路由和卸载清理，不能把 JS 沙箱视为浏览器安全边界。
+- **micro-app**：提供组件化接入和隔离机制，采用前验证真实应用的依赖、样式与路由兼容性。
+- **wujie**：结合 iframe 和 Web Component 等机制，具体通信和渲染路径会影响性能，不能无压测地宣称始终快于原生 iframe。
+- **原生 iframe**：提供独立浏览上下文；安全隔离仍取决于同源策略、sandbox、权限与消息校验。需要接受跨窗口通信、导航、焦点和布局的整合成本。
 
 ### Module Federation 关键概念
 
@@ -1115,15 +1164,13 @@ const handleClick = useMemo(() => () => doSomething(a), [a])
 
 ## 常见陷阱
 
-| 陷阱 | 问题描述 | 解决方案 |
-|------|----------|----------|
-| **useEffect 闭包陷阱** | effect 中读取的 state/props 是创建时的旧值，而非最新值 | 将变量加入依赖数组；或使用 `useRef` 存储最新值 |
-| **直接修改 state** | `state.list.push(item)` 不会触发重渲染，因为引用未变 | 始终返回新对象/数组：`setState([...prev, item])` |
-| **key 使用 index** | 列表重排时组件状态错乱（如 input 值对应错误） | 使用数据的唯一稳定 id 作为 key |
-| **useEffect 无限循环** | 依赖项中包含每次渲染都会重建的对象/函数 | 用 `useMemo`/`useCallback` 稳定引用；或重新检查依赖项 |
-| **在条件语句中使用 Hook** | 违反 Hooks 规则，React 无法保证 Hook 调用顺序一致 | 始终在函数顶层调用 Hook，条件逻辑放 Hook 内部 |
-| **忘记 cleanup** | 组件卸载后仍然 `setState`，导致内存泄漏和控制台警告 | 在 useEffect 返回 cleanup 函数取消订阅/请求 |
-| **不必要的重渲染** | 父组件 props 未变但子组件仍重渲染 | `React.memo` 包裹子组件 + `useCallback` 稳定回调引用 |
+1. **过期闭包**：Effect/回调读取创建时的渲染快照。按语义补全依赖，使用函数式状态更新，或在适合的非响应式逻辑中使用 Effect Event，不盲目忽略 lint。
+2. **直接修改 state**：原地 push 后复用同一引用，不能表达正确更新。创建新对象/数组，避免同时维护可从现有状态推导的重复 state。
+3. **不稳定 key**：可重排列表使用 index 可能让输入和局部状态跟错记录。使用业务稳定 ID，而不是每次 render 生成随机 key。
+4. **Effect 循环**：先判断是否根本不需要 Effect，再调整依赖和对象创建位置；memo 化不是掩盖错误数据流的通用补丁。
+5. **破坏 Hook 顺序**：常规 Hook 在组件/自定义 Hook 顶层调用；React 的 use API 有特别规则，不能据此把普通 useState 放进条件分支。
+6. **缺少清理**：取消订阅、计时器和过期请求。卸载后一次 setState 不必然说明内存泄漏，React 18 也已移除相关旧警告，仍应检查资源是否持续保留。
+7. **盲目 memo 化**：先用 Profiler 证明瓶颈，明确 Compiler 是否启用，再决定手动缓存；父组件更新触发子组件 render 本身并不等于 DOM 更新或性能故障。
 
 ---
 

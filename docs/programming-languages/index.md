@@ -7,23 +7,24 @@ title: 编程语言
 <span class="dig-tag dig-tag--category">章节导览</span> <span class="dig-tag dig-tag--easy">⭐ 入门</span>
 
 ::: tip 💡 章节定位
-本章覆盖 **2026 主流编程语言** 6 大体系、共 **28 篇深度内容**——以 Java 为核心，扩展 **C++ / C# / Python / Go / Rust**。每种语言按 Java 的 **基础 / 并发或内存 / 现代特性 / 工程实战** 模式拆分多页，深度覆盖 **现代特性 + 面试高频点 + 跨语言对比 + 真实生产陷阱**，帮助多语言工程师快速进入对应岗位。
+本章以 Java 为核心，扩展 **C++ / C# / Python / Go / Rust** 六类语言。每种语言按基础、并发或内存、现代特性、工程实践组织。选主力语言依据目标岗位，跨语言学习重点是执行、内存、取消与错误模型，不是背一张永久性能排名。
 :::
 
 ---
 
-## 🗺️ 全章节地图（6 体系 × 28 篇）
+## 🗺️ 全章节地图
 
-### ☕ Java 体系（6 篇，国内招聘市场主流）
+### ☕ Java 体系
 
 | 主题 | 核心知识点 | 重要度 |
 |------|----------|------|
 | [Java 基础](./java-fundamentals) | JVM 分区、GC、HashMap、`synchronized` vs `ReentrantLock`、`volatile` | ⭐⭐⭐⭐⭐ |
-| [Java 并发编程](./java-concurrency) | 线程池、AQS、CAS、ThreadLocal、并发容器、`CompletableFuture`、`ScopedValue` (JDK 21+) | ⭐⭐⭐⭐⭐ |
+| [Java 并发编程](./java-concurrency) | 线程池、AQS、CAS、ThreadLocal、并发容器、异步任务生命周期；新 API 需区分 preview 与正式状态 | ⭐⭐⭐⭐⭐ |
 | [Java 集合框架](./java-collections) | `ArrayList` vs `LinkedList`、`ConcurrentHashMap` 1.8 改造、fail-fast vs fail-safe | ⭐⭐⭐⭐⭐ |
 | [JVM 深入](./jvm-internals) | 类加载与双亲委派、JMM 与 happens-before、JIT、GC 选型（G1/ZGC/Generational ZGC） | ⭐⭐⭐⭐⭐ |
 | [Java 新特性](./java-modern-features) | Lambda/Stream/Optional、Record、虚拟线程 + Pinning JFR、JDK 21-25 路线 | ⭐⭐⭐⭐ |
 | [Java 工程实战](./java-engineering) 🆕 | JVM 调优 Checklist、Spring Boot vs Quarkus、GraalVM Native / CRaC、虚拟线程陷阱、答题模板 | ⭐⭐⭐⭐⭐ |
+| [Java JMH 基准测试](./java-jmh) | 预热、测量、优化消除、参数与实验可重复性 | ⭐⭐⭐⭐ |
 
 ### ⚙️ C++ 体系（5 篇，游戏 / 嵌入式 / 高频交易 / 系统编程）
 
@@ -35,7 +36,7 @@ title: 编程语言
 | [C++ 并发与工具链](./cpp-toolchain) | `std::thread` / `jthread` / `atomic`、CMake、编译链接、gdb / Sanitizer | ⭐⭐⭐⭐ |
 | [C++ 工程实战](./cpp-engineering) | C++ vs Rust 选型、性能优化、UB / 悬空引用、答题模板 | ⭐⭐⭐⭐ |
 
-### 🔷 C# 体系（4 篇，外企 / Azure / 金融 / Unity / Windows 客户端）
+### 🔷 C# 体系（外企 / Azure / 金融 / Unity / Windows 客户端）
 
 | 主题 | 核心知识点 | 重要度 |
 |------|----------|------|
@@ -61,7 +62,7 @@ title: 编程语言
 |------|----------|------|
 | [Go 基础](./go-fundamentals) | 变量 / 切片 / Map / Struct / Interface / Modules / 测试 / 标准库 | ⭐⭐⭐⭐⭐ |
 | [Go 并发编程](./go-concurrency) | **GMP 调度器**、Goroutine、Channel、Context、`sync` 包、GC | ⭐⭐⭐⭐⭐ |
-| [Go 现代特性](./go-modern-features) | 错误处理（`errors.Is/As`）、泛型 Generics、Range-over-func（1.22+）、PGO | ⭐⭐⭐⭐ |
+| [Go 现代特性](./go-modern-features) | 错误处理（`errors.Is/As`）、泛型、Go 1.23 Range-over-func、PGO | ⭐⭐⭐⭐ |
 | [Go 工程实战](./go-engineering) | 性能优化（`sync.Pool` / 零拷贝）、Go vs Java/Rust、必踩坑、答题模板 | ⭐⭐⭐⭐⭐ |
 
 ### 🦀 Rust 体系（4 篇,系统编程 / 替代 C++ / 性能模块 / WASM）
@@ -101,12 +102,12 @@ title: 编程语言
 
 | 语言 | 关键演进 |
 |------|---------|
-| **Java 21 → 25 LTS** | **虚拟线程 GA**（JDK 21）+ JDK 24 修复 `synchronized` Pinning + **Generational ZGC**（亚毫秒）+ **CRaC** 启动加速（< 200ms）+ FFM API 替代 Unsafe |
-| **C++ 20 → 23 / 26** | **Concepts / Coroutines / Modules / Ranges** 全面落地；**Rust 在新基础设施项目中大幅替代 C++** |
-| **C# / .NET 8 → 9** | **Native AOT 成熟**（启动 < 50ms）+ Minimal API + Channels + **Aspire** 云原生编排 + dynamic PGO |
-| **Python 3.13 / 3.14** | **🚀 Free-Threaded（首次可关 GIL）** + **JIT 实验性** + **uv / Polars / Pydantic v2**（核心 Rust 重写） |
-| **Go 1.22 → 1.24+** | Range-over-func 迭代器、**PGO 默认开启**、Goroutine 调度优化、`weak` 包 |
-| **Rust Edition 2024** | `if let` chains、async closures、`let-else` 改进；持续在 Linux 内核 / 浏览器 / 数据库等关键基础设施替代 C++ |
+| **Java 21 / 25** | 虚拟线程在 21 正式，monitor pinning 在 24 改进，ScopedValue 在 25 正式；25 的 StructuredTaskScope 仍是 preview |
+| **C++ 20 / 23 / 后续标准** | Concepts、Coroutines、Modules、Ranges 要分别核对编译器、标准库与构建系统支持，不能只看 `-std` 参数 |
+| **C# / .NET** | async、Channels、Native AOT 与动态 PGO 的收益依赖负载；AOT 还需核对反射、动态代码和库兼容性 |
+| **Python** | free-threaded 是解释器构建与扩展兼容性选择，不等于所有 Python 默认没有 GIL；asyncio 仍需避免阻塞事件循环 |
+| **Go** | Range-over-func 在 1.23；PGO 的 auto 模式利用可用 profile，不代表没有采样文件也凭空优化 |
+| **Rust Edition 2024** | Edition、rustc 版本与库/runtime 版本是不同维度；所有权和 Send/Sync 不自动防逻辑死锁或取消后副作用 |
 
 ---
 
@@ -136,12 +137,11 @@ title: 编程语言
 
 ### 3. 性能水平（粗略）
 
-```text
-C/C++/Rust  >>>  Go/C#/Java (AOT)  >>>  Java JIT  >>>  Node.js  >>>  Python
-极致性能         接近原生 / 编译型         JIT 优化       JIT       解释 + GIL
-```
+不能把语言按一个不带工作负载的箭头序列排序。JIT 在长时间运行的热点路径上可能优于某些 AOT 构建；Python 数值操作可能主要在 native 库执行；I/O 服务则常被数据库与网络限制。比较应固定算法、数据、硬件、并发、编译选项与延迟目标，再测 CPU、内存、吞吐和尾延迟。
 
 ### 4. 启动时间（冷启动 / Serverless 视角）
+
+下表仅是用于讨论的示意量级，不是语言保证；实际启动还包含镜像拉取、依赖初始化、网络和预热，应分别测量进程启动、Ready 与首个成功请求。
 
 | 语言 | 启动时间 |
 |------|---------|
@@ -156,6 +156,19 @@ C/C++/Rust  >>>  Go/C#/Java (AOT)  >>>  Java JIT  >>>  Node.js  >>>  Python
 | **C# JIT** | 0.5-1.5s ⭐⭐⭐ |
 
 ---
+
+## 跨语言面试的共同追问
+
+| 问题 | 应说明的边界 |
+|------|--------------|
+| 一个请求派生多个任务，失败后谁负责清理？ | 父子任务生命周期、错误聚合、取消传播、等待子任务结束 |
+| 取消是否等于任务已停止？ | 多数取消是合作式信号；网络/数据库副作用可能已提交 |
+| 谁拥有资源？何时释放？ | RAII、finally/defer、上下文管理器、Dispose/Drop 的同步与异步边界 |
+| 线程安全是否等于业务原子？ | 安全容器的多步组合仍可能竞争，必须说明线性化点或事务边界 |
+| async 是否表示 CPU 并行？ | 等待模型、线程/进程/runtime 调度以及 CPU 工作放在哪执行 |
+| 如何证明“更快”？ | 基线、预热、输入分布、P99、分配与资源成本；参考 JMH 与 profiler |
+
+选择一种主力语言，把同一场景讲透：并行查询两个依赖，任一个失败或总 deadline 到期就取消剩余工作，并限制下游并发。再比较 Java 的任务作用域、Python TaskGroup、Go context/errgroup、.NET Task/CancellationToken 与 Rust runtime 的具体差异，不把相似名称当成相同语义。
 
 ## 📚 学习建议（按职业阶段）
 

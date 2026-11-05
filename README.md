@@ -33,19 +33,35 @@
 
 ## 📚 知识覆盖
 
-| 领域 | 核心内容 | 文章数 |
-|:------|:------|:------|
-| **🤖 AI 技术** | LLM 与多模态、RAG、Embedding、Agent Harness、Skills、MCP/A2A、训练、推理、评估与安全、最新发布与 AI 系统设计 | 19 |
-| **📊 数据结构与算法** | 数组、链表、哈希、树与堆、图搜索、动态规划、贪心、工程数据结构与系统手撕 | 58 |
-| **🌍 Web 与框架** | Spring、云原生与响应式 Java、ASP.NET Core、TypeScript、React、Angular | 27 |
-| **☕ 编程语言** | Java、C++、C#、Python、Go、Rust 的基础、并发、内存管理与工程实践 | 30 |
-| **🗄️ 数据库** | MySQL、PostgreSQL、Redis、NewSQL、NoSQL、搜索、数据仓库、向量数据库与云存储 | 14 |
-| **🌐 计算机网络** | 网络模型、TCP/UDP、HTTP/HTTPS/QUIC、DNS、WebSocket、安全、CDN 与网络排障 | 9 |
-| **💻 操作系统** | 进程与线程、调度、同步、内存、文件系统、I/O、系统调用与容器隔离 | 8 |
-| **🏗️ 系统设计** | 分布式、缓存、读写架构、消息队列、微服务与 18 个实战案例 | 33 |
-| **🔧 工程实践** | Docker/K8s、Helm、GitOps、Redis、消息队列、监控、线上排障与分布式 ID | 11 |
+| 领域 | 核心内容 |
+|:------|:------|
+| **🤖 AI 技术** | LLM 与多模态、RAG、Embedding、Agent Harness、Skills、MCP/A2A、训练、推理、评估与安全、最新发布与 AI 系统设计 |
+| **📊 数据结构与算法** | 数组、链表、哈希、树与堆、图搜索、动态规划、贪心、工程数据结构与系统手撕 |
+| **🌍 Web 与框架** | Spring、云原生与响应式 Java、ASP.NET Core、TypeScript、React、Angular |
+| **☕ 编程语言** | Java、C++、C#、Python、Go、Rust 的基础、并发、内存管理与工程实践 |
+| **🗄️ 数据库** | MySQL、PostgreSQL、Redis、NewSQL、NoSQL、搜索、数据仓库、向量数据库与云存储 |
+| **🌐 计算机网络** | 网络模型、TCP/UDP、HTTP/HTTPS/QUIC、DNS、WebSocket、安全、CDN 与网络排障 |
+| **💻 操作系统** | 进程与线程、调度、同步、内存、文件系统、I/O、系统调用与容器隔离 |
+| **🏗️ 系统设计** | 分布式、缓存、读写架构、消息队列、微服务、业务系统与 AI 系统设计案例 |
+| **🔧 工程实践** | Docker/K8s、Helm、GitOps、Redis、消息队列、监控、线上排障与分布式 ID |
 
-统计核验：2026-10-10，共 209 篇专题正文，不含各级 `index.md` 概览及未发布目录。
+具体专题以网站分类导航为准；概览、跳转页与未发布的维护文档不作为独立面试专题重复计数。
+
+## 面试深度自测
+
+每个领域至少完成一次“解释机制、构造反例、运行验证、讨论取舍”，不要把读完文章等同于能回答追问。
+
+| 领域 | 深入练习入口 |
+|------|--------------|
+| 算法 | [不变量、二分边界与差分测试](docs/data-structures-and-algorithms/foundations/problem-solving-workflow.md) |
+| 语言 | [跨语言执行、取消与资源模型](docs/programming-languages/index.md) |
+| 框架 | [事务传播与提交验证](docs/web-and-frameworks/data-access/transaction.md)、[React 请求竞态](docs/web-and-frameworks/react.md) |
+| 数据库 | [隔离级别、写偏斜与锁范围](docs/databases/transaction-lock.md) |
+| 网络 | [WebSocket 重放、背压与权限](docs/computer-networks/websocket.md) |
+| 操作系统 | [futex、内存序与安全回收](docs/operating-systems/synchronization.md) |
+| 系统设计 | [API 授权、幂等与并发修改](docs/system-design/api-design.md) |
+| 工程实践 | [分层测试、契约与可靠交付](docs/engineering-practice/testing-and-delivery.md) |
+| AI 与项目面试 | [岗位取舍、项目证据与模拟面试评分](docs/ai-technology/ai-interview-prep.md) |
 
 ## 🎯 适合谁
 

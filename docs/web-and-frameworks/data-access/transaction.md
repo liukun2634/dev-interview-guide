@@ -72,7 +72,7 @@ public void createOrder(OrderDTO dto) {
 public void transfer(Long from, Long to, BigDecimal amount) { ... }
 ```
 
-**readOnly = true 的好处：** 提示数据库优化（如 MySQL 不加锁），Hibernate 不做脏检查，提升查询性能。
+**`readOnly = true` 是交给事务管理器、驱动及 ORM 的只读意图**，可能影响连接只读标记、flush mode 与脏检查，效果取决于实现。它不等于所有读都不加锁，也不自动完成读写分离；是否禁止写入要看数据库级只读事务和配置。
 
 ## 7 种事务传播行为
 
@@ -104,7 +104,7 @@ public class OrderService {
         
         // 3. 扣减库存 — 如果这里抛异常
         // REQUIRED: 整个事务（包括订单）回滚
-        // REQUIRES_NEW: 只有库存的事务回滚，订单的事务不受影响
+        // REQUIRES_NEW 的异常若继续传播到外层，外层仍可能回滚
         inventoryService.deduct(items);
     }
 }
@@ -120,6 +120,14 @@ public class LogService {
 
 **NESTED 的特殊性：** 嵌套事务通过 Savepoint 实现。内层回滚只回滚到 Savepoint，不影响外层；但外层回滚会连带内层一起回滚。
 
+### 两个必须画时序的传播问题
+
+**REQUIRED 与 `UnexpectedRollbackException`**：外层调用另一个代理 Bean 的 REQUIRED 方法，内层抛运行时异常，使共享事务被标记 rollback-only。外层即使 catch 并返回，提交时仍可能收到 `UnexpectedRollbackException`。相反，若异常完全在同一目标方法内部被捕获、从未经过事务拦截器，事务不一定被自动标记回滚。不能把所有 catch 场景混为一谈。
+
+**REQUIRES_NEW 与连接池耗尽**：外层事务挂起时，已借用的连接通常仍保留；内层需要另一条连接。若 20 个请求各持一条外层连接，而池大小为 20，它们可能都在等内层连接。要控制并发、缩短事务、为嵌套深度留容量，或重新设计独立审计写入；单纯“再加大连接池”也可能压垮数据库。
+
+独立事务还存在可见性和业务语义问题：内层不能假设读到外层未提交的数据；外层失败后独立提交的“下单成功”日志可能不真实。日志应表达已发生的尝试，不能把独立提交视为完整业务成功。
+
 ## 事务隔离级别
 
 Spring 的隔离级别对应数据库的隔离级别：
@@ -131,7 +139,7 @@ Spring 的隔离级别对应数据库的隔离级别：
 | REPEATABLE_READ（MySQL 默认） | ❌ | ❌ | ✅ 可能（MySQL InnoDB 通过 MVCC 基本解决） |
 | SERIALIZABLE | ❌ | ❌ | ❌ |
 
-**实际开发中**一般不在 Spring 层指定隔离级别，使用数据库默认值。需要更高隔离级别时在 SQL 层面处理（`SELECT ... FOR UPDATE`）。
+可以使用数据库默认值，也可以按业务事务显式指定；加入已有事务时，内层注解的隔离属性不一定重新生效。`SELECT ... FOR UPDATE` 是锁定读，不等于把整个事务升级为某个隔离级别；要说明保护了哪些记录、范围或业务不变量。
 
 ## @Transactional 失效的典型场景
 
@@ -153,9 +161,9 @@ public class OrderService {
 
 **解决：** 将 validate() 移到另一个 Bean，或注入自身代理 `@Autowired private OrderService self`。
 
-### 2. 方法不是 public
+### 2. 方法不可被所用代理拦截
 
-Spring AOP 默认只代理 public 方法。protected、private、default 方法上的 @Transactional 不生效。
+默认代理模式下，private 方法和自调用不能通过外部代理拦截；基于类的代理也不能覆盖 final 方法。**Spring 6 起，类代理默认可支持 protected 和包可见事务方法**，接口代理则要求通过接口暴露的 public 方法。应同时交代 Spring 版本、代理类型和调用方式，不能笼统说“非 public 一律失效”。
 
 ### 3. 异常类型不对
 
@@ -187,12 +195,12 @@ public void createOrder() {
 
 ### 5. 数据库引擎不支持事务
 
-MySQL 的 MyISAM 引擎不支持事务，只有 InnoDB 支持。Spring 的 @Transactional 依赖数据库的事务能力。
+MySQL 的 MyISAM 引擎不支持事务，InnoDB 支持。还要确认注解选中了正确的事务管理器、DAO 使用同一事务资源；同一个 Java 方法内调用两套独立数据源，不会自动变成一个原子事务。
 
 ### 失效速记
 
 ```
-自调用 | 非 public | 异常类型错 | 异常被吞 | 引擎不支持
+未经过代理 | 不可拦截方法 | 回滚规则不匹配 | 异常/rollback-only 处理错误 | 资源不在同一事务
 ```
 
 ## 高频追问：readOnly / timeout / rollbackOnly
@@ -200,33 +208,54 @@ MySQL 的 MyISAM 引擎不支持事务，只有 InnoDB 支持。Spring 的 @Tran
 ::: tip 💡 三个"配置不当 = 生产事故"的细节
 
 **`@Transactional(readOnly = true)` 真的有性能收益吗？**
-> 有。① Hibernate 会**跳过 dirty check**（不再对比快照）；② MySQL 8.0+ 在副本读取时可选择 `SET TRANSACTION READ ONLY` 释放部分 undo 资源；③ 主从分离中间件（如 ShardingSphere）可**自动路由到从库**。**报表 / 列表查询方法务必加上**。但写也会成功——它**不是数据库级别的写保护**，只是"声明这个事务不写"。
+> 可能有，但必须看 Hibernate、驱动和事务管理器的实际行为，并以 SQL 与性能证据确认。它不保证路由到副本，也不能保证“写一定成功”或“写一定失败”；权限和数据库只读事务是另一个层次。
 
-**`@Transactional(timeout = 30)` 为什么生产必加？**
-> 默认 `-1` = 无超时。某个 SQL 卡住 → 事务无限期持有行锁 + 连接 → 连接池打满 → 雪崩。**生产代码应该有兜底默认**（如 30s）。
+**`@Transactional(timeout = 30)` 会在第 30 秒强杀 Java 方法吗？**
+> 不会。超时由事务管理器和资源支持情况执行，可能转成 JDBC statement timeout，并不是一个能中断任意 Java 或远程 I/O 的计时器。默认 `-1` 通常表示使用事务管理器默认值。应协调入口 deadline、连接获取、SQL、锁等待和远程调用的各层预算。
 
 **手动 `setRollbackOnly()` 的应用场景？**
 > 在 `try/catch` 里"吞了异常但仍想回滚"时使用：
 > ```java
 > TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
 > ```
-> 一旦标记，事务在提交时会直接回滚并抛 `UnexpectedRollbackException`。**调用方需要知道这个异常**，否则会被"看似成功实则回滚"坑到。
+> 标记后不能再正常提交，但是否抛 `UnexpectedRollbackException` 取决于事务参与方式和回滚标记来源。内层参与者把共享事务标记回滚、外层却期望提交，是典型触发条件；顶层自己明确设置 rollback-only 并不总产生该异常。
 
 :::
 
 ## 虚拟线程下的事务陷阱（Boot 3.2+ 必读）
 
 ::: warning ⚠️ 2026 实战
-事务管理底层依赖 `TransactionSynchronizationManager` 的 **`ThreadLocal`** 存储当前事务上下文。虚拟线程"用完即弃"的特性带来三个新问题：
+命令式事务通常把资源绑定到当前 Java Thread；虚拟线程在 carrier thread 之间迁移不会丢失自身 ThreadLocal。平台线程同样存在跨线程不传播事务的问题；响应式事务则依赖 Reactor Context，不能套用命令式线程绑定模型。
 :::
 
 | 问题 | 现象 | 应对 |
 |------|------|------|
-| **`@Async` 内事务丢失** | 异步方法**新开虚拟线程**，事务上下文不传递；`@Transactional` 仍生效但是一个**全新事务** | 不要在 `@Async` 方法上跨事务边界；如需传上下文用 `TransactionSynchronizationManager.getResource()` 显式抓 |
-| **HikariCP 连接持有变长** | 老代码假设"线程 = 短连接占用"；虚拟线程下事务可能"挂起"等远程调用 | 在事务方法里**禁止远程 IO**；事务边界严格控制在 DAO 层 |
-| **`synchronized` 触发 Pinning** | 事务方法用了 `synchronized` 同步块 → 虚拟线程被钉到 OS 线程，丧失轻量优势 | JDK 24+ 修复了 `synchronized` Pinning；老库改 `ReentrantLock` |
+| **新线程/`@Async`** | 不继承调用方事务；异步端经代理可创建自己的事务 | 不手动复制绑定的 Connection/EntityManager；可靠异步由 Outbox 等协议衔接 |
+| **连接仍是稀缺资源** | 虚拟线程在等待远程服务时仍可能持有事务连接与锁 | 缩短业务事务，不把事务拆到每个 DAO 而丢掉原子业务边界 |
+| **JDK 版本与 pinning** | JDK 21-23 在 synchronized 内阻塞可能占住 carrier；JDK 24 的 JEP 491 解决这类 monitor pinning | 仍需测量锁竞争、native 路径和下游容量，升级不等于无限吞吐 |
 
 **口诀**：「**事务边界要瘦、远程 IO 要出、`ThreadLocal` 要警惕**」。
+
+## 提交边界、外部副作用与测试
+
+### save、flush、commit 是三个不同事件
+
+JPA 的 `save()` 可能只改变持久化上下文；flush 将 SQL 发送到数据库，但不等于事务已提交。唯一约束、乐观锁或数据库异常可能在 flush/commit 才出现，方法体执行完不代表代理已经成功提交。
+
+因此缓存失效、消息发送和对外通知应围绕实际提交点设计。`@TransactionalEventListener(AFTER_COMMIT)` 避免提交前通知，但进程在提交后、回调前崩溃仍会漏通知；需要可靠投递时，在业务事务中写 Outbox，再异步派发。回调中若还需要持久化新数据，应使用明确的新事务，而不是依赖旧事务资源仍看起来可访问。
+
+### 用四个集成测试验证事务，而不是只测方法被调用
+
+| 场景 | 验证内容 |
+|------|----------|
+| 业务更新后抛异常 | 从另一个连接读取，确认业务修改回滚，不只断言异常类型 |
+| REQUIRED 内层异常被外层 catch | 检查共享事务是否 rollback-only，以及调用方最终收到的结果 |
+| REQUIRES_NEW 内层提交、外层回滚 | 验证只有设计允许独立提交的数据保留，并测连接池压力 |
+| 事务提交失败/响应丢失 | 不提前发送成功通知；用同一请求标识查询或重试 |
+
+测试方法本身若带 `@Transactional` 并在结束时统一回滚，可能掩盖真实提交时异常、事件时序或延迟约束。至少一组测试要让服务边界真实提交，并从独立事务观察。用生产同类数据库验证锁和隔离语义，不能假设内存数据库完全等价。
+
+参考：[Spring 声明式事务注解](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)、[事务传播](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/tx-propagation.html)。
 
 ## NESTED 与 Savepoint：被遗忘的"局部回滚"
 
@@ -266,7 +295,7 @@ public void importOne(Order o) { ... }
 
 ### Q1: @Transactional 失效的 5 种场景？
 
-自调用（this 调用不过代理）、方法不是 public、异常类型不对（默认只回滚 RuntimeException，加 rollbackFor=Exception.class）、异常被 catch 吞掉、数据库引擎不支持（MyISAM 不支持事务）。最常考的是自调用。
+先核对是否经过代理、方法是否可拦截、回滚规则、rollback-only 状态和资源绑定。非 public 是否支持要看 Spring 版本与代理类型；捕获异常不代表共享事务仍可提交；新线程也不会自动加入调用方事务。
 
 ### Q2: REQUIRED 和 REQUIRES_NEW 的区别？
 

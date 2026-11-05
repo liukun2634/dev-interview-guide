@@ -46,6 +46,7 @@ const sources = [
   wrap('ShortestSubarrayExample', snippet('arrays/prefix-sum-difference.md', 'public int shortestSubarray')),
   wrap('BinaryExamples', ...['public int binarySearch', 'public int lowerBound', 'public int upperBound']
     .map(marker => snippet('arrays/binary-search.md', marker))),
+    wrap('WorkflowBinaryExample', snippet('foundations/problem-solving-workflow.md', 'public static int lowerBound')),
   wrap('WindowExample', snippet('arrays/sliding-window.md', 'public String minWindow')),
   wrap('LisExample', snippet('dynamic-programming/dp-optimization.md', 'public int[] longestIncreasingSubsequence')),
     wrap('GroupKnapsackExample', snippet('dynamic-programming/knapsack-dp.md', 'public int groupKnapsackMaxValue')),
@@ -106,6 +107,10 @@ public class AlgorithmExamplesCheck {
         ShortestSubarrayExample shortest = new ShortestSubarrayExample();
         BinaryExamples binary = new BinaryExamples();
         MinimumsExample minimums = new MinimumsExample();
+        check(WorkflowBinaryExample.lowerBound(new int[]{}, 0) == 0, "workflow empty lower bound");
+        check(WorkflowBinaryExample.lowerBound(new int[]{Integer.MIN_VALUE, Integer.MAX_VALUE}, Integer.MAX_VALUE) == 1,
+            "workflow extreme lower bound");
+        check(WorkflowBinaryExample.lowerBound(new int[]{2, 2, 2}, 3) == 3, "workflow missing lower bound");
         check(Arrays.equals(difference.apply(new int[]{1,2,3},0,1,10),new int[]{11,12,3}), "difference regression");
         check(Arrays.equals(difference.applyLong(new int[]{Integer.MIN_VALUE,Integer.MAX_VALUE},0,1,1),
             new long[]{-2147483647L,2147483648L}), "difference long arithmetic");
@@ -157,6 +162,7 @@ public class AlgorithmExamplesCheck {
                 while (lower<sorted.length && sorted[lower]<target) lower++;
                 while (upper<sorted.length && sorted[upper]<=target) upper++;
                 check(binary.lowerBound(sorted,target)==lower,"lower bound");
+                check(WorkflowBinaryExample.lowerBound(sorted,target)==lower,"workflow lower bound");
                 check(binary.upperBound(sorted,target)==upper-1,"last less-or-equal");
                 int found=binary.binarySearch(sorted,target);
                 check(found<0 ? lower==upper : sorted[found]==target,"binary search");

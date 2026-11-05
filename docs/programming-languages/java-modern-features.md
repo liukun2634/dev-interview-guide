@@ -438,8 +438,8 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 - 高并发服务端：每个请求一个虚拟线程，取代线程池调优
 
 **不适用场景：**
-- CPU 密集型计算（虚拟线程不能并行运行 CPU 任务，仍受 carrier thread 数量限制）
-- 使用 `synchronized` 持有锁的代码（Java 21 中 synchronized 会 pin 住 carrier thread，建议换用 `ReentrantLock`）
+- CPU 密集任务不会因为使用虚拟线程就获得更多 CPU 并行度，仍受核心与调度资源限制。
+- JDK 21-23 在 synchronized 内阻塞可能 pin 住 carrier；JDK 24 的 JEP 491 解决 monitor 相关 pinning，但不消除业务锁串行化和所有 native 路径限制。
 
 ---
 
@@ -497,7 +497,7 @@ String classify(Object obj) {
 
 ### 8. JDK 22 ~ 25 新进展（2024-2025）
 
-JDK 21（2023）是 LTS，2025 年 9 月 JDK 25 也是 LTS。**JDK 22-25 的主要进展集中在三条线**：稳定 Loom 后续特性、推进 Project Panama（本地互操作）、收尾 Project Valhalla（值类型）。
+JDK 21 与 JDK 25 是主流发行商长期支持的版本，支持期限以发行商承诺为准。这里聚焦 22-25 的已交付变化，不能把 Valhalla 的未来值类型能力当作 JDK 25 已有特性；后续版本需核对对应 JEP 与 API 文档。
 
 #### 关键 JEP 速查
 
@@ -505,18 +505,20 @@ JDK 21（2023）是 LTS，2025 年 9 月 JDK 25 也是 LTS。**JDK 22-25 的主�
 |-----|------|------|------|---------|
 | **JEP 423: Region Pinning for G1** | 22 | G1 GC 区域钉住 | Final | JNI 调用期间不阻塞 GC |
 | **JEP 454: Foreign Function & Memory API** | 22 | Panama 本地调用 | **Final** | 替代 JNI 的现代方案，零拷贝调本地库 |
-| **JEP 459: String Templates (Preview)** | 22 | 字符串模板 | Preview | 类似 Kotlin 的 `"$name"` 语法 |
+| **JEP 459: String Templates (Second Preview)** | 22 | 字符串模板 | 第二次预览；后续未按原方案继续保留 | 不能把预览代码当作跨 JDK 稳定语法 |
 | **JEP 467: Markdown Documentation Comments** | 23 | Javadoc 支持 Markdown | Final | 文档体验大幅改善 |
 | **JEP 469: Vector API (8th incubator)** | 23 | SIMD 向量计算 | 继续孵化 | AI/数据处理性能 5-10× |
 | **JEP 471: Deprecate `Unsafe` Memory-Access** | 23 | 弃用 Unsafe 内存操作 | Deprecation | 鼓励迁移到 Panama / VarHandle |
-| **JEP 480: Structured Concurrency** | 24 | 结构化并发 | 4th Preview | 虚拟线程时代的并发管理 |
-| **JEP 481: Scoped Values** | 24 | 作用域值 | 3rd Preview | ThreadLocal 的现代替代 |
+| **JEP 499: Structured Concurrency** | 24 | 结构化并发 | Fourth Preview | JDK 23 的第三次预览是 JEP 480 |
+| **JEP 487: Scoped Values** | 24 | 作用域值 | Fourth Preview | JDK 23 的第三次预览是 JEP 481 |
 | **JEP 491: Synchronize Virtual Threads without Pinning** | 24 | 虚拟线程 `synchronized` 不再 Pin | Final | **重要**：解决虚拟线程最大坑 |
+| **JEP 505: Structured Concurrency** | 25 | 任务作用域、取消与结果聚合 | Fifth Preview | API 改为 `StructuredTaskScope.open()` 等形式，需启用 preview |
+| **JEP 506: Scoped Values** | 25 | 有界生命周期的上下文绑定 | Final | 不可变绑定，不会自动让绑定对象变成线程安全 |
 | **JEP 503: Remove 32-bit x86 Port** | 25 | 移除 32 位 x86 | Final | 64 位才是唯一选择 |
 
 #### JEP 491：虚拟线程的"坑王"被修了
 
-Java 21 推出虚拟线程时，**`synchronized` 块内不能挂起**（被称为 Pinning 问题）——会回退到平台线程，让性能优势消失。**JDK 24 彻底修复**：
+JDK 21-23 中，虚拟线程在 synchronized 内阻塞时可能无法从 carrier 卸载，连带占用底层平台线程；它不是“变成平台线程”。JDK 24 改造 monitor 实现以解决这类 pinning：
 
 ```java
 // JDK 21: synchronized 内 sleep 会 Pin
@@ -530,11 +532,11 @@ synchronized (lock) {
 }
 ```
 
-**面试要点**：能讲出"JDK 21 虚拟线程有 synchronized Pinning 坑，JDK 24 已彻底解决"——是了解最新动态的强信号。
+**面试要点**：说清修复的是 monitor 相关 pinning，不是锁竞争或所有阻塞路径。native 回调、类初始化等仍要按实际版本分析；JEP 491 也移除了 `jdk.tracePinnedThreads` 的原有诊断作用，不能把旧启动参数当作新版本有效证据。
 
 #### Pinning 实战排查（JDK 21-23 生产必备）
 
-**生产上了虚拟线程后有过一句话令人心慌**："吞吐量反而下降了"——原因 99% 是 **Pinning**。必须会用 JFR 排查。
+虚拟线程上线后吞吐下降，应分别检查 CPU 饱和、连接池等待、锁竞争、分配率和 pinning，不能无依据地归因“99% 是 pinning”。以下命令限定于 JDK 21-23 的相关诊断场景，JFR 事件应结合调用栈和延迟观察。
 
 ```bash
 # 开启 JFR 监听 VirtualThreadPinned 事件
@@ -560,6 +562,16 @@ jdk.VirtualThreadPinned {
   ]
 }
 ```
+
+#### 结构化并发：失败和取消必须沿任务树传播
+
+假设请求同时查询用户、订单、推荐。普通 `Future.get()` 若按固定顺序等待，推荐早已失败，代码仍可能阻塞在用户查询上；请求已超时后，其他任务还继续占连接。结构化并发把子任务生命周期放进父作用域，让失败策略、取消和等待收敛有明确归属。
+
+**JDK 25 边界**：`StructuredTaskScope` 是 JEP 505 的第五次 preview，编译与运行都需相应 preview 选项；旧版本的 `ShutdownOnFailure` 示例不能直接当作 25 的稳定 API。`close()` 会等待子任务终止，子任务忽略中断时仍可能延迟退出，所以作用域超时不是强制杀线程。
+
+**ScopedValue 与 ThreadLocal**：ScopedValue 适合向下传递请求身份等有界上下文，离开绑定作用域后恢复原绑定；并不自动传播到任意线程池任务，也不把一个可变 Connection 变成可跨线程共享的事务。优先传不可变数据，不传线程绑定资源。
+
+参考：[JEP 491](https://openjdk.org/jeps/491)、[JEP 505](https://openjdk.org/jeps/505)、[JEP 506](https://openjdk.org/jeps/506)。
 
 #### synchronized vs ReentrantLock 选型表（JDK 21-23）
 

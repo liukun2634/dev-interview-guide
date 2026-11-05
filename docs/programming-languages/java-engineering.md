@@ -247,12 +247,12 @@ java -XX:CRaCRestoreFrom=./cr            # ★ 启动 < 100ms，性能直接达�
 
 | 技巧 | 收益 | 何时用 |
 |------|------|--------|
-| **虚拟线程（JDK 21+）** | I/O 密集吞吐 10-100× | Tomcat / 同步代码 + 大量阻塞 |
+| **虚拟线程（JDK 21+）** | 降低阻塞等待时的平台线程占用，收益需压测 | 同步阻塞 I/O，配合下游容量限制 |
 | **StringBuilder vs +=** | O(n²) → O(n) | 循环拼接字符串 |
 | **`List.of()` / `Map.of()`** | 不可变 + 节省内存 | 静态常量集合 |
 | **ConcurrentHashMap 替 `synchronized` Map** | 高并发读写 5-10× | 共享缓存 |
 | **`StringBuilder.append(char)` vs `+ "x"`** | 减装箱 | 高频路径 |
-| **逃逸分析 + 标量替换** | 栈上分配，0 GC | JIT 自动，确保对象不外泄 |
+| **逃逸分析 + 标量替换** | 可能消除对象分配，不保证所有对象“移到栈上” | 结合编译与分配剖析验证 |
 | **`@Contended`（JDK 8+）** | 消除伪共享 | 高竞争计数器 |
 | **`MemorySegment`（JDK 22 FFM API）** | 替代 Unsafe / Native 互操作 | 高性能 IO / Native 调用 |
 | **JIT inlining**（小方法）| 减调用开销 | 热点路径方法控制在 35 字节内 |
@@ -347,12 +347,7 @@ finally { lock.unlock(); }
 
 ### 4. String.intern() OOM
 
-```java
-// ❌ JDK 6 PermGen 易满；JDK 7+ 移到堆，但仍长生命周期不回收
-for (String s : userInput) {
-    s.intern();   // 累积 → Metaspace 持续增长
-}
-```
+不能把现代 HotSpot 中的 intern 字符串直接归到 Metaspace，也不能断言所有 intern 字符串永不回收。高基数外部输入可能增加堆、字符串表与查找开销；是否长期保留要看引用关系及 GC 行为。排查时区分堆对象、类元数据和 native 内存，使用堆引用链而不是仅凭 `intern()` 调用下结论。
 
 ### 5. `Optional` 误用
 
@@ -369,11 +364,7 @@ return repo.findById(id).map(User::getName).orElse("匿名");
 
 ### 6. 大对象 / 大数组进老年代直接 OOM
 
-```bash
-# 默认 -XX:PretenureSizeThreshold=0（仅 ParallelGC）
-# 大对象（如 1MB byte[]）直接进老年代 → 触发 Full GC
-# ✅ 优化：分块、复用、用 ByteBuffer 池
-```
+大对象分配路径取决于收集器和 region/代配置。例如 G1 的 humongous 对象按 region 大小的一半阈值判断，不能固定说“1MB 一定直接进老年代”。`PretenureSizeThreshold` 也不是所有 GC 都支持的统一开关。优先分析分配速率、存活时间、碎片与峰值；池化会延长对象存活并增加持有内存，不一定比直接分配更好。
 
 ### 7. SimpleDateFormat 线程不安全
 
@@ -428,10 +419,43 @@ list.parallelStream().forEach(this::saveDb);  // 共用 ForkJoinPool.commonPool(
 ### Q：虚拟线程能完全替代线程池吗？
 
 > **不能**。虚拟线程只解决**阻塞 I/O 场景**：
-> - ✅ HTTP / DB / RPC 阻塞调用 → 虚拟线程吞吐 10-100×
+> - ✅ 可降低大量兼容阻塞 I/O 的线程成本，不能保证固定吞吐倍数
 > - ❌ **CPU 密集** → 用 ForkJoinPool（虚拟线程无优势）
-> - ❌ **Native 调用 / 长 synchronized** → 会 Pinning（JDK 24 修复）
-> - ❌ **需要细粒度限流** → 仍用固定线程池（Bulkhead）
+> - ❌ JDK 24 修复 monitor 相关 pinning，不等于修复所有 native 路径或锁竞争
+> - ❌ 虚拟线程不是限流器，仍需有界入口、信号量或其他并发预算
+
+### 虚拟线程生产追问：线程变便宜之后，谁还很贵？
+
+数据库连接、下游并发配额、堆中请求对象和业务锁依然有限。假设数据库允许当前服务同时使用 50 个连接，创建 5 万个虚拟线程不会把它变成 5 万连接数据库，只可能增加排队和超时。
+
+可以用独立的并发门限保护依赖，而不把虚拟线程放进固定大小的复用池。以下 JDK 21 可用片段对超过门限的调用快速拒绝，调用本身仍需配置 I/O deadline：
+
+```java
+import java.util.concurrent.Callable;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+
+final class DownstreamBulkhead {
+    private final Semaphore permits = new Semaphore(50);
+
+    <Result> Result call(Callable<Result> operation) throws Exception {
+        if (!permits.tryAcquire()) {
+            throw new RejectedExecutionException("Downstream concurrency limit reached");
+        }
+        try {
+            return operation.call();
+        } finally {
+            permits.release();
+        }
+    }
+}
+```
+
+此门限按业务共享实例生效；每请求创建一个 Bulkhead 就失去限制作用。异常必须释放许可，未获取许可不能释放；若改成等待式 acquire，还要限制等待人数和剩余 deadline。
+
+**取消的三个不同语义**：停止等待结果、向任务发中断请求、撤销外部副作用。`Future.cancel(true)` 通常只是尝试中断，任务要合作响应；`CompletableFuture.orTimeout()` 不自动终止底层 I/O；支付已提交也不会因上游线程取消而回滚。
+
+**面试诊断链路**：先看请求 P99 与失败率 → 区分连接池等待、锁等待和 I/O → 再看 JFR、线程状态和分配率 → 通过限并发或改一个瓶颈验证。不要用虚拟线程数量、CPU 平均值或“切成异步”替代根因分析。
 
 ### Q：为什么 Java 用 Native Image？什么时候不用？
 
