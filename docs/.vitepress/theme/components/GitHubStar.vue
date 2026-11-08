@@ -67,9 +67,23 @@
   color: var(--ghd-fgColor-default);
 }
 
-@media (max-width: 768px) {
+@media (width < 768px) {
   .nav-github-wrapper {
+    margin-left: 0;
+    gap: 0;
+  }
+
+  .nav-divider,
+  .nav-github-icon {
     display: none;
+  }
+
+  .nav-github {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0 6px;
+    gap: 4px;
   }
 }
 </style>

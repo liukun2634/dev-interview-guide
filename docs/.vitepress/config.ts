@@ -4,6 +4,7 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 import { sections } from './sections'
 
 const siteBase = '/dev-interview-guide/'
+const siteOrigin = 'https://liukun2634.github.io'
 
 export default withMermaid(defineConfig({
   title: '程序员面试手册',
@@ -14,12 +15,28 @@ export default withMermaid(defineConfig({
   srcExclude: ['**/superpowers/**', '**/devops/**'],
 
   sitemap: {
-    hostname: 'https://liukun2634.github.io',
+    hostname: siteOrigin,
     transformItems: items => items.map(item => ({
       ...item,
       url: `${siteBase}${item.url}`,
       links: item.links?.map(link => ({ ...link, url: `${siteBase}${link.url}` })),
     })),
+  },
+
+  transformPageData(pageData) {
+    if (pageData.relativePath === '404.md') return
+    const pathname = pageData.relativePath
+      .replace(/(^|\/)index\.md$/, '$1')
+      .replace(/\.md$/, '.html')
+    pageData.frontmatter.head ??= []
+    pageData.frontmatter.head.push([
+      'link',
+      { rel: 'canonical', href: new URL(`${siteBase}${pathname}`, siteOrigin).href },
+    ])
+  },
+
+  transformHead({ page }) {
+    return page === '404.md' ? [['meta', { name: 'robots', content: 'noindex' }]] : []
   },
 
   head: [

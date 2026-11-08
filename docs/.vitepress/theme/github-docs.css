@@ -293,12 +293,26 @@ body {
 }
 
 /* Show VitePress title on mobile where NavHeader is hidden */
-@media (max-width: 768px) {
+@media (width < 768px) {
   .VPNavBarTitle {
     display: flex !important;
   }
   .VPNavBar .container > .title {
     display: flex !important;
+  }
+  .VPNavBar .content-body {
+    justify-content: flex-end !important;
+    column-gap: 0;
+  }
+  .VPNavBar .content {
+    min-width: 0;
+  }
+  .VPNavBar .wrapper,
+  .VPNavBar.has-sidebar .wrapper {
+    padding: 0 8px 0 16px !important;
+  }
+  .VPNavBar .VPNavBarSearch {
+    padding-left: 0 !important;
   }
 }
 
