@@ -9,9 +9,9 @@
 [![在线阅读](https://img.shields.io/badge/📖_在线阅读-Docs-0969da?style=for-the-badge)](https://liukun2634.github.io/dev-interview-guide/)
 [![GitHub Stars](https://img.shields.io/github/stars/liukun2634/dev-interview-guide?style=for-the-badge&color=f5c542)](https://github.com/liukun2634/dev-interview-guide/stargazers)
 [![VitePress](https://img.shields.io/badge/Built_with-VitePress-646cff?style=for-the-badge)](https://vitepress.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](./LICENSE)
+[![License: CC BY-SA 4.0](https://img.shields.io/badge/License-CC_BY--SA_4.0-lightgrey?style=for-the-badge)](./LICENSE)
 
-[在线阅读](https://liukun2634.github.io/dev-interview-guide/) · [GitHub 仓库](https://github.com/liukun2634/dev-interview-guide) · [参与贡献](#-参与贡献)
+[在线阅读](https://liukun2634.github.io/dev-interview-guide/) · [GitHub 仓库](https://github.com/liukun2634/dev-interview-guide) · [参与贡献](./CONTRIBUTING.md)
 
 </div>
 
@@ -97,12 +97,7 @@ npm run docs:check
 
 ## 🤝 参与贡献
 
-欢迎通过 Issue 或 PR 一起完善这个知识库：
-
-1. 补充新的面试主题或补全现有文章
-2. 修正概念表述或代码示例
-3. 增加高频追问、对比表和典型易错点
-4. 优化文档结构和阅读体验
+欢迎通过 Issue 或 PR 一起完善这个知识库，具体方式请参阅 [贡献指南](./CONTRIBUTING.md)。
 
 ## ⭐ Star History
 
@@ -112,4 +107,6 @@ npm run docs:check
 
 ## License
 
-MIT
+除另有说明的第三方内容外，本项目采用 [CC BY-SA 4.0](./LICENSE)（知识共享署名-相同方式共享 4.0 国际许可协议）。
+
+允许商业使用和改编；分享时须署名、标注修改，分享改编作品时须使用相同或兼容的许可。详见 [许可摘要](https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hans)。
