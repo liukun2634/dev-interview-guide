@@ -118,4 +118,141 @@ assert.throws(() => planModelRetry({ ...request, attempt: 0 }), RangeError);
 assert.throws(() => planModelRetry({ ...request, jitter: NaN }), RangeError);
 assert.throws(() => planModelRetry({ ...request, remainingMs: -1 }), RangeError);
 
-console.log(`PASS: ${extracted} JavaScript examples from ${cache.size} AI documents; pass metrics, business grading, retrieval and retry policies. No model calls.`);
+const chooseResumeMode = await example('context-and-memory.md', 'chooseResumeMode');
+const resumeState = {
+  hasDurableHistory: true, toolResultsComplete: true, operationStatus: 'settled',
+  threadStatus: 'ready', contextRevision: 18, historyRevision: 18,
+};
+assert.equal(chooseResumeMode(resumeState).action, 'continue');
+assert.equal(chooseResumeMode({ ...resumeState, operationStatus: 'none' }).action, 'continue');
+for (const threadStatus of ['expired', 'unknown']) {
+  assert.equal(chooseResumeMode({ ...resumeState, threadStatus }).action, 'replay');
+  for (const operationStatus of ['in-flight', 'unknown']) {
+    assert.equal(chooseResumeMode({ ...resumeState, threadStatus, operationStatus }).action, 'reconcile');
+  }
+}
+assert.equal(chooseResumeMode({ ...resumeState, hasDurableHistory: false }).action, 'stop');
+assert.equal(chooseResumeMode({ ...resumeState, toolResultsComplete: false }).action, 'repair-history');
+assert.equal(chooseResumeMode({ ...resumeState, contextRevision: 17 }).action, 'rebuild-context');
+assert.equal(chooseResumeMode({ ...resumeState, contextRevision: 19 }).action, 'rebuild-context');
+assert.equal(chooseResumeMode({ ...resumeState, hasDurableHistory: false, operationStatus: 'unknown' }).action, 'reconcile');
+assert.equal(chooseResumeMode({ ...resumeState, threadStatus: 'expired', toolResultsComplete: false }).action, 'repair-history');
+assert.equal(chooseResumeMode({ ...resumeState, threadStatus: 'expired', contextRevision: 17 }).action, 'rebuild-context');
+assert.throws(() => chooseResumeMode({ ...resumeState, hasDurableHistory: 'yes' }), TypeError);
+assert.throws(() => chooseResumeMode({ ...resumeState, operationStatus: 'success' }), RangeError);
+assert.throws(() => chooseResumeMode({ ...resumeState, threadStatus: 'cached' }), RangeError);
+assert.throws(() => chooseResumeMode({ ...resumeState, historyRevision: -1 }), RangeError);
+assert.throws(() => chooseResumeMode({ ...resumeState, contextRevision: NaN }), RangeError);
+
+const reduceRunEvent = await example('agent-ui.md', 'reduceRunEvent');
+const uiState = Object.freeze({ runId: 'run-9', lastSequence: 0, text: '', status: 'running', needsSnapshot: false });
+const firstEvent = Object.freeze({ runId: 'run-9', sequence: 1, type: 'text.delta', text: 'Ready' });
+const firstUpdate = reduceRunEvent(uiState, firstEvent);
+assert.equal(firstUpdate.action, 'apply');
+assert.equal(firstUpdate.state.text, 'Ready');
+assert.equal(uiState.text, '');
+assert.equal(reduceRunEvent(firstUpdate.state, firstEvent).action, 'ignore');
+assert.equal(reduceRunEvent(uiState, { ...firstEvent, runId: 'other-run' }).action, 'ignore');
+const gap = reduceRunEvent(firstUpdate.state, { ...firstEvent, sequence: 3 });
+assert.equal(gap.action, 'resync');
+assert.equal(gap.state.text, 'Ready');
+assert.equal(gap.state.lastSequence, 1);
+assert.equal(reduceRunEvent(gap.state, { ...firstEvent, sequence: 2 }).action, 'resync');
+const snapshot = { ...gap.state, needsSnapshot: false, lastSequence: 3, text: 'Recovered' };
+assert.equal(reduceRunEvent(snapshot, { ...firstEvent, sequence: 4, text: '!' }).state.text, 'Recovered!');
+for (const status of ['completed', 'failed', 'cancelled']) {
+  const terminal = reduceRunEvent(firstUpdate.state, { ...firstEvent, sequence: 2, type: `run.${status}` });
+  assert.equal(terminal.state.status, status);
+  assert.equal(reduceRunEvent(terminal.state, { ...firstEvent, sequence: 3 }).action, 'ignore');
+}
+assert.throws(() => reduceRunEvent(uiState, { ...firstEvent, sequence: 0 }), RangeError);
+assert.throws(() => reduceRunEvent(uiState, { ...firstEvent, sequence: 1.5 }), RangeError);
+assert.throws(() => reduceRunEvent(uiState, { ...firstEvent, type: 'unknown' }), RangeError);
+assert.throws(() => reduceRunEvent(uiState, { ...firstEvent, text: null }), TypeError);
+assert.throws(() => reduceRunEvent(uiState, { ...firstEvent, runId: '' }), TypeError);
+const uiSource = readFileSync(new URL('../docs/ai-technology/agent-ui.md', import.meta.url), 'utf8');
+const uiJson = renderer.parse(uiSource, {}).filter(token => token.type === 'fence' && token.info === 'json').map(token => JSON.parse(token.content));
+assert.equal(uiJson.length, 2);
+assert.equal(uiJson[0].type, 'RUN_STARTED');
+assert.equal(uiJson[1].version, '1.0');
+assert.equal(uiJson[1].createSurface.components.filter(component => component.id === 'root').length, 1);
+const componentIds = new Set(uiJson[1].createSurface.components.map(component => component.id));
+for (const component of uiJson[1].createSurface.components) {
+  for (const child of component.children ?? []) assert.ok(componentIds.has(child));
+  if (component.child) assert.ok(componentIds.has(component.child));
+}
+function verifyPreviewBindings(value, dataModel) {
+  if (value === null || typeof value !== 'object') return;
+  if (Object.hasOwn(value, '@path')) {
+    assert.match(value['@path'], /^\/[A-Za-z][A-Za-z0-9]*$/);
+    assert.ok(Object.hasOwn(dataModel, value['@path'].slice(1)), 'Missing preview data binding');
+  }
+  for (const child of Object.values(value)) verifyPreviewBindings(child, dataModel);
+}
+verifyPreviewBindings(uiJson[1].createSurface.components, uiJson[1].createSurface.dataModel);
+const missingPreviewField = { ...uiJson[1].createSurface.dataModel };
+delete missingPreviewField.proposalId;
+assert.throws(() => verifyPreviewBindings(uiJson[1].createSurface.components, missingPreviewField), /Missing preview data binding/);
+
+const normalizeFunctionCall = await example('ai-architecture.md', 'normalizeFunctionCall');
+const functionArguments = JSON.stringify({ order_id: 'order_42' });
+const chatCall = { type: 'function', id: 'call_order_42', function: { name: 'lookup_order', arguments: functionArguments } };
+const responseCall = { type: 'function_call', id: 'fc_item_42', call_id: 'call_order_42', name: 'lookup_order', arguments: functionArguments };
+assert.deepEqual(normalizeFunctionCall('chat-completions', chatCall), normalizeFunctionCall('responses', responseCall));
+assert.deepEqual(normalizeFunctionCall('responses', responseCall), {
+  callId: 'call_order_42', name: 'lookup_order', arguments: { order_id: 'order_42' },
+});
+assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, call_id: undefined }), TypeError);
+assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, name: '' }), TypeError);
+assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, arguments: {} }), TypeError);
+assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, arguments: '{' }), SyntaxError);
+for (const argumentsValue of ['null', '[]', '1', 'true', '"text"']) {
+  assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, arguments: argumentsValue }), TypeError);
+}
+assert.throws(() => normalizeFunctionCall('responses', { ...responseCall, type: 'custom_tool_call' }), RangeError);
+assert.throws(() => normalizeFunctionCall('other-api', responseCall), RangeError);
+assert.throws(() => normalizeFunctionCall('chat-completions', { ...chatCall, function: {} }), TypeError);
+assert.throws(() => normalizeFunctionCall('responses', null), TypeError);
+const architectureSource = readFileSync(new URL('../docs/ai-technology/ai-architecture.md', import.meta.url), 'utf8');
+const migrationSection = architectureSource.split('## 模型与 API 升级：迁移的是契约')[1].split('## 超时、重试与副作用')[0];
+const migrationJson = renderer.parse(migrationSection, {}).filter(token => token.type === 'fence' && token.info === 'json').map(token => JSON.parse(token.content));
+assert.equal(migrationJson.length, 3);
+assert.deepEqual(migrationJson[0].tools[0].function.parameters, migrationJson[1].tools[0].parameters);
+assert.equal(migrationJson[0].tools[0].function.strict, true);
+assert.equal(migrationJson[1].tools[0].strict, true);
+assert.equal(migrationJson[0].store, false);
+assert.equal(migrationJson[1].store, false);
+assert.equal(migrationJson[2].call_id, normalizeFunctionCall('responses', responseCall).callId);
+assert.equal(JSON.parse(migrationJson[2].output).order_id, 'order_42');
+
+const estimateKvCapacity = await example('inference-optimization.md', 'estimateKvCapacity');
+const kvInputs = {
+  layers: 32, kvHeads: 8, headDim: 128, bytesPerElement: 2,
+  inputTokens: 6144, maxNewTokens: 2048, blockTokens: 16, kvBudgetBytes: 16 * 1024 ** 3,
+};
+const kvEstimate = estimateKvCapacity(kvInputs);
+assert.deepEqual(kvEstimate, {
+  bytesPerToken: 128 * 1024, allocatedTokens: 8192, bytesPerRequest: 1024 ** 3, maxConcurrent: 16,
+});
+assert.equal(estimateKvCapacity({ ...kvInputs, inputTokens: 6145 }).allocatedTokens, 8208);
+assert.equal(estimateKvCapacity({ ...kvInputs, inputTokens: 6145 }).maxConcurrent, 15);
+assert.equal(estimateKvCapacity({ ...kvInputs, kvBudgetBytes: 0 }).maxConcurrent, 0);
+assert.equal(estimateKvCapacity({ ...kvInputs, kvBudgetBytes: 1024 ** 3 - 1 }).maxConcurrent, 0);
+assert.equal(estimateKvCapacity({ ...kvInputs, inputTokens: 1, maxNewTokens: 0 }).allocatedTokens, 16);
+assert.equal(estimateKvCapacity({ ...kvInputs, kvHeads: 1 }).bytesPerRequest, kvEstimate.bytesPerRequest / 8);
+for (const [field, value] of [
+  ['layers', 0], ['kvHeads', -1], ['headDim', NaN], ['bytesPerElement', 0.5],
+  ['inputTokens', 0], ['maxNewTokens', -1], ['blockTokens', 0], ['kvBudgetBytes', Infinity],
+  ['inputTokens', Number.MAX_SAFE_INTEGER], ['layers', Number.MAX_SAFE_INTEGER],
+]) {
+  assert.throws(() => estimateKvCapacity({ ...kvInputs, [field]: value }), RangeError);
+}
+for (const inputTokens of [1, 15, 16, 17, 1000, 8192]) {
+  const result = estimateKvCapacity({ ...kvInputs, inputTokens, maxNewTokens: 0 });
+  assert.ok(result.allocatedTokens >= inputTokens);
+  assert.ok(result.allocatedTokens - inputTokens < kvInputs.blockTokens);
+  assert.ok(result.maxConcurrent * result.bytesPerRequest <= kvInputs.kvBudgetBytes);
+  assert.ok((result.maxConcurrent + 1) * result.bytesPerRequest > kvInputs.kvBudgetBytes);
+}
+
+console.log(`PASS: ${extracted} JavaScript examples from ${cache.size} AI documents; evaluation, retrieval, retry, recovery, UI, API migration and KV capacity checks. No model calls.`);

@@ -244,9 +244,9 @@ Token Routing (Decode 阶段):
 - 在节点内用 NVLink 减少跨节点流量
 - **MoE-aware Prefill/Decode 分离**：Prefill 阶段 Token 多易凑批，Decode 阶段单独优化
 
-**③ KV Cache 仍然是全量的**
+**③ MoE 不自动减少 KV Cache**
 
-容易踩坑：MoE 只稀疏化了 FFN 层，**Attention 层和 KV Cache 不变**——所以 KV Cache 显存压力跟同等隐藏维度的 Dense 模型一样大。
+仅把 FFN 换成稀疏专家，不会自动减少注意力状态。具体模型还可能组合 GQA、MLA、滑动窗口或其他压缩架构，KV 占用必须按实际注意力层和缓存布局计算，不能只比较激活参数量或隐藏维度。
 
 ### MoE 工程化关键技术
 
@@ -321,6 +321,128 @@ GPU 3:     KV[750K:1M]
 - **StreamingLLM**：保留 attention sink token（前几个）+ 滑动窗口
 - **H2O / SnapKV**：基于注意力分数动态淘汰
 - 适合无限长流式对话（如长期 Agent 会话）
+
+---
+
+## 推理服务调度：PD 分离与 KV 分层 {#serving-scheduling}
+
+一个聊天服务同时接收短问答和长文档分析。某个长输入进入 Prefill 后，其他用户已经开始的文本流突然停顿。此时“平均 tokens/s 还不错”不能说明体验正常：应查看排队时间、TTFT 和 Token 间隔的尾部，而不是继续扩大 batch。
+
+### 先判断是调度干扰，还是资源不足
+
+- **TTFT** 从请求到首 Token，包含排队、输入处理和首次生成等环节；只测 GPU Prefill kernel 不等于端到端 TTFT。
+- **ITL** 是相邻输出 Token 的间隔；**TPOT** 常用于概括单请求的平均每输出 Token 耗时，具体是否排除首 Token 应明确。平均值会掩盖中途长停顿。
+- **有效吞吐**应同时报告成功请求数、输入/输出 Token 速率和满足延迟目标的比例。取消、超时和反复重算不能都算成有效产出。
+
+如果没有明显 Prefill/Decode 干扰，瓶颈可能在等待队列、权重与 KV 带宽、MoE 通信、CPU 分词或外部网络。把阶段拆开部署不会自动解决所有这些问题。
+
+### 分块与分离是两种不同的取舍
+
+**Chunked Prefill** 在同一调度器里把长输入切成较小计算块，与 Decode 交替。它不需要跨实例搬运完整 KV，但块大小和每轮 Token 预算需要调优：块太大可能仍造成停顿，太小会增加调度开销并拉长该长请求的 TTFT。
+
+**Prefill/Decode 分离（PD Disaggregation）** 把两阶段放到不同实例或资源池，Prefill 计算完成后将必要 KV 和关联状态交给 Decode。两侧可以分别配置并行方式、扩缩容和排队策略，但会引入传输、路由、版本兼容及故障恢复成本。
+
+```mermaid
+graph LR
+  Request["请求与预算"] --> Router["路由与准入"]
+  Router --> Prefill["Prefill 资源池"]
+  Prefill --> Transfer["KV 传输与关联"]
+  Transfer --> Decode["Decode 资源池"]
+  Decode --> Output["输出 Token 流"]
+  Cache["可复用 KV 存储"] --> Prefill
+  Cache --> Decode
+```
+
+[vLLM 的 PD 文档](https://docs.vllm.ai/en/stable/features/disagg_prefill/)强调分别调优 TTFT 与 ITL，并控制尾部 ITL，同时将该特性标为实验性。不能从“两个资源池”推导出吞吐必然提高：相同 GPU 总预算下，权重复制、阶段负载不均和 KV 搬运都可能降低利用率。
+
+### KV 传输不是免费的
+
+若某次需要传输 1 GiB KV，**假设**链路有效带宽为 20 GiB/s，仅传输下界就约为 50 ms；这还没有算排队、握手、布局转换、同步和首步 Decode。实际可以按层流水或与计算重叠，但是否隐藏了传输要看关键路径，不能直接把网卡标称带宽当成有效带宽。
+
+生产接入至少检查以下边界：
+
+1. **身份和版本**：模型权重、适配器、精确 Token 前缀、位置设置、KV 精度和布局必须兼容；TP/PP 不同的实例不一定能直接交换缓存。
+2. **传输状态**：关联请求与传输 ID，区分尚未到达、部分到达和完整可用。缓存失效时选择有预算的重算或明确失败，不使用半份缓存继续推理。
+3. **两侧准入**：Prefill 完成不代表 Decode 有位置。路由应同时考虑排队工作量、预计输出、剩余 KV 块和传输队列，避免把大量 KV 堆在中间。
+4. **取消与故障**：客户端取消后，两侧应回收请求和传输资源；晚到数据不能重新激活已取消请求。实例失败后的重算也受总截止时间约束。
+
+对于每个请求都很短、前缀很少复用或跨节点带宽不足的服务，同机批处理与分块 Prefill 可能更合适。PD 的理由应是实测的隔离收益，而不是架构图更复杂。
+
+### GPU、CPU、存储：缓存命中也可能更慢
+
+分层 KV Cache 可将较冷的块移到 CPU 内存、文件系统或外部存储，命中时再搬回 GPU。以 [vLLM KV Offloading](https://docs.vllm.ai/en/latest/features/kv_offloading_usage/)为例，文档描述的多层实现经过 CPU 主层中转；具体 Connector、跨节点和量化布局支持必须按安装版本核对，开发版文档中的能力不等于任意稳定版本可用。
+
+应比较的是**读取并恢复缓存的耗时**与**重新计算该前缀的耗时**。冷存储很慢、缓存块很小或命中率很低时，读取、写入和淘汰可能比重算更贵；只报告“命中率提高”不足以证明优化成功。
+
+缓存键和访问策略还需包含正确的模型、前缀与租户隔离范围。KV 中可能承载敏感上下文，不应因为它不是可读文字就允许跨用户导出。缓存可重算，也不是业务对话、长期记忆或退款操作账本的替代品。
+
+### 从显存预算估算并发上限 {#kv-capacity-budget}
+
+先从设备容量中扣除权重、工作区、激活、通信缓冲、CUDA Graph 等运行时开销及安全余量，剩下的才是 KV 预算。不要拿整卡显存除以单请求 KV 大小。
+
+对所有层采用相同全注意力 GQA 布局、无前缀共享且无 TP/PP 切分的简化副本，可用：
+
+$$
+m_{\mathrm{token}}=2 L H_{\mathrm{KV}} d b
+$$
+
+$$
+T_{\mathrm{alloc}}=B\left\lceil\frac{S+O}{B}\right\rceil,\qquad
+C_{\mathrm{memory}}=\left\lfloor\frac{M_{\mathrm{budget}}}{m_{\mathrm{token}}T_{\mathrm{alloc}}}\right\rfloor
+$$
+
+其中 $L$ 是层数，$H_{\mathrm{KV}}$ 是 K/V 头数，$d$ 是头维度，$b$ 是每元素字节数，$B$ 是缓存块的 Token 数，$S$ 是输入长度，$O$ 是预留输出长度。前面的 2 表示 K 与 V，不能再乘一次 Q 头数。
+
+下面的 JavaScript 计算器只演示该布局的内存估算，输入字节精度限正整数；MLA、滑动窗口、混合层、打包低比特 KV 和量化元数据需要使用各自布局重新计算。
+
+```javascript
+export function estimateKvCapacity({
+  layers,
+  kvHeads,
+  headDim,
+  bytesPerElement,
+  inputTokens,
+  maxNewTokens,
+  blockTokens,
+  kvBudgetBytes,
+}) {
+  const positive = [layers, kvHeads, headDim, bytesPerElement, inputTokens, blockTokens];
+  if (!positive.every(value => Number.isSafeInteger(value) && value > 0)
+      || ![maxNewTokens, kvBudgetBytes].every(value =>
+        Number.isSafeInteger(value) && value >= 0)) {
+    throw new RangeError('Invalid KV capacity input');
+  }
+  const totalTokens = inputTokens + maxNewTokens;
+  const allocatedTokens = Math.ceil(totalTokens / blockTokens) * blockTokens;
+  const bytesPerToken = 2 * layers * kvHeads * headDim * bytesPerElement;
+  const bytesPerRequest = bytesPerToken * allocatedTokens;
+  if (![totalTokens, allocatedTokens, bytesPerToken, bytesPerRequest]
+      .every(Number.isSafeInteger)) {
+    throw new RangeError('KV estimate exceeds safe integer precision');
+  }
+  return {
+    bytesPerToken,
+    allocatedTokens,
+    bytesPerRequest,
+    maxConcurrent: Math.floor(kvBudgetBytes / bytesPerRequest),
+  };
+}
+```
+
+**演算例子，不是硬件实测**：假设 32 层、8 个 K/V 头、头维度 128、每元素 2 字节，则每 Token 的 KV 为 128 KiB。输入 6144 Token、预留输出 2048 Token、块大小 16，单请求需要 1 GiB KV。若 80 GiB 设备扣除假设的 48 GiB 权重、8 GiB 运行时开销和 8 GiB 安全余量，KV 预算为 16 GiB，则此模型下最多容纳 16 个同样长度的请求。
+
+**16 只是这组假设下的内存上限，不是推荐并发，也不是 SLA 保证。** 不同请求长度需要按块分别求和；分页、共享前缀、运行时预留与抢占会改变实际容量。多卡部署应按每个 rank 的实际缓存布局计算，不能默认把上述结果除以 TP 数。
+
+### 如何设计一组可信的对照实验
+
+固定模型、精度、GPU 总数、互联与引擎版本，对比同机连续批处理、分块 Prefill、PD 分离，再单独比较是否启用分层 KV。每次只改变一个主要策略。
+
+- 用相同的短/长输入、短/长输出混合和到达时间重放，区分冷启动与缓存预热；固定并发的闭环压测还应补充固定到达率测试，避免慢系统通过降低实际请求率掩盖排队。
+- 记录端到端 TTFT、ITL 分布、超时和取消率、可接受延迟下的吞吐，以及每个成功任务的成本。
+- 观察各资源池利用率、在途传输字节、KV 命中与淘汰、重算率和排队工作量，而不只看平均 GPU 利用率。
+- 注入长输入突发、租户热点、传输失败和客户端取消，检查短请求是否饥饿、资源是否释放、数据是否跨租户复用。
+
+没有合适 GPU 时，可以先运行容量计算和调度模型来验证假设，但不能把演算结果写成 vLLM、SGLang 或某款 GPU 的实测吞吐。
 
 ---
 

@@ -159,6 +159,160 @@ class TokenBudget:
 
 ---
 
+## 模型与 API 升级：迁移的是契约 {#api-migration}
+
+一个订单助手原来通过 Chat Completions 查询订单，升级后改用 Responses。普通问答能返回文字，团队便以为迁移完成；直到工具结果无法关联、流式页面不再结束、旧会话恢复失败，才发现改变的不只是 `model` 字段。
+
+**模型升级、API 迁移与 SDK 升级是三个可以分别失败的变更。** 建议先记录可回滚的配置组合：供应商与端点、模型快照、SDK 和适配器版本、Prompt、工具 Schema、输出格式、推理设置、存储策略与部署地域。一次只改变一个主要变量，更容易把行为变化归因到具体原因。
+
+### 案例：迁移订单查询工具
+
+下面以 [OpenAI 迁移指南](https://developers.openai.com/api/docs/guides/migrate-to-responses)和 [Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)中的接口契约为依据，用只读订单查询演示形状变化。`CHAT_MODEL_ID`、`RESPONSES_MODEL_ID` 是配置占位符，必须分别替换为对应端点实际支持工具调用的模型；同一型号能生成文本，不代表在两个端点都支持相同的工具与推理设置。
+
+旧端点 `POST /v1/chat/completions` 的请求片段：
+
+```json
+{
+    "model": "CHAT_MODEL_ID",
+    "messages": [
+        { "role": "system", "content": "只查询当前用户有权查看的订单，不执行退款。" },
+        { "role": "user", "content": "查询订单 order_42。" }
+    ],
+    "tools": [{
+        "type": "function",
+        "function": {
+            "name": "lookup_order",
+            "description": "查询订单状态，身份由后端认证会话提供。",
+            "strict": true,
+            "parameters": {
+                "type": "object",
+                "properties": { "order_id": { "type": "string" } },
+                "required": ["order_id"],
+                "additionalProperties": false
+            }
+        }
+    }],
+    "store": false
+}
+```
+
+新端点 `POST /v1/responses` 使用 `input` 和平铺的 function 定义：
+
+```json
+{
+    "model": "RESPONSES_MODEL_ID",
+    "instructions": "只查询当前用户有权查看的订单，不执行退款。",
+    "input": [{ "role": "user", "content": "查询订单 order_42。" }],
+    "tools": [{
+        "type": "function",
+        "name": "lookup_order",
+        "description": "查询订单状态，身份由后端认证会话提供。",
+        "strict": true,
+        "parameters": {
+            "type": "object",
+            "properties": { "order_id": { "type": "string" } },
+            "required": ["order_id"],
+            "additionalProperties": false
+        }
+    }],
+    "store": false
+}
+```
+
+这里显式设置 `store: false` 以说明应用自己管理历史的分支，但它不等于组织的所有日志和保留政策都自动变成零保留。使用服务端状态引用时，应另行核对保存条件、有效期和数据地域。
+
+两种请求都只声明了模型可提出的调用。订单访问权限仍由工具执行器根据已认证用户和订单归属判断，不能相信模型在参数中自报的用户身份。`strict` 约束结构，也不证明订单真实存在或允许访问。
+
+### 调用 ID 与工具结果不能混淆
+
+Chat Completions 的调用位于 `message.tool_calls`，结果通常写为 `role: "tool"` 的消息，使用 `tool_call_id` 关联。Responses 的 `function_call` 是独立输出条目，结果应作为 `function_call_output` 输入条目，使用 **`call_id`** 关联。
+
+下面是可离线运行的适配函数。输入必须是 SDK 已组装完成的单个调用，不能把增量参数块直接传进来；不支持的工具类型应交给对应适配器，而不是强行当作函数处理。
+
+```javascript
+export function normalizeFunctionCall(protocol, item) {
+        if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+                throw new TypeError('Expected a complete function call');
+        }
+        let callId;
+        let name;
+        let encodedArguments;
+        if (protocol === 'chat-completions') {
+                if (item.type !== 'function') throw new RangeError('Unsupported tool type');
+                callId = item.id;
+                name = item.function?.name;
+                encodedArguments = item.function?.arguments;
+        } else if (protocol === 'responses') {
+                if (item.type !== 'function_call') throw new RangeError('Unsupported item type');
+                callId = item.call_id;
+                name = item.name;
+                encodedArguments = item.arguments;
+        } else {
+                throw new RangeError('Unsupported protocol');
+        }
+        if (![callId, name].every(value => typeof value === 'string' && value.trim())
+                        || typeof encodedArguments !== 'string') {
+                throw new TypeError('Missing call identity or arguments');
+        }
+        const argumentsObject = JSON.parse(encodedArguments);
+        if (argumentsObject === null || typeof argumentsObject !== 'object'
+                        || Array.isArray(argumentsObject)) {
+                throw new TypeError('Function arguments must be an object');
+        }
+        return { callId, name, arguments: argumentsObject };
+}
+```
+
+归一化后仍要按工具名白名单分发、验证参数 Schema、鉴权并执行。结果与原调用一一对应，多个并行调用不能都挂到最后一个 ID。Responses 中的 `id` 标识输出条目，`call_id` 标识调用关联；两者即使偶然看起来相似，也不能互换。
+
+例如，对调用 `call_order_42` 返回的只读查询结果可表示为：
+
+```json
+{
+    "type": "function_call_output",
+    "call_id": "call_order_42",
+    "output": "{\"order_id\":\"order_42\",\"status\":\"paid\"}"
+}
+```
+
+这只是后续输入中的一个条目，不是完整请求。手动管理历史时，还要保存并按目标 SDK 的输入类型转换规则重放原输出中的必要消息、调用和 reasoning items，再附上结果，不能只重放 `output_text`。使用 `previous_response_id` 则不要再次重复拼入同一段历史；需要持续生效的顶层 `instructions` 仍应按接口要求在每轮明确传入。
+
+### 流式、结构化输出与推理状态
+
+不要沿用一个 `delta.content` 分支处理所有 API：
+
+- **文本事件**：Responses 按 `response.output_text.delta` 等类型消费，而不是读取 Chat Completions 的 `choices`。流结束也可能是失败、中断或输出不完整，应核对终态。
+- **工具参数**：按输出条目关联参数增量，等完整调用到达并通过校验后再执行。`response.function_call_arguments.done` 表示参数完成，不是工具执行成功。
+- **结构化回答**：Chat Completions 的 `response_format` 与 Responses 的 `text.format` 层级不同。拒答、截断和业务不合法要分别处理，不能把“可解析 JSON”当作成功。
+- **推理设置**：effort、采样参数、输出上限和工具强制选择并非跨模型通用。目标不支持的设置应明确报错，不静默丢字段来假装兼容。
+- **推理签名与不透明块**：原样保留其关联和顺序；是否可跨模型、账号或修改后的前缀继续使用，按供应商规则判断。不要解码、改写、伪造签名，也不要把这些块作为普通文本展示。
+
+供应商接口差异应留在适配器中，但原始、受控保留的响应与版本信息不能被“统一 DTO”全部抹掉，否则无法重放、解释费用或定位迁移失败。前端可以使用稳定的应用事件模型，见 [Agent 交互](./agent-ui#event-recovery)。
+
+### Token、成本与回归如何比较
+
+相同文字在新 tokenizer 下可能产生不同 Token 数，工具定义和多模态输入也占预算。迁移测试必须重新测输入、可见输出、推理、缓存读写、工具调用和完整任务耗时；不能沿用旧模型的字符估算或把更短回答直接视为成本优化。
+
+按供应商 usage 的口径做成本账本：缓存命中输入通常是输入 Token 的子集，推理 Token 也可能已包含在输出总数中，不能重复计费。缓存写入、内置工具、沙箱和重试可能另计；`previous_response_id` 减少上传历史，不意味着历史上下文免费。实际单价应来自对应快照、地域和服务档位。
+
+可以先冻结一组匿名化订单场景与工具返回，再比较两套完整配置：
+
+| 用例 | 验证重点 |
+|------|----------|
+| 正常查询 | 调用正确工具，订单与金额一致，输出有依据 |
+| 不存在或越权订单 | 不泄露他人数据，不把错误包装成正常结果 |
+| 多工具调用 | 每个结果关联正确调用，不串用参数 |
+| 拒答或参数截断 | 不执行半截参数，不显示虚假成功 |
+| 历史重放 | 工具关联与必要推理状态保留，旧约束不丢失 |
+| 超时与重复投递 | 重试不放大副作用，能识别未决操作 |
+| 长上下文与多模态 | 计数、预算、延迟和引用没有明显退化 |
+
+比较任务通过率、禁止动作发生率、P95 端到端延迟和每个成功任务的总成本，并报告样本量与切片。离线通过后再小流量灰度；影子流量中的写工具必须替换为隔离的桩或只读环境，不能让新旧模型各执行一次真实退款。
+
+回滚应切回**整套配置**，而不是只改模型 ID。新会话记录若已含旧适配器不认识的条目，要选择已验证的转换路径、保留新旧读取能力，或让在途任务完成后再切换。迁移上线条件与评测集隔离见 [AI 评估](./ai-evaluation#datasets)。
+
+---
+
 ## 超时、重试与副作用 {#retry-and-idempotency}
 
 ### 先判断失败发生在哪一层

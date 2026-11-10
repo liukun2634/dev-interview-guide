@@ -91,6 +91,88 @@ Context Rot 描述的是长上下文中信息利用能力可能退化，不是�
 
 如果供应商要求重放特定工具调用、结果、签名块或不透明的 reasoning item，应按其契约原样保存与传递。不能把它们改写成摘要后还期待原会话语义不变。缓存和具体恢复机制见 [Harness Engineering](./harness-engineering#prompt-caching)。
 
+## 服务端会话过期后，怎样继续任务 {#session-recovery}
+
+用户确认了一笔退款，工具调用超时；随后服务进程重启，模型侧的会话也已过期。此时“重新发送最后一句话”很危险：模型可能再次发起退款，也可能把没有收到结果误解为没有执行。
+
+**恢复需要重建的是有证据的上下文，而不是让模型猜测上一次发生了什么。** 至少区分四类状态：
+
+| 状态 | 保存什么 | 丢失时的影响 |
+|------|----------|--------------|
+| 供应商会话引用 | Response ID、Thread ID、模型与配置指纹 | 可能需要重新发送历史，不应丢失业务任务 |
+| 持久化对话 | 原始消息、工具调用与结果、顺序及版本 | 无法可靠重建模型看到的事实 |
+| 业务检查点 | 操作 ID、幂等键、审批对象与版本、执行状态 | 不能判断退款是否已发生 |
+| 上下文快照 | 摘要及来源范围、未压缩尾部、历史版本 | 需要重新组装，而不是直接重做业务 |
+
+服务端保存历史与 Prompt Cache 是不同能力。以 [Claude Message Threads](https://platform.claude.com/docs/en/build-with-claude/message-threads) 为例，文档将其定义为短期、best-effort 的会话保留，应用仍需维护自己的历史和重放路径；它也不自动启用 Prompt Cache。其他供应商的会话、保留期限和压缩接口不应直接套用这一契约。
+
+### 沿着一次退款恢复
+
+1. **先锁定同一业务任务。** 恢复请求通过用户、租户和任务 ID 重新鉴权，Worker 使用租约或版本检查避免两个恢复进程同时推进。
+2. **查询原操作，而不是重新退款。** 根据持久化的操作 ID 或幂等键查询退款服务。如果仍在执行或无法确认，保持等待对账；只有明确的结果才能进入后续推理。
+3. **补全调用与结果的关联。** 如果退款已成功，但结果尚未写入对话，就把查到的可信结果关联到原工具调用。重放工具结果不等于重新执行工具。
+4. **检查上下文是否过期。** 后台压缩可能基于历史版本 17，但用户的“取消后续操作”已写入版本 18。应保留新约束和未完成工具结果，用摘要覆盖的前缀加未压缩尾部重建快照。
+5. **按供应商契约续接或重建。** 会话仍可用且配置兼容时继续；会话过期则创建新会话，并重放允许保留的历史。模型、工具配置或签名块不兼容时，先走适配器的迁移规则。
+
+持久化时应把“收到工具结果”和“结果已进入对话”的进度分开记录。外部操作与本地数据库通常不在同一个事务中，因此仍需要操作账本和对账，不能因保存了聊天记录就宣称 exactly-once。
+
+### 代码：只选择恢复路径，不执行副作用
+
+下面是应用自定义的纯函数，可直接作为 ES Module 运行。输入来自经过鉴权的持久化状态和协议适配器，不接受模型自行报告“已完成”。`ready` 表示适配器已检查会话身份、模型、配置以及上一轮完成状态，而不只是保存了一个 ID。
+
+`contextRevision` 是**完整上下文快照**所依据的历史版本，不是摘要覆盖到的消息序号。较早的摘要与较新的原始尾部可以组成当前版本的快照。
+
+```javascript
+export function chooseResumeMode({
+  hasDurableHistory,
+  toolResultsComplete,
+  operationStatus,
+  threadStatus,
+  contextRevision,
+  historyRevision,
+}) {
+  if (typeof hasDurableHistory !== 'boolean'
+      || typeof toolResultsComplete !== 'boolean') {
+    throw new TypeError('History flags must be boolean');
+  }
+  if (!['none', 'in-flight', 'unknown', 'settled'].includes(operationStatus)
+      || !['ready', 'expired', 'unknown'].includes(threadStatus)) {
+    throw new RangeError('Invalid recovery status');
+  }
+  if (![contextRevision, historyRevision].every(value =>
+    Number.isSafeInteger(value) && value >= 0)) {
+    throw new RangeError('Invalid history revision');
+  }
+  if (['in-flight', 'unknown'].includes(operationStatus)) {
+    return { action: 'reconcile', reason: 'operation-not-settled' };
+  }
+  if (!hasDurableHistory) {
+    return { action: 'stop', reason: 'history-unavailable' };
+  }
+  if (!toolResultsComplete) {
+    return { action: 'repair-history', reason: 'missing-tool-result' };
+  }
+  if (contextRevision !== historyRevision) {
+    return { action: 'rebuild-context', reason: 'stale-context' };
+  }
+  if (threadStatus !== 'ready') {
+    return { action: 'replay', reason: 'thread-unavailable' };
+  }
+  return { action: 'continue', reason: 'state-consistent' };
+}
+```
+
+退款结果未知时，即使模型会话过期，输出也必须先是 `reconcile`，而不是 `replay`。对账成功后补结果、重建快照，再重新调用决策函数；每个分支都要读取最新状态并受并发控制，不能拿旧快照连续执行整条恢复链。
+
+### 四个必须验证的故障场景
+
+- **会话过期**：本地历史完整且没有未决操作时，可以重建模型会话，不生成新的退款请求。
+- **进程重启**：供应商 SDK 内存中的消息不算持久化。没有可验证历史时停止自动续接，保留业务账本并进入人工恢复。
+- **重复请求**：相同业务操作 ID 与参数应返回已有结果或在途状态；同一幂等键对应不同参数必须拒绝，不能静默复用。
+- **压缩竞争**：旧快照不得覆盖新约束。通过历史版本比较或 Compare-and-Swap 发布快照，失败则重新读取尾部消息。
+
+这类测试应同时观察模型输入与业务操作次数。仅证明“助手最后回复了退款成功”，无法证明没有发生重复退款。持久化执行和幂等实现继续参阅 [Harness 的长任务恢复](./harness-engineering#durable-execution)。
+
 ## Agent 记忆的两种分类 {#memory-types}
 
 “短期/长期”按保留范围分，“情景/语义/过程”按内容分，两组分类可以交叉：

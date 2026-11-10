@@ -208,7 +208,7 @@ AI 的核心机制都可以用架构图表达：
 | 主题 | 核心内容 | 面试频率 | 详细页面 |
 |------|---------|---------|---------|
 | Prompt Engineering | Zero/Few-shot、CoT、Self-Consistency、ToT、Prompt 安全 | 🔥🔥🔥 | [Prompt Engineering](./prompt-engineering) |
-| 上下文工程与 Agent 记忆 | 上下文组装、压缩、记忆分类、写入/更新/删除、隔离与评测 | 专题 | [上下文与记忆](./context-and-memory) |
+| 上下文工程与 Agent 记忆 | 上下文组装、压缩、会话恢复、记忆生命周期与隔离 | 专题 | [上下文与记忆](./context-and-memory) |
 | Embedding 与向量数据库 | Word2Vec/BERT、向量数据库选型、ANN 算法(HNSW/IVF) | 🔥🔥 | [Embedding 与向量数据库](./embedding-and-vector-db) |
 | RAG 检索增强生成 | 分块与混合检索、Rerank、检索指标代码、权限与失败定位 | 🔥🔥🔥 | [RAG](./rag) |
 
@@ -223,6 +223,7 @@ AI 的核心机制都可以用架构图表达：
 | MCP 模型上下文协议 | 原语与契约、Server 开发、宿主接入、Inspector、认证、部署与排查 | 专题 | [MCP](./mcp) |
 | A2A 智能体协作协议 | Agent Card、Message/Task/Artifact、长任务、断线恢复与授权 | 专题 | [A2A](./a2a) |
 | Harness Engineering | 执行循环、上下文与缓存、检查点、幂等、审批、验证与观测 | 🔥🔥 | [Harness Engineering](./harness-engineering) |
+| Agent 交互与生成式 UI | AG-UI、A2UI、MCP Apps、工具进度、审批与状态恢复 | 专题 | [Agent 交互](./agent-ui) |
 | Computer Use 与多 Agent 编排 | GUI 操作循环、视觉定位、沙箱、安全与编排 | 🔥🔥 | [Computer Use](./agent-computer-use) |
 | 实时语音与 Voice Agent | 级联与实时架构、全双工、VAD、打断、工具执行与音频评估 | 专题 | [Voice Agent](./voice-agents) |
 
@@ -247,8 +248,8 @@ AI 的核心机制都可以用架构图表达：
 | 合成数据与知识蒸馏 | 数据生产、回答/分布/特征蒸馏、on-policy、来源隔离、学生评测 | 专题 | [合成数据与蒸馏](./synthetic-data-and-distillation) |
 | AI 评估与可靠性工程 | 评测集隔离、Judge 校准、业务评分器、Agent 轨迹、统计与发布 | 专题 | [AI 评估](./ai-evaluation) |
 | 模型对齐与 AI 安全 | RLHF/DPO/GRPO/RLVR、Constitutional AI、Red Teaming、Guardrails | 🔥🔥🔥 | [对齐与安全](./evaluation-and-alignment) |
-| LLM 推理优化 | KV Cache、MQA/GQA、量化、推测解码、Continuous Batching | 🔥🔥🔥 | [推理优化](./inference-optimization) |
-| AI 应用架构设计 | 模型服务、API、重试决策、幂等与取消、成本与可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
+| LLM 推理优化 | KV Cache、量化、推测解码、批处理、PD 分离与容量估算 | 🔥🔥🔥 | [推理优化](./inference-optimization) |
+| AI 应用架构设计 | 模型服务、API 迁移、重试、幂等与取消、成本与可观测性 | 🔥🔥 | [应用架构](./ai-architecture) |
 | AI 系统设计面试题 | 设计框架、智能客服/代码补全案例、权衡分析 | 🔥🔥 | [系统设计](./ai-system-design) |
 | AI 前沿趋势与新范式 | Compound AI Systems、Model Routing、GraphRAG、Evals-Driven、AI 可观测性 | 🔥🔥🔥 | [前沿趋势](./ai-trends) |
 | AI 安全与越狱防护 | Prompt Injection、数据泄露、权限隔离与 Red Teaming | 🔥🔥🔥 | [安全与越狱](./security-and-jailbreak) |
@@ -273,7 +274,7 @@ AI 的核心机制都可以用架构图表达：
 
 第三阶段（高级应用）：
   AI Agent → Skills / MCP / A2A → Harness → Computer Use / Voice Agent
-  → AI 应用架构设计 → AI 系统设计
+  → Agent 交互与生成式 UI → AI 应用架构设计 → AI 系统设计
 
 第四阶段（工程深入，按需学习）：
   模型训练（LoRA）→ 合成数据与知识蒸馏 → 推理优化 → 模型对齐与安全

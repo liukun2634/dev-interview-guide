@@ -563,6 +563,7 @@ export default withMermaid(defineConfig({
             { text: 'MCP 模型上下文协议', link: '/ai-technology/mcp' },
             { text: 'A2A 智能体协作协议', link: '/ai-technology/a2a' },
             { text: 'Harness Engineering', link: '/ai-technology/harness-engineering' },
+            { text: 'Agent 交互与生成式 UI', link: '/ai-technology/agent-ui' },
             { text: '🔥 Computer Use 与多 Agent 编排', link: '/ai-technology/agent-computer-use' },
             { text: '实时语音与 Voice Agent', link: '/ai-technology/voice-agents' },
           ],
