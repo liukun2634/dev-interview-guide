@@ -7,20 +7,20 @@ title: 全栈工程师 AI 实战能力
 <span class="dig-tag dig-tag--category">面试准备</span> <span class="dig-tag dig-tag--intermediate">⭐⭐ 中级</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
 ::: tip 💡 核心要点
-全栈工程师不需要训练模型，但需要知道怎么把 AI 能力集成到产品中。面试重点考察的是：你能不能设计一个调用 LLM 的后端服务、处理流式响应的前端界面、以及保证整个系统可靠运行的工程方案。
+本篇聚焦把模型能力交付成可用产品：浏览器呈现状态，BFF 关联身份与任务，后端负责执行。模型训练是否需要深入取决于岗位；这里重点验证流式传输、取消、重连、审批与错误反馈。
 :::
 
 ## 概念
 
 全栈工程师在 AI 时代的核心价值是**集成能力**——把 AI 模型的能力变成用户可用的产品功能。这要求你同时理解前端交互、后端服务和 AI 接口三个层面。
 
-全栈 AI 技能可以分为三层：
+按产品边界组织能力，不把完整后端平台当成每个项目的起步要求：
 
 | 层级 | 能力 | 典型场景 |
 |------|------|------|
-| **必备** | 调用 LLM API、流式响应、Structured Outputs、Prompt/模型版本管理 | 给产品加可验证的 AI 功能 |
-| **进阶** | RAG、AI Gateway/Model Routing、缓存与 Batch、可观测性/Evals | 基于私有知识库的生产系统 |
-| **加分** | Agent Harness、MCP/A2A/Skills 分层、长任务与人工审批 | 自动化工作流、AI 驱动的产品功能 |
+| **浏览器** | 渲染、输入、连接状态与可访问性 | 让用户分清生成中、待审批、失败与完成 |
+| **BFF** | 认证、任务关联、流转发与错误归一化 | 不向客户端暴露供应商凭据和内部错误 |
+| **执行服务** | 授权、预算、幂等、取消与验收 | 按任务采用固定工作流或 Harness |
 
 ## 后端：AI 服务集成
 
@@ -30,10 +30,10 @@ title: 全栈工程师 AI 实战能力
 
 | 差异点 | 传统 API | LLM API |
 |------|------|------|
-| 响应时间 | 毫秒级 | 秒级到十秒级 |
-| 响应方式 | 一次返回完整结果 | 流式返回（SSE/WebSocket） |
-| 费用模型 | 按请求次数 | 按 Token 数量 |
-| 结果确定性 | 确定性输出 | 非确定性输出 |
+| 响应时间 | 同步与异步任务都存在 | 区分首个事件、首个有用输出和最终完成 |
+| 响应方式 | 普通响应与流式都可用 | 按交互选择 SSE、WebSocket 或任务查询 |
+| 费用模型 | 请求、资源或用量计费 | 可能包含 Token、工具、缓存和执行环境 |
+| 结果验证 | 依赖业务契约与外部状态 | 除协议外，还需检验内容与任务结果 |
 
 **面试常见设计题：设计一个 LLM 对话接口**
 
@@ -57,14 +57,16 @@ public Flux<ServerSentEvent<String>> chatStream(@RequestParam String message) {
         .onErrorResume(e -> Flux.just(
             ServerSentEvent.<String>builder()
                 .event("error")
-                .data(e.getMessage())
+                .data("Upstream stream failed")
                 .build()));
 }
 ```
 
+上面的 `timeout` 是流空闲超时，不是整个任务的总截止时间。BFF 还需传播取消信号、设置端到端 deadline，并关联内部错误日志；关闭浏览器连接不代表后台任务或外部副作用已经撤销。
+
 ### Prompt 管理
 
-生产环境中 Prompt 不能硬编码在代码里：
+Prompt 可以随代码一起版本化，也可以外置；关键是能回溯、测试与回滚，而不是强制存进数据库：
 
 | 方案 | 适用场景 | 优缺点 |
 |------|------|------|
@@ -76,7 +78,7 @@ Prompt、模型/快照、工具 Schema、检索索引和 Skill 都应有版本�
 
 ### AI Gateway、路由与结构化输出
 
-多供应商或多业务线场景通常在后端增加 AI Gateway，统一处理鉴权、配额、超时、重试、Fallback、协议适配、成本和 Trace。Model Router 只是其中负责“选哪个模型/推理档位”的模块：先按任务、地域、工具与上下文能力筛选，再用离线 Evals 和线上指标选择满足质量门槛的最低成本方案。
+客户端只依赖应用自己的任务与事件契约。BFF 将供应商调用关联到 `run_id`，过滤内部错误和敏感字段，再向浏览器返回稳定状态。供应商兼容与 Fallback 的实现集中在 [应用架构](./ai-architecture#api-migration)，本篇不再维护第二套网关教程。
 
 Provider API 的字段并不完全等价，特别是 reasoning effort、工具调用、流式事件和缓存语义。兼容层必须保留能力矩阵，不能只把所有请求改成同一种 JSON。对于工具参数使用 Function Calling；对于面向应用的 JSON 响应使用 Structured Outputs。结构正确不等于事实正确，后端仍需鉴权和业务规则校验。
 
@@ -89,7 +91,7 @@ Provider API 的字段并不完全等价，特别是 reasoning effort、工具�
 
 ### 缓存与成本控制
 
-LLM 调用贵且慢，缓存是必要的工程手段：
+是否缓存取决于可复用比例与一致性要求；用户可见答案缓存必须包含身份、数据版本与授权范围。不能因为问法相似就共享私人结果：
 
 | 策略 | 实现方式 | 适用场景 |
 |------|------|------|
@@ -117,7 +119,7 @@ LLM 调用贵且慢，缓存是必要的工程手段：
 用户期望看到"AI 正在打字"的效果，而不是等待几秒后突然出现一大段文字。
 
 ```typescript
-// React 中处理 SSE 流式响应
+// React 中处理纯文本响应流
 function useChatStream(url: string) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
@@ -149,7 +151,7 @@ function useChatStream(url: string) {
 }
 ```
 
-若后端返回真正的 SSE（含 `event:` / `data:` 帧），应使用 `EventSource` 或 SSE parser，并处理 `[DONE]`、事件类型、重连和取消，不能把协议帧直接拼进正文。`EventSource` 可自动重连；上面的 `fetch()` 示例不会自动重连，需要应用自己保存游标并恢复。
+这里仅演示字节解码，未实现取消和并发请求隔离；产品代码需用 AbortController 取消旧请求，并按运行 ID 丢弃迟到数据。若后端返回真正的 SSE（含 `event:` / `data:` 帧），应使用 `EventSource` 或 SSE parser，并按应用契约处理终止标记、事件类型和游标，不能把协议帧直接拼进正文。`[DONE]` 不是 SSE 标准本身。`EventSource` 可自动重连；上面的 `fetch()` 示例不会自动重连。
 
 ### Markdown 渲染
 

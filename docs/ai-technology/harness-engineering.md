@@ -66,7 +66,15 @@ Harness Engineering 是工程实践，不是像 MCP、A2A 那样的统一通信�
 | **产品期** | Prompt 越来越长、工具越来越多、多个场景共用一套逻辑 | Prompt 膨胀失控、工具权限混乱、上下文溢出 |
 | **规模期** | 多个 Agent、多个 Skill、多个团队维护 | 没有标准化的组装方式，每个 Agent 自成体系 |
 
-Harness Engineering 就是在**产品期和规模期**对这一层进行系统化设计的实践。
+这类设计从原型就可以开始：只要工具会产生真实副作用，授权和停止条件就不能等到规模化后补。
+
+### 环境必须能被检查
+
+Harness 不只是 Prompt 拼装器。以代码任务为例，模型需要知道工作目录、可用依赖、启动方式、失败日志与测试入口；验收器还需要知道本轮修改对应哪些产物。缺少这些证据，增加反思轮次可能只是重复猜测。
+
+一个小型项目可以先提供可重复的环境初始化、可执行测试、结构化进度文件和明确的禁止动作。恢复时检查产物版本与环境健康，每次推进一项可验证的工作，再记录结果。不要让模型自己删掉失败项、改写验收标准后宣告完成。
+
+[OpenAI 的 Harness Engineering 案例](https://openai.com/index/harness-engineering/)强调环境可读性、仓库知识与可执行约束；[Anthropic 的长任务实践](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)讨论初始化、增量推进和端到端验证。它们是工程经验来源，不是所有团队必须采用的同一种架构。
 
 ---
 
@@ -365,52 +373,9 @@ class AgentHarness:
 
 #### 上下文预算分配
 
-```python
-class ContextBudget:
-    """管理上下文窗口的 Token 预算分配。"""
+运行时先预留输出，再统计指令、工具定义和输入的实际占用。超限时调用上下文选择或压缩组件，并在发送前重新计量；压缩后的内容仍不合适，就缩小任务或停止，而不是假定“保留最近十条”一定能装下。
 
-    def __init__(self, model_context_window: int,
-                 allocations: dict[str, float]):
-        self.total = model_context_window
-        self.allocations = allocations  # 按模型、任务和历史 trace 配置
-        if not 0.99 <= sum(allocations.values()) <= 1.01:
-            raise ValueError("allocations must sum to 1")
-
-    def budget_for(self, category: str) -> int:
-        return int(self.total * self.allocations[category])
-
-    def trim_if_needed(self, messages: list,
-                       system_prompt: str) -> tuple[list, str]:
-        """超出预算时按优先级裁剪。"""
-        sys_budget = self.budget_for("system_prompt")
-        conv_budget = self.budget_for("conversation")
-
-        # 裁剪 System Prompt（从低优先级 Layer 开始）
-        if count_tokens(system_prompt) > sys_budget:
-            system_prompt = self._trim_prompt(system_prompt, sys_budget)
-
-        # 裁剪对话历史（压缩早期消息）
-        if count_tokens(messages) > conv_budget:
-            messages = self._compress_history(messages, conv_budget)
-
-        return messages, system_prompt
-
-    def _compress_history(self, messages: list,
-                          budget: int) -> list:
-        """将早期对话压缩为摘要，保留近期完整消息。"""
-        # 保留最近 N 条消息不压缩
-        recent = messages[-10:]
-        older = messages[:-10]
-
-        if not older:
-            return messages
-
-        # 将旧消息压缩为摘要。这里返回 Harness 内部消息，不能直接作为
-        # Anthropic Messages API 的 role="system" 历史消息发送；接入具体
-        # Provider 时应放入独立 system/developer 区或转换为合法消息。
-        summary = summarize_messages(older)
-        return [{"kind": "history_summary", "content": summary}] + recent
-```
+工具调用与结果要按协议成组保留，摘要继续作为低信任的历史数据，不能因压缩被提升成系统指令。信息选择的实现归 [上下文与记忆](./context-and-memory)；Harness 负责把选择结果绑定到历史版本，并在 [会话恢复](./context-and-memory#session-recovery)时拒绝陈旧快照。
 
 **上下文预算的直觉**（比例应由任务和评测决定，不存在通用固定值）：
 
@@ -522,9 +487,143 @@ Compaction 只保留“关于工作的信息”，Checkpoint 还要保留**可�
 
 ---
 
+### 离线实验：同一个决策，为什么恢复结果不同 {#harness-fault-lab}
+
+任务是对同一申请退款 100 分，业务只应生效一次。两组使用相同的脚本化决策与工具服务：朴素组每次重试生成新操作键，只计当前 Worker 的预算，并接受模型的完成声明；受控组保存稳定操作键与已用预算，恢复时先查业务账本，最后验证真实回执。
+
+这不是模型能力测试。检查点用 JSON 序列化模拟跨 Worker 恢复，独立 `Map` 模拟下游持久账本；不包含真实进程崩溃、网络、数据库事务或并发。两组的业务服务都校验当前审批，所以“撤回审批”的对照不会靠故意关闭后端鉴权来制造差距。
+
+```javascript
+export function runHarnessTrial({ mode = 'guarded', fault = 'none', maxWrites = 2 } = {}) {
+    const faults = ['none', 'lost-result', 'duplicate-delivery', 'revoked-approval', 'retry-budget', 'false-completion'];
+    if (!['naive', 'guarded'].includes(mode) || !faults.includes(fault)) {
+        throw new RangeError('Unknown mode or fault');
+    }
+    if (!Number.isSafeInteger(maxWrites) || maxWrites < 0) {
+        throw new RangeError('maxWrites must be a non-negative safe integer');
+    }
+    const guarded = mode === 'guarded';
+    const intent = { operationKey: 'refund-request-42', orderId: 'order-42', amountMinor: 100 };
+    const approval = { active: fault !== 'revoked-approval', orderId: intent.orderId, amountMinor: intent.amountMinor };
+    const ledger = new Map();
+    const trace = [];
+    let checkpoint = null;
+    let writeAttempts = 0;
+    let lastState;
+
+    function save(state) {
+        lastState = structuredClone(state);
+        if (guarded) checkpoint = JSON.stringify(state);
+    }
+
+    function refund(operationKey) {
+        if (!approval.active || approval.orderId !== intent.orderId || approval.amountMinor !== intent.amountMinor) {
+            return null;
+        }
+        if (!ledger.has(operationKey)) {
+            ledger.set(operationKey, {
+                receiptId: `receipt-${ledger.size + 1}`,
+                orderId: intent.orderId,
+                amountMinor: intent.amountMinor,
+            });
+        }
+        return ledger.get(operationKey);
+    }
+
+    function complete(state) {
+        const receipt = ledger.get(state.operationKey);
+        const verified = receipt?.orderId === intent.orderId && receipt?.amountMinor === intent.amountMinor;
+        state.status = guarded && !verified ? 'verification-failed' : 'completed';
+        state.receiptId = verified ? receipt.receiptId : null;
+        save(state);
+    }
+
+    function worker() {
+        const state = guarded && checkpoint !== null
+            ? JSON.parse(checkpoint)
+            : { operationKey: intent.operationKey, usedWrites: 0, status: 'running' };
+        if (guarded && state.status === 'completed') {
+            trace.push('ignore-terminal-delivery');
+            save(state);
+            return;
+        }
+        if (guarded && ledger.has(state.operationKey)) {
+            trace.push('reconcile-receipt');
+            complete(state);
+            return;
+        }
+        if (fault === 'false-completion') {
+            trace.push('model-claims-complete');
+            complete(state);
+            return;
+        }
+        if (guarded && !approval.active) {
+            state.status = 'blocked';
+            save(state);
+            return;
+        }
+        if (state.usedWrites >= maxWrites) {
+            state.status = 'budget-exhausted';
+            save(state);
+            return;
+        }
+
+        state.usedWrites++;
+        state.status = 'in-flight';
+        save(state);
+        writeAttempts++;
+        const operationKey = guarded ? state.operationKey : `attempt-${writeAttempts}`;
+        trace.push(`dispatch:${operationKey}`);
+        if (fault === 'retry-budget' && writeAttempts === 1) {
+            trace.push('transport-failed-before-effect');
+            return 'restart';
+        }
+        const receipt = refund(operationKey);
+        if (receipt === null) {
+            state.status = 'failed';
+            save(state);
+            return;
+        }
+        if (fault === 'lost-result' && writeAttempts === 1) {
+            trace.push('crash-before-checkpoint');
+            return 'restart';
+        }
+        complete(state);
+    }
+
+    const outcome = worker();
+    if (outcome === 'restart' || fault === 'duplicate-delivery') worker();
+    return {
+        mode, fault, status: lastState.status, writeAttempts,
+        refundCount: ledger.size,
+        refundedMinor: [...ledger.values()].reduce((total, receipt) => total + receipt.amountMinor, 0),
+        trace,
+    };
+}
+```
+
+在仓库根目录运行，检查器会直接提取上面的代码，而不是测试另一份实现：
+
+```sh
+npm run docs:check:ai -- --show-experiments
+```
+
+| 注入场景 | 朴素组 | 受控组 |
+|----------|--------|--------|
+| 无故障 | 退款一次 | 退款一次 |
+| 下游成功，本地结果丢失 | 新键重试，退款两次 | 查回执，仍只退款一次 |
+| 重复投递同一任务 | 重复退款 | 识别终态，不再执行 |
+| 执行前审批已失效 | 业务服务拒绝，一次无效写尝试 | 分发前阻止，零写尝试 |
+| 首次失败后重启，写预算为 1 | 本地计数归零，实际尝试两次 | 保留已用预算，停止新写入 |
+| 未执行却声明完成 | 误报成功 | 账本无回执，验收失败 |
+
+这里的预算仅计写尝试，不代表完整的 Token、读取、时间和费用预算。对账确认已完成的操作不需要再次退款；预算耗尽不能成为跳过对账、把未知结果标成失败的理由。原型中先扣预算再发请求可能保守地消耗未实际发出的额度，生产实现需记录预留与结算语义。
+
+这个实验也不能证明 exactly-once：真实系统还需原子写入幂等记录、校验同键参数、处理租约与并发 Worker，并限制回执查询权限。若下游没有幂等或可查询凭据，应把未知状态交给人工核实，而不是照搬这里可靠的 `Map` 查询。尝试删除稳定键、持久预算或完成校验，再运行断言，观察哪一个不变量失效。
+
 ### 6. 安全与 Guardrails
 
-Harness 是实施安全控制的**最佳位置**——它同时能看到输入、输出和工具调用，可以在每个环节插入检查。
+Harness 是执行层安全控制的重要位置，可以在模型调用和动作分发前后检查策略；业务服务仍必须独立鉴权，不能因为请求来自 Harness 就放行。
 
 #### 安全控制的三层防线
 
@@ -698,17 +797,23 @@ agent_run (total: 3.2s, tokens: 8500)
 
 ## 主流 SDK 中的 Harness 实现
 
-不同 SDK 对 Harness 的抽象程度不同。理解这些实现有助于在面试中针对具体技术栈回答。
+先区分模型客户端、运行时 SDK、工作流引擎与托管服务。它们不自动提供相同的持久化或权限边界。
 
-| SDK | Harness 核心类 | Prompt 管理 | Skill 路由 | 工具管理 | 安全 | Tracing |
-|-----|---------------|------------|-----------|---------|------|---------|
-| **OpenAI Agents SDK** | `Runner` | `instructions` 字段 | `handoffs` 委派 | `@function_tool` + hosted tools | `Guardrails` 装饰器 | 内置 Tracing |
-| **Claude Agent SDK** | `query()` / `ClaudeSDKClient` | preset/custom system prompt + Skills/配置源 | 内置 Subagents / Agent tool | 内置工具 + MCP | 权限模式、Hooks、沙箱、文件检查点 | 消息流 + Hooks |
-| **Anthropic Client SDK** | 自建循环或 Tool Runner | `system` 参数 | 应用层实现 | client/server tools | 应用层权限与校验 | 自建 |
-| **LangGraph** | `StateGraph` | `SystemMessage` | Graph 条件边 | `ToolNode` | 条件边 + 中断点 | LangSmith |
-| **Claude Code** | 内置引擎 | 分层 System Prompt | Skill 文件 + 意图匹配 | 内置工具 + MCP | 权限模式 + Hooks | 内置 |
+| 接入层次 | 提供什么 | 应用仍需负责什么 |
+|----------|----------|------------------|
+| **模型 API / Client SDK** | 请求、流式响应、部分工具循环辅助 | 工具执行策略、业务状态与持久化边界 |
+| **Agent SDK** | 循环、工具、委派、会话和观测等运行时能力，具体依 SDK | 部署、认证、业务授权、状态存储配置与验收 |
+| **工作流引擎** | 状态图、暂停和检查点等能力 | 持久存储、外部副作用及流程版本兼容 |
+| **托管 Agent API** | 供应商托管会话、编排和部分执行环境 | 业务契约、数据保留、地域、预算与退出方案 |
+| **编码 Agent 产品** | 已集成的代码工作流、工具与交互 | 项目环境、可验证要求、权限配置与交付审核 |
+
+OpenAI Agents SDK 的 `handoffs` 是 Agent 间控制权转移，不是 Agent Skills 文件的发现或加载。Claude Agent SDK 的 Subagents、MCP 和 Skills 也分别承担委派、连接和过程知识加载，不能合并成一列“Skill 路由”。
+
+[OpenAI Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview)与 [Claude Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview)提供托管 Harness 路线；接入时核对 beta 状态和数据处理条件。自托管沙箱不等于控制面的会话与日志也全部本地化。
 
 ### OpenAI Agents SDK：Runner 即 Harness
+
+下面只展示接入边界；工具函数、Guardrails 和任务环境需由应用提供，不是独立脚本。`Runner` 能组织循环，不意味着已经具备你业务所需的幂等、持久化与验收机制。
 
 ```python
 from agents import Agent, Runner
@@ -751,6 +856,7 @@ messages = [{"role": "user", "content": user_input}]
 for step in range(max_steps):
     response = client.messages.create(
         model="claude-sonnet-4-6",
+        max_tokens=1024,
         system=system_prompt,
         tools=tools,
         messages=messages,
@@ -908,7 +1014,7 @@ class PromptCompiler:
 |------|------|---------|
 | **Prompt Diff** | 对比两个版本的 System Prompt，关联输出变化 | 排查"改了 Prompt 后效果变差" |
 | **Layer 剥离** | 逐层去掉 L5→L4→L3，观察哪一层引起问题 | 排查指令冲突 |
-| **Trace 分析** | 查看完整的 Prompt + 工具调用 Trace | 排查复杂的多步骤问题 |
+| **Trace 分析** | 按权限查看必要上下文、工具事件与版本，敏感字段脱敏 | 排查复杂的多步骤问题 |
 | **Golden Set 回归** | 用一组标准输入+期望输出，每次改动后跑一遍 | 防止改动引入回归 |
 
 ### 实践五：Structured Output 约束
@@ -925,13 +1031,10 @@ Harness 的**输出层（L5）**已从“在 Prompt 里请求 JSON”扩展到 A
 
 #### 主流方案对比
 
-| 方案 | 提供者 | 原理 | 适用 |
-|------|-------|------|------|
-| **OpenAI Structured Outputs** | OpenAI | 服务端把 schema 编译为有限状态机，token 采样时强制约束 | OpenAI API |
-| **Anthropic strict tool use** | Anthropic | 在自定义工具上设置 `strict: true`，结合 JSON Schema 约束工具输入 | Claude API；仍需校验业务语义与工具输出 |
-| **Outlines / lm-format-enforcer** | 开源 | 客户端拦截 logits，按正则/grammar 屏蔽非法 token | 自建推理 + vLLM |
-| **SGLang Constrained Decoding** | SGLang | grammar 约束解码 | 自建推理 |
-| **Pydantic + Instructor** | 社区 | Pydantic schema → JSON Schema → 校验 + 自动重试 | 任何 LLM 的客户端封装 |
+- **OpenAI Structured Outputs**：服务端按受支持的 Schema 约束生成结构；接入时区分输出格式与工具参数约束，不能忽略拒绝和截断。
+- **Anthropic strict tool use**：在支持的自定义工具上配置 `strict: true`，约束输入结构，仍需校验业务语义与工具结果。
+- **Outlines、lm-format-enforcer、SGLang**：通过支持的推理引擎或适配层施加语法约束；客户端包装一个外部 HTTP API，并不意味着能够控制该服务的采样 logits。
+- **Pydantic 与 Instructor**：结合类型定义、供应商能力、解析校验和重试；具体支持依适配器而定，客户端校验失败后的重试不等于服务端约束解码。
 
 #### Harness 中的集成模式
 

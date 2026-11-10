@@ -94,6 +94,32 @@ for (const ranked of [[], ['A'], ['X'], ['B', 'A'], ['A', 'A', 'B'], ['X', 'A', 
   }
 }
 
+const retrieveWithAcl = await example('rag.md', 'retrieveWithAcl');
+const aclDocuments = [
+  { id: 'hidden', tenantId: 'tenant-b', terms: ['refund', 'policy'] },
+  { id: 'visible', tenantId: 'tenant-a', terms: ['refund'] },
+  { id: 'other', tenantId: 'tenant-a', terms: ['delivery'] },
+];
+const aclSnapshot = structuredClone(aclDocuments);
+const aclRows = [];
+for (const filterPhase of ['before', 'after']) {
+  const found = retrieveWithAcl(aclDocuments, ['refund', 'policy'], 'tenant-a', 1, filterPhase);
+  assert.deepEqual(found, filterPhase === 'before' ? ['visible'] : []);
+  assert.ok(!found.includes('hidden'));
+  const metrics = retrievalMetrics(found, ['visible'], 1);
+  assert.equal(metrics.recallAtK, filterPhase === 'before' ? 1 : 0);
+  aclRows.push({ filterPhase, returned: found.join(',') || '(empty)', recallAt1: metrics.recallAtK });
+}
+assert.deepEqual(retrieveWithAcl(aclDocuments, ['refund', 'policy'], 'tenant-a', 2, 'after'), ['visible']);
+assert.deepEqual(retrieveWithAcl(aclDocuments, ['refund', 'policy'], 'tenant-b', 1), ['hidden']);
+assert.deepEqual(retrieveWithAcl(aclDocuments, ['refund'], 'unknown-tenant', 1), []);
+assert.deepEqual(retrieveWithAcl(aclDocuments, [], 'tenant-a', 1), []);
+assert.deepEqual(aclDocuments, aclSnapshot);
+assert.throws(() => retrieveWithAcl(aclDocuments, ['refund'], '', 1), TypeError);
+assert.throws(() => retrieveWithAcl(aclDocuments, ['refund'], null, 1), TypeError);
+assert.throws(() => retrieveWithAcl(aclDocuments, ['refund'], 'tenant-a', 0), RangeError);
+assert.throws(() => retrieveWithAcl(aclDocuments, ['refund'], 'tenant-a', 1, 'other'), RangeError);
+
 const planModelRetry = await example('ai-architecture.md', 'planModelRetry');
 const request = { status: 503, attempt: 1, remainingMs: 5000, replaySafe: true, jitter: 0.5 };
 assert.deepEqual(planModelRetry(request), { action: 'retry', delayMs: 125, timeoutMs: 1000 });
@@ -255,4 +281,43 @@ for (const inputTokens of [1, 15, 16, 17, 1000, 8192]) {
   assert.ok((result.maxConcurrent + 1) * result.bytesPerRequest > kvInputs.kvBudgetBytes);
 }
 
-console.log(`PASS: ${extracted} JavaScript examples from ${cache.size} AI documents; evaluation, retrieval, retry, recovery, UI, API migration and KV capacity checks. No model calls.`);
+const runHarnessTrial = await example('harness-engineering.md', 'runHarnessTrial');
+const harnessCases = [
+  { fault: 'none', maxWrites: 2, naive: ['completed', 1, 1], guarded: ['completed', 1, 1] },
+  { fault: 'lost-result', maxWrites: 2, naive: ['completed', 2, 2], guarded: ['completed', 1, 1] },
+  { fault: 'duplicate-delivery', maxWrites: 2, naive: ['completed', 2, 2], guarded: ['completed', 1, 1] },
+  { fault: 'revoked-approval', maxWrites: 2, naive: ['failed', 1, 0], guarded: ['blocked', 0, 0] },
+  { fault: 'retry-budget', maxWrites: 1, naive: ['completed', 2, 1], guarded: ['budget-exhausted', 1, 0] },
+  { fault: 'false-completion', maxWrites: 2, naive: ['completed', 0, 0], guarded: ['verification-failed', 0, 0] },
+];
+const harnessRows = [];
+for (const scenario of harnessCases) {
+  for (const mode of ['naive', 'guarded']) {
+    const result = runHarnessTrial({ mode, fault: scenario.fault, maxWrites: scenario.maxWrites });
+    assert.deepEqual([result.status, result.writeAttempts, result.refundCount], scenario[mode], `${mode}: ${scenario.fault}`);
+    assert.equal(result.refundedMinor, result.refundCount * 100);
+    assert.deepEqual(result, runHarnessTrial({ mode, fault: scenario.fault, maxWrites: scenario.maxWrites }));
+    if (mode === 'guarded') {
+      assert.ok(result.writeAttempts <= scenario.maxWrites);
+      assert.ok(result.refundCount <= 1);
+      if (result.status === 'completed') assert.equal(result.refundCount, 1);
+    }
+    harnessRows.push({ fault: scenario.fault, mode, status: result.status, writes: result.writeAttempts, refunds: result.refundCount });
+  }
+}
+assert.ok(runHarnessTrial({ fault: 'lost-result', maxWrites: 1 }).trace.includes('reconcile-receipt'));
+assert.ok(runHarnessTrial({ fault: 'duplicate-delivery' }).trace.includes('ignore-terminal-delivery'));
+assert.equal(runHarnessTrial({ maxWrites: 0 }).writeAttempts, 0);
+assert.equal(runHarnessTrial({ maxWrites: 0 }).status, 'budget-exhausted');
+assert.equal(runHarnessTrial({ fault: 'retry-budget', maxWrites: 2 }).refundCount, 1);
+assert.throws(() => runHarnessTrial({ mode: 'other' }), RangeError);
+assert.throws(() => runHarnessTrial({ fault: 'other' }), RangeError);
+for (const maxWrites of [-1, 0.5, NaN, Infinity]) {
+  assert.throws(() => runHarnessTrial({ maxWrites }), RangeError);
+}
+if (process.argv.includes('--show-experiments')) {
+  console.table(harnessRows);
+  console.table(aclRows);
+}
+
+console.log(`PASS: ${extracted} JavaScript examples from ${cache.size} AI documents; evaluation, retrieval, retry, recovery, UI, API migration, KV capacity and Harness fault checks. No model calls.`);

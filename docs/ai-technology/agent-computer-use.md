@@ -6,7 +6,7 @@ title: Computer Use 与多 Agent 编排
 
 <span class="dig-tag dig-tag--category">AI Agent</span> <span class="dig-tag dig-tag--medium">⭐⭐⭐ 中等</span> <span class="dig-tag dig-tag--hot">🔥🔥🔥 高频</span>
 
-::: tip 💡 核心要点（2026 必备）
+::: tip 💡 核心要点
 **Computer Use** 让模型通过截图理解界面，并让宿主 Harness 执行鼠标、键盘或浏览器动作；Anthropic 于 2024 年较早公开了通用桌面方案，但这不是单一厂商专属概念。**多 Agent 编排**用于需要上下文隔离、专业分工或并行探索的任务，不是“单 Agent 必然走不远”的默认答案。
 :::
 
@@ -32,7 +32,11 @@ Computer Use: LLM ──截图── 屏幕 ──动作── 鼠标/键盘
 
 ### Anthropic Computer Use 实现细节
 
-Anthropic Computer Use 提供 **Beta** 接口。本文示例使用 beta header `computer-use-2025-11-24` 和工具类型 `computer_20251124`，支持 Claude Opus 5、Sonnet 5、Opus 4.8/4.7/4.6、Sonnet 4.6、Opus 4.5；较旧模型使用 `computer-use-2025-01-24` / `computer_20250124`。模型名、beta header 和工具 schema 是三个独立版本点，升级时必须一起核对。
+以 [Anthropic 官方工具文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)中的 `computer_toolset_20260801` 为例，支持该工具集的 Messages API 请求不需要旧的 Computer Use beta header。旧 `computer_20251124` 和 `computer_20250124` 仍有各自的模型、平台与 beta 兼容路径；SDK 工具集适配器也有自己的发布状态，不能统称“Computer Use 全部是 beta”。
+
+迁移要同时检查声明、动作分发和结果格式：工具集成员通过 `name` 与 `toolset_name` 标识，不再把动作名称放在 `input.action` 中；结果要携带对应调用 ID 和工具集名称。旧的 `name`、显示尺寸和 `enable_zoom` 等声明字段不能直接复制到新工具集。
+
+下面保留旧版 `computer_20251124` 的循环示意，仅用于理解兼容适配，不应直接作为新工具集的请求格式。
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -48,7 +52,7 @@ Anthropic Computer Use 提供 **Beta** 接口。本文示例使用 beta header `
 └─────────────────────────────────────────────────────┘
 ```
 
-Anthropic quickstart 常把以下三个**客户端工具**组合使用，但只有 `computer` 是 Computer Use 必需工具，另外两个是可选增强：
+旧版 quickstart 常组合以下三个客户端工具，终端和文本编辑是可选增强。新工具集则通过成员配置启停能力：
 
 | 工具 | 输入 | 用途 |
 |------|------|------|
@@ -56,9 +60,9 @@ Anthropic quickstart 常把以下三个**客户端工具**组合使用，但只�
 | **`bash`** | command | Shell 命令（兜底）|
 | **`text_editor_20250728`** | view / create / str_replace / insert | 文件编辑；当前版本不含 `undo_edit` |
 
-<small>注：本节接口与工具支持快照为 2026-08-09；接入前核对官方兼容列表。</small>
+新工具集同一响应中的计算机动作可能是一组有序步骤，应按顺序执行，并在首个失败后停止执行后续动作。每个调用仍要得到对应结果；被跳过的成员按工具契约返回未执行信息。高风险动作的确认发生在执行前，而不是只在整个任务开始时确认一次。
 
-### 关键设计抉择（必背）
+### 关键设计抉择 {#关键设计抉择-必背}
 
 #### 1. 坐标系统：像素 vs 网格
 
@@ -67,7 +71,7 @@ Anthropic quickstart 常把以下三个**客户端工具**组合使用，但只�
 {"action": "left_click", "coordinate": [856, 423]}
 ```
 
-**关键训练**：Computer Use 模型必须经过 **grounding** 训练——给截图 + "点击登录按钮"，输出准确像素。普通 VLM 不擅长这件事。
+**关键能力**是把目标可靠地映射到坐标或元素引用。截图定位、DOM 和可访问性树路线的约束不同，不能仅凭模型能描述图片就认定它能稳定操作界面，应在目标环境中测定位与动作成功情况。
 
 #### 2. 动作粒度：原子 vs 复合
 
@@ -115,10 +119,10 @@ class ComputerAgent:
 **不要默认给 Computer Use Agent 控制真实宿主机**。官方参考实现使用容器化桌面；生产环境还应限制凭据、文件挂载、网络和可执行动作：
 
 ```yaml
-# Anthropic 官方 reference docker-compose
+# 仅示意只读挂载，不是完整可启动的服务
 services:
   agent:
-    # 参考实现位于 anthropics/anthropic-quickstarts/computer-use-demo
+    # 参考实现位于 anthropics/claude-quickstarts/computer-use-demo
     # ★ 跑在容器/虚拟机内
     # ★ 通过 VNC 暴露屏幕
     # ★ 仅访问明确指定的目录
@@ -141,7 +145,7 @@ services:
 | **流程自动化** | 跨多个 SaaS 系统抓取报告 | 有条件可用 |
 | **网页操作** | 填表单 / 比价 / 信息收集 | 有条件可用；交易需确认 |
 | **桌面助手** | "帮我整理桌面 / 改 PPT 配色" | 早期 |
-| **QA 测试** | UI 回归自动化（取代 Selenium）| 兴起 |
+| **QA 测试** | 探索性检查与固定回归互补 | 需比较覆盖、稳定性和成本 |
 | **辅助残障人士** | 视障辅助交互 | 探索 |
 
 ::: warning ⚠️ Computer Use 的 5 大局限
@@ -158,7 +162,7 @@ services:
 
 | 产品 | 厂商 | 特点 |
 |------|------|------|
-| **Claude Computer Use** | Anthropic | Beta API；`computer_20251124`，宿主执行动作；有开源参考实现 |
+| **Claude Computer Use** | Anthropic | 工具集与旧版工具并存，兼容性依模型和平台；宿主负责执行 |
 | **OpenAI `computer` tool** | OpenAI | Responses API GA 路线；支持一次返回批量 `actions[]`；旧 `computer-use-preview` 已弃用 |
 | **ChatGPT agent** | OpenAI | 已整合原 Operator 产品；Operator 独立站点已下线 |
 | **Google Project Mariner** | Google | Chrome 扩展，浏览器 Agent |
